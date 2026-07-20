@@ -1,4 +1,4 @@
-from mao.result import AgentResult
+from mao.models.result import AgentResult
 
 
 class SupervisorAgent:

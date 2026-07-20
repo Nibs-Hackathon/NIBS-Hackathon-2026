@@ -1,5 +1,5 @@
 from agents.safety_agent import SafetyAgent
-from mao.event import Event
+from mao.events.event import Event
 from mao.orchestrator import MAO
 
 mao = MAO()
