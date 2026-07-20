@@ -13,3 +13,4 @@ chromadb
 sentence-transformers
 google-generativeai
 openai
+uuid64
