@@ -14,7 +14,8 @@ from mao.orchestrator import Orchestrator
 from mao.workflows.planner import Planner
 from mao.workflows.supervisor import Supervisor
 from mao.workflows.workflow_engine import WorkflowEngine
-
+from services.health import HealthService
+from services.asset import AssetService
 
 class MAOKernel:
     """
@@ -34,6 +35,10 @@ class MAOKernel:
         self.logger = KernelLogger()
 
         self.memory = MemoryManager()
+
+        self.health = HealthService()
+
+        self.asset_service = AssetService()
 
         # ---------------- Events ----------------
 
@@ -79,4 +84,17 @@ class MAOKernel:
 
     def handle_event(self, event):
 
-        return self.orchestrator.run(event)
+        # Store the incoming event
+        self.state.add_event(event)
+
+        # Run the MAO pipeline
+        report = self.orchestrator.run(event)
+
+        # Store the execution report
+        self.state.add_report(report)
+
+        # Store every agent result
+        for result in report.agent_results:
+            self.state.add_agent_result(result)
+
+        return report

@@ -1,10 +1,11 @@
+from agents.base_agent import BaseAgent
 from mao.models.result import AgentResult
 
 
-class MockAgent:
+class MockAgent(BaseAgent):
 
     def __init__(self):
-        self.name = "mock"
+        super().__init__("mock")
 
     def execute(self, task):
 
@@ -14,4 +15,6 @@ class MockAgent:
             confidence=1.0,
             summary="Mock execution successful.",
             recommendations=[],
+            metadata={},
+            execution_time=0.0,
         )
