@@ -1,5 +1,5 @@
 from agents.base_agent import BaseAgent
-from mao.result import AgentResult
+from mao.models.result import AgentResult
 
 class SafetyAgent(BaseAgent):
 
