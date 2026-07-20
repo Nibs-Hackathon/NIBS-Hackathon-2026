@@ -6,5 +6,5 @@ class SensorReading(BaseModel):
     temperature: float
     flow_rate: float
     vibration: float
-    gas_levels: float
+    gas_level: float
     timestamp: datetime
