@@ -1,0 +1,15 @@
+streamlit
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pgvector
+python-dotenv
+pydantic
+loguru
+agno
+llama-index
+chromadb
+sentence-transformers
+google-generativeai
+openai
