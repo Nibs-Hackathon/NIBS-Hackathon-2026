@@ -1,6 +1,6 @@
 from enum import Enum
 
-class AssetTypee(str, Enum):
+class AssetType(str, Enum):
     PUMP = "Pump"
     COMPRESSOR = "Compressor"
     PIPELINE = "Pipeline"
