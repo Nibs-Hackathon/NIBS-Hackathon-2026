@@ -7,10 +7,17 @@ class SafetyAgent(BaseAgent):
 
         super().__init__("SafetyAgent")
 
-    def execute(self, event):
+    def execute(self, task):
 
+        self.think(task)
         print()
+        print("Running safety analysis...")
+        print(task.input_data)
 
-        print(f"[Safety] Handling {event.name}")
-
-        print(event.payload)
+        task.output_data = {
+            "risk":"HIGH",
+            "action": "Evacuate Area",
+        }
+        task.status = "COMPLETED"
+        self.reflect()
+        return task
