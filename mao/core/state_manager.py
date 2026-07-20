@@ -1,7 +1,7 @@
 from typing import Any
 
-from mao.event import Event
-from mao.task import Task
+from mao.events.event import Event
+from mao.models.task import Task
 
 
 class StateManager:
