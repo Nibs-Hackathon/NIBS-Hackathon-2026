@@ -1,6 +1,7 @@
 from mao.event_bus import EventBus
 from mao.registry import AgentRegistry
 from mao.state import GlobalState
+from mao.planner import Planner
 
 
 class MAO:
@@ -12,6 +13,7 @@ class MAO:
         self.event_bus = EventBus()
 
         self.state = GlobalState()
+        self.planner = Planner()
 
     def register_agent(self, agent):
 
@@ -36,3 +38,20 @@ class MAO:
         print("Events:", len(self.state.events))
 
         print("=========================")
+    
+    def handle_event(self, event):
+        self.publish(event)
+
+        tasks = self.planner.create_plan(event)
+
+        for task in tasks:
+            self.state.enequeue_task(task)
+
+        while True:
+            task = self.state.next_task()
+            if task is None:
+                break
+            self.registry.dispatch(task)
+
+
+

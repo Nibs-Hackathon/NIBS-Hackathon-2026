@@ -14,3 +14,12 @@ class AgentRegistry:
     def all(self):
 
         return list(self._agents.values())
+    
+    def dispatch(self, task):
+        agent = self.get(task.assigned_agent)
+
+        if not agent:
+            print("Agent missing")
+            return
+        return agent.execute(task)
+    
