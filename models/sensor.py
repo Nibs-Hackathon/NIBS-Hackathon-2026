@@ -1,10 +1,19 @@
+from enum import Enum
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-class SensorReading(BaseModel):
-    pressure: float
-    temperature: float
-    flow_rate: float
-    vibration: float
-    gas_level: float
-    timestamp: datetime
+class SensorType(str, Enum):
+    PRESSURE = "Pressure"
+    TEMPERATURE = "Temperature"
+    FLOW = "Flow"
+    VIBRATION = "Vibration"
+    GAS = "Gas"
+
+class Sensor(BaseModel):
+    id: str
+    asset_id: str
+    sensor_type: SensorType
+    value: float
+    unit: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+

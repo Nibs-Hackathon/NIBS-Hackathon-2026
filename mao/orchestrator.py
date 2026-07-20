@@ -126,6 +126,7 @@ class Orchestrator:
             final_summary=decision["summary"],
             recommendations=decision["recommendations"],
         )
+        self.state.add_report(report)
 
         self.logger.info(
             "Kernel",

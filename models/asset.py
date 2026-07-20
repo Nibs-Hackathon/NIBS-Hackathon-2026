@@ -1,21 +1,19 @@
-from typing import Optional
+from enum import Enum
+from pydantic import BaseModel, Field
+from uuid import uuid4
 
-from pydantic import BaseModel
-
-from models.enums import AssetStatus, AssetType
-from models.sensor import SensorReading
+class AssetType(str, Enum):
+    PUMP = "Pump"
+    PIPELINE = "Pipeline"
+    TANK = "Tank"
+    VALVE = "Valve"
+    COMPRESSOR = "Compressor"
 
 
 class Asset(BaseModel):
-    id: str
-    name: str
-
+    id: str = Field(default_factory=lambda:str(uuid4()))
+    name:str
     asset_type: AssetType
-
-    location: str
-
-    health_score: float
-
-    status: AssetStatus
-
-    latest_sensor: Optional[SensorReading] = None
+    location:str
+    health:float = 100.0
+    status:str = "Running"
