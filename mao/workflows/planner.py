@@ -1,35 +1,17 @@
-from mao.task import Task
+from mao.models.task import Task
 
 
 class Planner:
 
-    def create_plan(self, event):
+    def choose_workflow(self, event):
 
-        tasks = []
+        match event.name:
 
-        if event.name == "PressureSpike":
+            case "PressureSpike":
+                return "pressure_spike"
 
-            tasks.append(
-                Task(
-                    name="Safety Check",
-                    description="Evaluate risk",
+            case "GasLeak":
+                return "gas_leak"
 
-                    assigned_agent="SafetyAgent",
-
-                    input_data=event.payload,
-                )
-            )
-
-            tasks.append(
-                Task(
-                    name="Inspect Pump",
-
-                    description="Check pump integrity",
-
-                    assigned_agent="MaintenanceAgent",
-
-                    input_data=event.payload,
-                )
-            )
-
-        return tasks
+            case _:
+                return "default"
