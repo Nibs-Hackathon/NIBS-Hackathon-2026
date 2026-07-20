@@ -1,7 +1,14 @@
+from typing import Dict
+
+
 class AgentRegistry:
+    """
+    Stores every registered agent.
+    """
 
     def __init__(self):
-        self._agents = {}
+
+        self._agents: Dict[str, object] = {}
 
     def register(self, agent):
 
@@ -11,15 +18,14 @@ class AgentRegistry:
 
         return self._agents.get(name)
 
+    def remove(self, name):
+
+        self._agents.pop(name, None)
+
     def all(self):
 
         return list(self._agents.values())
-    
-    def dispatch(self, task):
-        agent = self.get(task.assigned_agent)
 
-        if not agent:
-            print("Agent missing")
-            return
-        return agent.execute(task)
-    
+    def exists(self, name):
+
+        return name in self._agents
