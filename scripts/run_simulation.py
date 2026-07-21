@@ -10,8 +10,19 @@ from simulator.facility import SimulatedFacility
 from simulator.simulator import Simulator
 
 # Temporary demo classes
-from tests.mock_agent import MockAgent
+
 from tests.mock_workflow import MockWorkflow
+from mao.workflows.temperature_workflow import TemperatureWorkflow
+from mao.workflows.pressure_workflow import PressureWorkflow
+from mao.workflows.gas_workflow import GasWorkflow
+from mao.workflows.maintenance_workflow import MaintenanceWorkflow
+from mao.workflows.flow_workflow import FlowWorkflow
+from agents.safety import SafetyAgent
+from agents.knowledge import KnowledgeAgent
+from agents.maintenance import MaintenanceAgent
+from agents.diagnostic import DiagnosticAgent
+from agents.planning import PlanningAgent
+
 
 
 # -----------------------------
@@ -51,9 +62,24 @@ facility = Facility(
 # -----------------------------
 
 kernel = MAOKernel()
+for asset in facility.assets:
+    kernel.asset_service.register(asset)
 
-kernel.register_agent(MockAgent())
+
 kernel.register_workflow(MockWorkflow())
+kernel.register_workflow(MockWorkflow())
+
+kernel.register_workflow(PressureWorkflow())
+kernel.register_workflow(TemperatureWorkflow())
+kernel.register_workflow(GasWorkflow())
+kernel.register_workflow(MaintenanceWorkflow())
+kernel.register_workflow(FlowWorkflow())
+kernel.register_agent(SafetyAgent())
+kernel.register_agent(KnowledgeAgent())
+kernel.register_agent(MaintenanceAgent())
+kernel.register_agent(DiagnosticAgent())
+kernel.register_agent(PlanningAgent())
+
 
 # -----------------------------
 # Simulator
@@ -76,7 +102,7 @@ while True:
 
     tick += 1
 
-    telemetry, report = simulator.tick(tick)
+    telemetry, reports = simulator.tick(tick)
 
     print(f"\nTick {tick}")
     print("-" * 50)
@@ -87,14 +113,19 @@ while True:
             f"{reading.value:>8.2f}"
         )
 
-    if report:
+    if reports:
         print("\n🚨 INCIDENT DETECTED")
-        print(report.final_summary)
 
+        for report in reports:
+            print(report.final_summary)
     
 
 
     time.sleep(1)
+    print("\nRegistered Agents")
+
+    for agent in kernel.registry.all():
+        print("-", agent.name)
 
     print("\nTelemetry History")
 
@@ -111,8 +142,34 @@ while True:
 
         history = kernel.state.get_history(asset.id)
 
+        # Calculate current health
         health = kernel.health.calculate_health(history)
 
+        # Update the asset in the AssetService
+        kernel.asset_service.update_health(asset.id, health)
+
+        # Fetch the Asset object
+        asset_obj = kernel.asset_service.get(asset.id)
+
         print(
-            f"{asset.name:<10} {health:.1f}%"
+            f"{asset_obj.name:<10}"
+            f"{asset_obj.health:>7.1f}%   "
+            f"{asset_obj.status}"
         )
+
+    print("\nMemory")
+
+    print(
+        "Events:",
+        len(kernel.memory.events)
+    )
+
+    print(
+        "Reports:",
+        len(kernel.memory.execution_reports)
+    )
+
+    print(
+        "Agent Results:",
+        len(kernel.memory.agent_results)
+    )

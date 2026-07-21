@@ -1,8 +1,8 @@
-from agents.base_agent import BaseAgent
+from agents.base import Agent
 from mao.models.result import AgentResult
 
 
-class MockAgent(BaseAgent):
+class MockAgent(Agent):
 
     def __init__(self):
         super().__init__("mock")

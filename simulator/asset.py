@@ -3,8 +3,11 @@ import random
 from models.asset import Asset
 from models.sensor import Sensor, SensorType
 
+
 class SimulatedAsset:
+
     def __init__(self, asset: Asset):
+
         self.asset = asset
 
         self.sensors = {
@@ -14,17 +17,22 @@ class SimulatedAsset:
             SensorType.VIBRATION: 15,
             SensorType.GAS: 5,
         }
-    
-    def tick(self, inject_fault: bool = False):
+
+    def tick(self, fault=None):
+
         telemetry = []
 
         for sensor, value in self.sensors.items():
 
-            # Force a pressure spike for demo purposes
-            if inject_fault and sensor == SensorType.PRESSURE:
-                value = 155
+            if (
+                fault is not None
+                and fault["sensor"] == sensor
+            ):
+
+                value = fault["value"]
 
             else:
+
                 value += random.uniform(-2, 2)
 
             self.sensors[sensor] = value
@@ -39,4 +47,4 @@ class SimulatedAsset:
                 )
             )
 
-        return telemetry        
+        return telemetry

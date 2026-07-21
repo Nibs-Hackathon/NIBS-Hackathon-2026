@@ -7,7 +7,7 @@ class Executor:
     def __init__(self, registry):
         self.registry = registry
 
-    def execute(self, task):
+    def execute(self, task, context):
 
         agent = self.registry.get(task.assigned_agent)
 
@@ -20,7 +20,7 @@ class Executor:
         agent.think(task)
 
         try:
-            result = agent.execute(task)
+            result = agent.execute(task, context)
 
         except Exception as e:
 
