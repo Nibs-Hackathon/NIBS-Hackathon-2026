@@ -5,23 +5,27 @@ class StateManager:
 
     def __init__(self):
 
+        # Assets
         self.assets = {}
 
-        # asset_id -> list[Sensor]
+        # Last 100 telemetry readings per asset
         self.telemetry = defaultdict(list)
 
-        self.incidents = {}
-
+        # Events
         self.events = []
 
+        # Reports
         self.execution_reports = []
 
+        # Agent Results
         self.agent_results = []
+
+        # Workflow Tasks
         self.tasks = []
 
-    # --------------------
+    # -------------------------
     # Assets
-    # --------------------
+    # -------------------------
 
     def add_asset(self, asset):
         self.assets[asset.id] = asset
@@ -29,9 +33,9 @@ class StateManager:
     def get_asset(self, asset_id):
         return self.assets.get(asset_id)
 
-    # --------------------
+    # -------------------------
     # Telemetry
-    # --------------------
+    # -------------------------
 
     def add_telemetry(self, readings):
 
@@ -45,48 +49,32 @@ class StateManager:
                 history.pop(0)
 
     def get_history(self, asset_id):
-
         return self.telemetry.get(asset_id, [])
 
-    # --------------------
-    # Incidents
-    # --------------------
-
-    def add_incident(self, incident):
-        self.incidents[incident.id] = incident
-
-    def active_incidents(self):
-
-        return [
-            incident
-            for incident in self.incidents.values()
-            if not incident.resolved
-        ]
-
-    # --------------------
+    # -------------------------
     # Events
-    # --------------------
+    # -------------------------
 
     def add_event(self, event):
         self.events.append(event)
 
-    # --------------------
+    # -------------------------
     # Reports
-    # --------------------
+    # -------------------------
 
     def add_report(self, report):
         self.execution_reports.append(report)
 
-    # --------------------
+    # -------------------------
     # Agent Results
-    # --------------------
+    # -------------------------
 
     def add_agent_result(self, result):
         self.agent_results.append(result)
 
-    # --------------------
+    # -------------------------
     # Tasks
-    # --------------------
+    # -------------------------
 
     def add_task(self, task):
         self.tasks.append(task)

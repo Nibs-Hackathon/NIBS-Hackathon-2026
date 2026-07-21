@@ -1,8 +1,10 @@
-
 from models.sensor import SensorType
 
 
 class HealthService:
+    """
+    Calculates asset health from recent telemetry.
+    """
 
     LIMITS = {
         SensorType.PRESSURE: 150,
@@ -14,7 +16,7 @@ class HealthService:
 
     def calculate_health(self, readings):
 
-        score = 100
+        health = 100.0
 
         for reading in readings:
 
@@ -23,10 +25,14 @@ class HealthService:
             if limit is None:
                 continue
 
-            if reading.value > limit:
+            if reading.sensor_type == SensorType.FLOW:
 
-                excess = reading.value - limit
+                if reading.value < limit:
+                    health -= 5
 
-                score -= excess * 2
+            else:
 
-        return max(score, 0)
+                if reading.value > limit:
+                    health -= 5
+
+        return max(0.0, health)
