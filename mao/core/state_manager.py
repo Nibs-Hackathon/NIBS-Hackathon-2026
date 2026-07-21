@@ -22,6 +22,9 @@ class StateManager:
 
         # Workflow Tasks
         self.tasks = []
+        
+        # Memory
+        self.memory = []
 
     # -------------------------
     # Assets
@@ -84,3 +87,10 @@ class StateManager:
 
     def clear_tasks(self):
         self.tasks.clear()
+
+    def add_memory(self, item):
+        self.memory.append(item)
+    
+    def get_memory(self):
+
+        return self.memory
