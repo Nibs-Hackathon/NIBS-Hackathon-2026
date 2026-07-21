@@ -17,7 +17,7 @@ class CloudLLM:
             model="gemini-2.5-flash",
 
             google_api_key=os.getenv(
-                "GEMINI_API_KEY"
+                "GEMINI_API_KEY_1"
             ),
 
             temperature=0.2
