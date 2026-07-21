@@ -19,10 +19,8 @@ pydantic
 # Logging
 loguru
 
-# Agent framework (if used)
 agno
 
-# LlamaIndex (if used by your RAG experiments)
 llama-index
 
 # Vector databases
