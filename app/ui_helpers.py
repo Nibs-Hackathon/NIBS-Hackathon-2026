@@ -104,6 +104,8 @@ def setup_page(title: str, icon: str = "◈") -> None:
         .st-key-nex-panel [data-testid="stChatInput"] { padding-bottom:0; }
         .st-key-nex-panel .stButton button { font-size:.76rem !important; height:auto !important; min-height:0 !important; padding:.3rem .55rem !important; background:transparent !important; border-color:rgba(143,161,186,.3) !important; box-shadow:none !important; }
         @keyframes nex-panel-in { from { opacity:0; transform:translateX(-22px) scale(.97); } to { opacity:1; transform:translateX(0) scale(1); } }
+        [data-testid="stDialog"] { align-items:flex-end !important; justify-content:flex-start !important; padding:0 0 24px 128px !important; z-index:999998 !important; }
+        [data-testid="stDialog"] [role="dialog"] { width:min(440px,calc(100vw - 152px)) !important; max-height:calc(100vh - 48px); border:1px solid rgba(109,211,255,.34); border-radius:19px; background:linear-gradient(145deg,rgba(18,35,59,.97),rgba(7,14,27,.99)); box-shadow:0 26px 72px rgba(0,0,0,.58),0 0 34px rgba(58,177,255,.18); backdrop-filter:blur(20px); animation:nex-panel-in .36s cubic-bezier(.2,.85,.22,1); }
         @media (max-width:700px) { .st-key-nex-launcher { left:8px; bottom:8px; transform:scale(.82); transform-origin:bottom left; } .st-key-nex-panel { left:10px; bottom:98px; width:calc(100vw - 20px); } }
         </style>
         """,
@@ -203,13 +205,20 @@ def render_nex_global() -> None:
         st.session_state.nex_panel_open = False
 
     mascot_url = nex_mascot_data_url()
-    # st.html inserts this native element directly into Streamlit's page DOM.
-    # It deliberately avoids styling a generated Streamlit container class.
+    # Portal the launcher to document.body so it is a sibling of Streamlit's
+    # app root, never a child of the sidebar or another layout block.
     st.html(
         f"""
+        <script>
+        (() => {{
+          const existing = document.getElementById('rigos-nex-overlay-root');
+          if (existing) existing.remove();
+          const root = document.createElement('div');
+          root.id = 'rigos-nex-overlay-root';
+          root.innerHTML = `
         <style>
         #rigos-nex-launcher {{
-            position: fixed; left: 18px; bottom: 18px; z-index: 2147483000;
+            position: fixed; left: 24px; bottom: 24px; z-index: 999999;
             width: 88px; height: 88px; display: block; overflow: visible;
             animation: rigos-nex-patrol 13s ease-in-out infinite;
             pointer-events: auto;
@@ -241,42 +250,48 @@ def render_nex_global() -> None:
             <img src="{mascot_url}" alt="NEX, the Command Nexus companion">
           </a>
         </div>
+          `;
+          document.body.appendChild(root);
+        }})();
+        </script>
         """,
-        unsafe_allow_javascript=False,
+        unsafe_allow_javascript=True,
     )
 
     if not st.session_state.nex_panel_open:
         return
+    render_nex_chat_dialog()
 
-    with st.container(key="nex-panel"):
-        heading, close = st.columns([5, 1])
-        with heading:
-            st.markdown("<div class='section-label'>COMMAND NEXUS</div><b>NEX Operations Copilot</b>", unsafe_allow_html=True)
-        with close:
-            if st.button("Close", key="nex_close", help="Close Command Nexus"):
-                st.session_state.nex_panel_open = False
-                st.rerun()
 
-        st.caption("Operational intelligence for the current shift")
-        for message in copilot_messages()[-8:]:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+@st.dialog("Command Nexus", width="large", dismissible=False)
+def render_nex_chat_dialog() -> None:
+    """Render the existing chat flow in Streamlit's root-level dialog portal."""
+    st.markdown("<div class='section-label'>NEX OPERATIONS COPILOT</div>", unsafe_allow_html=True)
+    st.caption("Operational intelligence for the current shift")
+    if st.button("Close Command Nexus", key="nex_close"):
+        st.session_state.nex_panel_open = False
+        st.query_params["nex"] = "close"
+        st.rerun()
 
-        suggestions = [
-            "Summarize today's incidents",
-            "Predict asset failures",
-            "Explain system status",
-            "Generate executive report",
-            "Recommend maintenance",
-        ]
-        selected = st.selectbox("Suggested prompt", ["Select a prompt"] + suggestions, key="nex_suggestion")
-        use_selected = st.button("Use selected prompt", key="nex_use_suggestion", disabled=selected == "Select a prompt")
-        prompt = st.chat_input("Ask Command Nexus...", key="nex_chat_input")
-        question = prompt or (selected if use_selected else "")
-        if question:
-            with st.spinner("NEX is preparing an operational response..."):
-                append_copilot_backend_exchange(question)
-            st.rerun()
+    for message in copilot_messages()[-8:]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    suggestions = [
+        "Summarize today's incidents",
+        "Predict asset failures",
+        "Explain system status",
+        "Generate executive report",
+        "Recommend maintenance",
+    ]
+    selected = st.selectbox("Suggested prompt", ["Select a prompt"] + suggestions, key="nex_suggestion")
+    use_selected = st.button("Use selected prompt", key="nex_use_suggestion", disabled=selected == "Select a prompt")
+    prompt = st.chat_input("Ask Command Nexus...", key="nex_chat_input")
+    question = prompt or (selected if use_selected else "")
+    if question:
+        with st.spinner("NEX is preparing an operational response..."):
+            append_copilot_backend_exchange(question)
+        st.rerun()
 
 
 def page_heading(eyebrow: str, title: str, subtitle: str) -> None:
