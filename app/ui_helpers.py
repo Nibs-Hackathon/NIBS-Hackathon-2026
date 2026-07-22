@@ -6,7 +6,10 @@ the Operations Center integration layer is being designed.
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta
+from functools import lru_cache
+from pathlib import Path
 from random import Random
 
 import streamlit as st
@@ -26,6 +29,14 @@ COLORS = {
     "red": "#FF718D",
     "muted": "#8FA1BA",
 }
+
+
+@lru_cache(maxsize=1)
+def nex_mascot_data_url() -> str:
+    """Return the packaged NEX concept asset as a browser-safe data URL."""
+    asset_path = Path(__file__).resolve().parent / "assets" / "nex_mascot.png"
+    encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def setup_page(title: str, icon: str = "◈") -> None:
@@ -185,6 +196,23 @@ def render_nex_global() -> None:
     if "nex_panel_open" not in st.session_state:
         st.session_state.nex_panel_open = False
 
+    mascot_url = nex_mascot_data_url()
+    st.markdown(
+        f"""
+        <style>
+        .st-key-nex-launcher button {{
+            background: url('{mascot_url}') center / contain no-repeat !important;
+            box-shadow: 0 14px 30px rgba(0,0,0,.46), 0 0 28px rgba(30,196,255,.58) !important;
+        }}
+        .st-key-nex-launcher button::before {{
+            left: 29px; top: 31px; width: 24px; height: 24px;
+            background: transparent; border: 1px solid rgba(123,244,255,.65);
+            box-shadow: 0 0 10px rgba(85,214,255,.8), 0 0 24px rgba(85,214,255,.55);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     _render_nex_presence_script()
     with st.container(key="nex-launcher"):
         if st.button("Open Command Nexus", key="nex_activate", help="Command Nexus — Click to open AI Assistant"):
