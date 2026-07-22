@@ -57,9 +57,9 @@ class SimulatedFacility:
         for index, asset in enumerate(self.assets):
 
             if fault and index == 0:
-                asset_fault=  fault
+                fault=  fault
             else:
-                asset_fault = self.injector.get_fault(
+                fault = self.injector.get_fault(
                     tick_number,
                     index
                 )
