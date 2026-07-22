@@ -16,7 +16,15 @@ class AgentResult(BaseModel):
 
     summary: str
 
+    decision: str = "monitor"
+
+    evidence: list[str] = Field(default_factory=list)
+
     recommendations: list[str] = Field(default_factory=list)
+
+    actions_required: list[str] = Field(default_factory=list)
+
+    requires_human_approval: bool = False
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 

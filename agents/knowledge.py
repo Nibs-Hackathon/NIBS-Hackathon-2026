@@ -20,9 +20,9 @@ class KnowledgeAgent(Agent):
             return
 
         from rag.embedder import Embedder
-        from rag.llm import CloudLLM
         from rag.retriever import Retriever
         from rag.vector_store import VectorStore
+        from services.llm import LLMManager
 
         embedder = Embedder()
 
@@ -32,7 +32,7 @@ class KnowledgeAgent(Agent):
 
         self.retriever = Retriever(store.db)
 
-        self.llm = CloudLLM()
+        self.llm = LLMManager()
 
 
 

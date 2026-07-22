@@ -17,6 +17,7 @@ from mao.workflows.workflow_engine import WorkflowEngine
 
 from services.asset import AssetService
 from services.health import HealthService
+from services.persistence import PersistenceService
 
 
 
@@ -43,6 +44,8 @@ class MAOKernel:
         self.asset_service = AssetService()
 
         self.health = HealthService()
+
+        self.persistence = PersistenceService()
 
 
 
@@ -135,6 +138,8 @@ class MAOKernel:
         for result in report.agent_results:
 
             self.state.add_agent_result(result)
+
+        self.persistence.record_execution(event, report)
 
 
 

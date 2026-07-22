@@ -49,5 +49,14 @@ class Executor:
 
         agent.reflect(result)
 
+        result.metadata.update(
+            {
+                "task_name": task.name,
+                "task_description": task.description,
+                "event_name": context.event.name,
+                "asset_id": context.event.source,
+            }
+        )
+
 
         return result

@@ -13,7 +13,7 @@ class AgentRepository:
         return execution
 
     def create_many(self, executions):
-        self.session.add(executions)
+        self.session.add_all(executions)
         self.session.commit()
         return executions
 

@@ -1,31 +1,6 @@
-import os
+"""Compatibility export for older RAG imports."""
 
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-
-load_dotenv()
+from services.llm import LLMManager
 
 
-class CloudLLM:
-
-
-    def __init__(self):
-
-        self.model = ChatGoogleGenerativeAI(
-
-            model="gemini-2.5-flash",
-
-            google_api_key=os.getenv(
-                "GEMINI_API_KEY_1"
-            ),
-
-            temperature=0.2
-        )
-
-
-    def generate(self, prompt):
-
-        response = self.model.invoke(prompt)
-
-        return response.content
+CloudLLM = LLMManager

@@ -1,4 +1,5 @@
 from simulator.event_generator import EventGenerator
+from services.persistence import PersistenceService
 
 
 class Simulator:
@@ -12,12 +13,16 @@ class Simulator:
 
         self.generator = EventGenerator()
 
+        self.persistence = PersistenceService()
+
 
     def tick(self, tick_number,fault=None):
 
         telemetry = self.facility.tick(tick_number, fault)
 
         self.state.add_telemetry(telemetry)
+
+        self.persistence.record_telemetry(telemetry)
 
 
         # Update asset health
