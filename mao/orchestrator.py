@@ -102,7 +102,15 @@ class Orchestrator:
                 f"Executing '{task.name}'",
             )
 
+<<<<<<< HEAD
             result = self.executor.execute(task, context)
+=======
+<<<<<<< HEAD
+            result = self.executor.execute(task)
+=======
+            result = self.executor.execute(task, context)
+>>>>>>> origin/dev-ashutosh-zinia
+>>>>>>> origin/dev-abeer
 
             context.results.append(result)
 
@@ -132,8 +140,17 @@ class Orchestrator:
             "Kernel",
             "Execution completed.",
         )
+<<<<<<< HEAD
         self.memory.remember_report(report)
 
+=======
+<<<<<<< HEAD
+
+        return report
+=======
+        self.memory.remember_report(report)
+
+>>>>>>> origin/dev-abeer
         for result in report.agent_results:
             self.memory.remember_result(result)
 
@@ -149,3 +166,7 @@ class Orchestrator:
         return report
     
         
+<<<<<<< HEAD
+=======
+>>>>>>> origin/dev-ashutosh-zinia
+>>>>>>> origin/dev-abeer
