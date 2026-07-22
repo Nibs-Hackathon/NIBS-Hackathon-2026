@@ -294,6 +294,51 @@ def render_nex_chat_dialog() -> None:
         st.rerun()
 
 
+def render_nex_global() -> None:
+    """Render the reliable fixed NEX fallback without custom portal JavaScript.
+
+    This intentionally replaces the earlier body-portal attempt while the
+    overlay is validated in the live application. ``st.html`` places a real
+    image element in the Streamlit DOM and CSS fixes it to the viewport.
+    """
+    if "nex_panel_open" not in st.session_state:
+        st.session_state.nex_panel_open = False
+
+    action = st.query_params.get("nex")
+    if action == "open":
+        st.session_state.nex_panel_open = True
+    elif action == "close":
+        st.session_state.nex_panel_open = False
+
+    st.html(
+        f"""
+        <style>
+        #rigos-nex-fallback {{
+            position: fixed !important; left: 24px !important; bottom: 24px !important;
+            z-index: 999999 !important; display: block !important; visibility: visible !important;
+            opacity: 1 !important; overflow: visible !important; width: 88px; height: 88px;
+            pointer-events: auto; animation: rigos-nex-fallback-float 4.2s ease-in-out infinite;
+        }}
+        #rigos-nex-fallback a {{ display: block; width: 100%; height: 100%; }}
+        #rigos-nex-fallback img {{ width: 84px; height: 84px; object-fit: contain; display: block; filter: drop-shadow(0 10px 9px rgba(0,0,0,.46)) drop-shadow(0 0 16px rgba(49,203,255,.8)); transition: transform .2s ease, filter .2s ease; }}
+        #rigos-nex-fallback:hover img {{ transform: scale(1.08) rotate(-2deg); filter: drop-shadow(0 12px 10px rgba(0,0,0,.48)) drop-shadow(0 0 26px rgba(49,203,255,1)); }}
+        #rigos-nex-debug {{ position: fixed; left: 24px; bottom: 4px; z-index: 999999; color: #86e9ff; font: 600 9px/1.3 monospace; text-shadow: 0 1px 4px #000; pointer-events: none; }}
+        @keyframes rigos-nex-fallback-float {{ 0%,100% {{ transform: translateY(0) rotate(-1deg); }} 50% {{ transform: translateY(-6px) rotate(2deg); }} }}
+        </style>
+        <div id="rigos-nex-fallback" role="complementary" aria-label="Command Nexus AI Assistant">
+          <a href="?nex=open" aria-label="Open Command Nexus">
+            <img src="{nex_mascot_data_url()}" alt="NEX, the Command Nexus companion">
+          </a>
+        </div>
+        <div id="rigos-nex-debug">NEX render function executed<br>Portal created: fallback active<br>Mascot appended</div>
+        """,
+        unsafe_allow_javascript=False,
+    )
+
+    if st.session_state.nex_panel_open:
+        render_nex_chat_dialog()
+
+
 def page_heading(eyebrow: str, title: str, subtitle: str) -> None:
     st.markdown(f"<div class='section-label'>{eyebrow}</div><div class='ops-title'>{title}</div><div class='ops-subtitle'>{subtitle}</div>", unsafe_allow_html=True)
     st.write("")
