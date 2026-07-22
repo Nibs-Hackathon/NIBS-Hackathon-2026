@@ -66,7 +66,7 @@ class SimulatedFacility:
 
             telemetry.extend(
                 asset.tick(
-                    asset_fault=fault
+                    fault=fault
                 )
             )
 
