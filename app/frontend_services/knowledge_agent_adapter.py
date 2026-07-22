@@ -22,10 +22,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mao.models.task import Task
-
 if TYPE_CHECKING:
     from agents.knowledge import KnowledgeAgent
+    from mao.models.task import Task
 
 
 LOGGER = logging.getLogger(__name__)
@@ -139,13 +138,18 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
         return conversation
 
     _emit(on_progress, "Creating existing MAO Task for the Knowledge Agent.")
-    task = Task(
-        name="Operator knowledge query",
-        description=normalized_question,
-        assigned_agent="knowledge",
-    )
-
     try:
+        # Import the backend model only for an operational query. The backend's
+        # package initialization also validates its database configuration; it
+        # must not prevent unrelated Streamlit pages or conversational intents
+        # from rendering.
+        from mao.models.task import Task
+
+        task = Task(
+            name="Operator knowledge query",
+            description=normalized_question,
+            assigned_agent="knowledge",
+        )
         cache_state = "Reusing cached" if get_knowledge_agent.cache_info().currsize else "Initializing"
         _emit(on_progress, f"{cache_state} existing KnowledgeAgent instance.")
         agent = get_knowledge_agent()
