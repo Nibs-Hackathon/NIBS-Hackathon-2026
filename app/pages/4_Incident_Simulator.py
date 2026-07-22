@@ -1,6 +1,7 @@
 import streamlit as st
 from ui_helpers import page_heading, render_sidebar, setup_page, status_chip
-
+from services.incident_service import IncidentService
+from services.runtime import simulator
 setup_page("Incident Simulator")
 render_sidebar("Incident Simulator")
 page_heading("SCENARIO LAB", "Incident Simulator", "Safely exercise AI detection, triage, and response workflows using synthetic events.")
@@ -18,9 +19,54 @@ with right:
     st.markdown(f"<div class='panel'><b>1. Detect</b><br><span class='muted'>Synthetic {incident_type.lower()} signal received from {asset}.</span><hr><b>2. Triage</b><br><span class='muted'>Classify severity, assess safety envelope, and create an incident record.</span><hr><b>3. Orchestrate</b><br><span class='muted'>Route specialist agents through the matching response workflow.</span><hr><b>4. Recommend</b><br><span class='muted'>Compile evidence, SOP guidance, and recovery actions for review.</span></div>", unsafe_allow_html=True)
 
 if launched:
-    st.success(f"Simulation launched for {asset}. " + ("AI response workflow queued." if automated else "Manual-review mode selected."))
-    st.markdown(status_chip("Pending"), unsafe_allow_html=True)
-    # TODO: Call the simulator/event endpoint and display returned workflow/report data.
+
+    st.success(
+        f"Simulation launched for {asset}"
+    )
+    service = IncidentService(simulator)
+
+
+    simulator_result = service.trigger_incident(
+        incident_type
+    )
+
+
+    st.markdown(
+        status_chip("Processing"),
+        unsafe_allow_html=True
+    )
+
+
+    st.subheader("🚨 AI Response")
+
+
+    reports = simulator_result["reports"]
+
+
+    if reports:
+
+        for report in reports:
+
+            st.success(
+                report.final_summary
+            )
+
+            st.write(
+                "Recommendations:"
+            )
+
+            for recommendation in report.recommendations:
+
+                st.write(
+                    "-",
+                    recommendation
+                )
+
+    else:
+
+        st.warning(
+            "No incident generated."
+        )
 
 st.write("")
 st.markdown("<div class='section-label'>RECENT SIMULATED SCENARIOS</div>", unsafe_allow_html=True)

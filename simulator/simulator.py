@@ -13,9 +13,9 @@ class Simulator:
         self.generator = EventGenerator()
 
 
-    def tick(self, tick_number):
+    def tick(self, tick_number,fault=None):
 
-        telemetry = self.facility.tick(tick_number)
+        telemetry = self.facility.tick(tick_number, fault)
 
         self.state.add_telemetry(telemetry)
 
