@@ -1,20 +1,3 @@
-<<<<<<< HEAD
-streamlit
-fastapi
-uvicorn
-sqlalchemy
-psycopg2-binary
-pgvector
-python-dotenv
-pydantic
-loguru
-agno
-llama-index
-chromadb
-sentence-transformers
-google-generativeai
-openai
-=======
 # UI
 streamlit
 
@@ -66,5 +49,19 @@ pypdf
 faiss-cpu
 
 # Utilities
->>>>>>> origin/dev-ashutosh-zinia
 uuid64
+
+streamlit
+plotly
+pandas
+python-dotenv
+requests
+sqlalchemy
+psycopg2-binary
+pgvector
+langchain
+langchain-community
+langchain-google-genai
+sentence-transformers
+faiss-cpu
+pypdf
