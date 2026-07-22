@@ -5,10 +5,39 @@ from models.facility import Facility
 
 from simulator.facility import SimulatedFacility
 from simulator.simulator import Simulator
+from mao.workflows.pressure_workflow import PressureWorkflow
+from mao.workflows.temperature_workflow import TemperatureWorkflow
+from mao.workflows.gas_workflow import GasWorkflow
+from mao.workflows.flow_workflow import FlowWorkflow
+from mao.workflows.maintenance_workflow import MaintenanceWorkflow
 
+from agents.safety import SafetyAgent
+from agents.knowledge import KnowledgeAgent
+from agents.maintenance import MaintenanceAgent
+from agents.diagnostic import DiagnosticAgent
+from agents.planning import PlanningAgent
 
 
 kernel = MAOKernel()
+
+# Configure the shared MAO instance used by Streamlit before it receives events.
+for workflow in (
+    PressureWorkflow(),
+    TemperatureWorkflow(),
+    GasWorkflow(),
+    FlowWorkflow(),
+    MaintenanceWorkflow(),
+):
+    kernel.register_workflow(workflow)
+
+for agent in (
+    SafetyAgent(),
+    KnowledgeAgent(),
+    MaintenanceAgent(),
+    DiagnosticAgent(),
+    PlanningAgent(),
+):
+    kernel.register_agent(agent)
 
 
 assets = [

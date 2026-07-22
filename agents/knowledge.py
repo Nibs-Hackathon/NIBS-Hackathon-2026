@@ -2,19 +2,27 @@ from agents.base import Agent
 
 from mao.models.result import AgentResult
 
-from rag.embedder import Embedder
-from rag.vector_store import VectorStore
-from rag.retriever import Retriever
-from rag.llm import CloudLLM
-
-
-
 class KnowledgeAgent(Agent):
 
     name = "knowledge"
 
 
     def __init__(self):
+
+        self.retriever = None
+
+        self.llm = None
+
+
+    def _initialize_services(self):
+        """Load the RAG stack only when a knowledge task is executed."""
+        if self.retriever is not None and self.llm is not None:
+            return
+
+        from rag.embedder import Embedder
+        from rag.llm import CloudLLM
+        from rag.retriever import Retriever
+        from rag.vector_store import VectorStore
 
         embedder = Embedder()
 
@@ -36,7 +44,9 @@ class KnowledgeAgent(Agent):
 
 
 
-    def execute(self, task):
+    def execute(self, task, context=None):
+
+        self._initialize_services()
 
         query = task.description
 

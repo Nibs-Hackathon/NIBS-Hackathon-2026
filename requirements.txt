@@ -1,56 +1,40 @@
 # UI
 streamlit
-
 # API
 fastapi
 uvicorn
-
 # Database
 sqlalchemy
 psycopg2-binary
 pgvector
-
 # Environment / config
 python-dotenv
-
 # Validation
 pydantic
-
 # Logging
 loguru
-
 agno
-
 llama-index
-
 # Vector databases
 chromadb
-
 # Embeddings
 sentence-transformers
-
 # Google Gemini
 google-generativeai
 langchain-google-genai
-
 # OpenAI fallback
 openai
 langchain-openai
-
 # LangChain core
 langchain
 langchain-community
 langchain-huggingface
-
 # PDF loading
 pypdf
-
 # FAISS vector store
 faiss-cpu
-
 # Utilities
 uuid64
-
 streamlit
 plotly
 pandas
@@ -65,3 +49,21 @@ langchain-google-genai
 sentence-transformers
 faiss-cpu
 pypdf
+# Streamlit UI and domain models
+streamlit==1.59.2
+pydantic==2.13.4
+python-dotenv==1.2.2
+# PostgreSQL persistence
+SQLAlchemy==2.0.51
+psycopg2-binary==2.9.12
+pgvector==0.5.0
+# Retrieval-augmented knowledge agent
+langchain-community==0.4.2
+langchain-google-genai==4.2.7
+langchain-huggingface==1.2.2
+langchain-text-splitters==1.1.2
+sentence-transformers==5.6.0
+transformers==5.14.1
+torch==2.13.0
+faiss-cpu==1.14.3
+pypdf==6.14.2
