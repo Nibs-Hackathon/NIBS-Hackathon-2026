@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 streamlit
 fastapi
 uvicorn
@@ -13,4 +14,57 @@ chromadb
 sentence-transformers
 google-generativeai
 openai
+=======
+# UI
+streamlit
+
+# API
+fastapi
+uvicorn
+
+# Database
+sqlalchemy
+psycopg2-binary
+pgvector
+
+# Environment / config
+python-dotenv
+
+# Validation
+pydantic
+
+# Logging
+loguru
+
+agno
+
+llama-index
+
+# Vector databases
+chromadb
+
+# Embeddings
+sentence-transformers
+
+# Google Gemini
+google-generativeai
+langchain-google-genai
+
+# OpenAI fallback
+openai
+langchain-openai
+
+# LangChain core
+langchain
+langchain-community
+langchain-huggingface
+
+# PDF loading
+pypdf
+
+# FAISS vector store
+faiss-cpu
+
+# Utilities
+>>>>>>> origin/dev-ashutosh-zinia
 uuid64

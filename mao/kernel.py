@@ -14,6 +14,7 @@ from mao.orchestrator import Orchestrator
 from mao.workflows.planner import Planner
 from mao.workflows.supervisor import Supervisor
 from mao.workflows.workflow_engine import WorkflowEngine
+<<<<<<< HEAD
 from services.health import HealthService
 from services.asset import AssetService
 
@@ -60,6 +61,41 @@ class MAOKernel:
 
         # ---------------- Orchestrator ----------------
 
+=======
+
+from services.asset import AssetService
+from services.health import HealthService
+
+
+class MAOKernel:
+
+    def __init__(self):
+
+        # Core
+        self.registry = AgentRegistry()
+        self.scheduler = Scheduler()
+        self.state = StateManager()
+        self.logger = KernelLogger()
+        self.memory = MemoryManager()
+
+        # Services
+        self.asset_service = AssetService()
+        self.health = HealthService()
+
+        # Events
+        self.event_bus = EventBus()
+        self.event_store = EventStore()
+
+        # Workflow
+        self.planner = Planner()
+        self.workflow_engine = WorkflowEngine()
+        self.supervisor = Supervisor()
+
+        # Executor
+        self.executor = Executor(self.registry)
+
+        # Orchestrator
+>>>>>>> origin/dev-ashutosh-zinia
         self.orchestrator = Orchestrator(
             planner=self.planner,
             workflow_engine=self.workflow_engine,
@@ -72,6 +108,7 @@ class MAOKernel:
             event_store=self.event_store,
         )
 
+<<<<<<< HEAD
     # -------------------------------------------------
 
     def register_agent(self, agent):
@@ -80,10 +117,17 @@ class MAOKernel:
 
     def register_workflow(self, workflow):
 
+=======
+    def register_agent(self, agent):
+        self.registry.register(agent)
+
+    def register_workflow(self, workflow):
+>>>>>>> origin/dev-ashutosh-zinia
         self.workflow_engine.register(workflow)
 
     def handle_event(self, event):
 
+<<<<<<< HEAD
         # Store the incoming event
         self.state.add_event(event)
 
@@ -94,6 +138,12 @@ class MAOKernel:
         self.state.add_report(report)
 
         # Store every agent result
+=======
+        report = self.orchestrator.run(event)
+
+        self.state.add_report(report)
+
+>>>>>>> origin/dev-ashutosh-zinia
         for result in report.agent_results:
             self.state.add_agent_result(result)
 

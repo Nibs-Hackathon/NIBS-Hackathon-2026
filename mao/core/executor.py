@@ -7,7 +7,11 @@ class Executor:
     def __init__(self, registry):
         self.registry = registry
 
+<<<<<<< HEAD
     def execute(self, task):
+=======
+    def execute(self, task, context):
+>>>>>>> origin/dev-ashutosh-zinia
 
         agent = self.registry.get(task.assigned_agent)
 
@@ -20,7 +24,11 @@ class Executor:
         agent.think(task)
 
         try:
+<<<<<<< HEAD
             result = agent.execute(task)
+=======
+            result = agent.execute(task, context)
+>>>>>>> origin/dev-ashutosh-zinia
 
         except Exception as e:
 

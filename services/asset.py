@@ -15,6 +15,13 @@ class AssetService:
 
         return self.assets.get(asset_id)
 
+<<<<<<< HEAD
+=======
+    def all_assets(self):
+
+        return list(self.assets.values())
+
+>>>>>>> origin/dev-ashutosh-zinia
     def update_health(self, asset_id, health):
 
         asset = self.get(asset_id)
@@ -29,6 +36,10 @@ class AssetService:
         if asset:
             asset.status = status
 
+<<<<<<< HEAD
     def all(self):
 
         return list(self.assets.values())
+=======
+    
+>>>>>>> origin/dev-ashutosh-zinia
