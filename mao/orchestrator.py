@@ -33,11 +33,8 @@ class Orchestrator:
         self.logger = logger
         self.event_store = event_store
 
-    def run(self, event):
 
-        # -------------------------
-        # Create execution context
-        # -------------------------
+    def run(self, event):
 
         context = ExecutionContext(
             event=event,
@@ -46,83 +43,89 @@ class Orchestrator:
             logger=self.logger,
         )
 
-        self.logger.info("Kernel", f"Received event '{event.name}'")
 
-        # -------------------------
+        self.logger.info(
+            "Kernel",
+            f"Received event '{event.name}'"
+        )
+
+
         # Persist event
-        # -------------------------
 
         self.state.add_event(event)
+
         self.event_store.save(event)
 
-        # -------------------------
+
+
         # Select workflow
-        # -------------------------
 
         workflow_name = self.planner.choose_workflow(event)
 
         context.workflow = workflow_name
+
 
         self.logger.info(
             "Planner",
             f"Selected workflow '{workflow_name}'",
         )
 
-        # -------------------------
+
+
         # Build tasks
-        # -------------------------
 
         tasks = self.workflow_engine.create_tasks(
             workflow_name,
             event,
         )
 
+
         self.logger.info(
             "WorkflowEngine",
             f"Generated {len(tasks)} task(s)",
         )
 
-        # -------------------------
+
+
         # Schedule tasks
-        # -------------------------
 
         for task in tasks:
+
             self.scheduler.submit(task)
 
-        # -------------------------
+
+
         # Execute tasks
-        # -------------------------
 
         while not self.scheduler.empty():
 
             task = self.scheduler.next()
+
 
             self.logger.info(
                 "Executor",
                 f"Executing '{task.name}'",
             )
 
-<<<<<<< HEAD
-            result = self.executor.execute(task, context)
-=======
-<<<<<<< HEAD
-            result = self.executor.execute(task)
-=======
-            result = self.executor.execute(task, context)
->>>>>>> origin/dev-ashutosh-zinia
->>>>>>> origin/dev-abeer
+
+            result = self.executor.execute(
+                task,
+                context
+            )
+
 
             context.results.append(result)
 
             self.state.add_task(task)
 
-        # -------------------------
+
+
         # Aggregate results
-        # -------------------------
 
         decision = self.supervisor.summarize(
             context.results
         )
+
 
         report = ExecutionReport(
             execution_id=context.execution_id,
@@ -134,39 +137,31 @@ class Orchestrator:
             final_summary=decision["summary"],
             recommendations=decision["recommendations"],
         )
+
+
+
         self.state.add_report(report)
+
+
 
         self.logger.info(
             "Kernel",
             "Execution completed.",
         )
-<<<<<<< HEAD
-        self.memory.remember_report(report)
 
-=======
-<<<<<<< HEAD
 
-        return report
-=======
-        self.memory.remember_report(report)
 
->>>>>>> origin/dev-abeer
-        for result in report.agent_results:
-            self.memory.remember_result(result)
+        # Memory persistence
 
         self.memory.remember_event(event)
-        self.memory.remember_event(event)
 
         self.memory.remember_report(report)
+
 
         for result in report.agent_results:
 
             self.memory.remember_result(result)
 
+
+
         return report
-    
-        
-<<<<<<< HEAD
-=======
->>>>>>> origin/dev-ashutosh-zinia
->>>>>>> origin/dev-abeer
