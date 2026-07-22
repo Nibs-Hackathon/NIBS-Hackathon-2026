@@ -1,11 +1,9 @@
-
 from models.sensor import SensorType
 
 
 class IncidentService:
 
     def __init__(self, simulator):
-
         self.simulator = simulator
 
 
@@ -13,8 +11,10 @@ class IncidentService:
 
         fault = None
 
+        incident_type = incident_type.lower()
 
-        if incident_type == "Pressure Spike":
+
+        if incident_type == "pressure spike":
 
             fault = {
                 "sensor": SensorType.PRESSURE,
@@ -22,7 +22,7 @@ class IncidentService:
             }
 
 
-        elif incident_type == "Gas Leak":
+        elif incident_type == "gas leak":
 
             fault = {
                 "sensor": SensorType.GAS,
@@ -30,13 +30,28 @@ class IncidentService:
             }
 
 
-        elif incident_type == "High Vibration":
+        elif incident_type == "high vibration":
 
             fault = {
                 "sensor": SensorType.VIBRATION,
                 "value": 40
             }
 
+
+        elif incident_type == "high temperature":
+
+            fault = {
+                "sensor": SensorType.TEMPERATURE,
+                "value": 95
+            }
+
+
+        elif incident_type == "flow restriction":
+
+            fault = {
+                "sensor": SensorType.FLOW,
+                "value": 15
+            }
 
 
         telemetry, reports = self.simulator.tick(
