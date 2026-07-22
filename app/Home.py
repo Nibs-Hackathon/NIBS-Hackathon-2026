@@ -1,6 +1,13 @@
-import streamlit as st
+import importlib
 
-from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
+import streamlit as st
+import ui_helpers
+
+# Refresh shared UI helpers during Streamlit development reruns so an older
+# module cached by the script runner cannot mask newly added components.
+importlib.reload(ui_helpers)
+
+from ui_helpers import executive_metrics, metric_card, page_heading, render_sidebar, setup_page, status_chip
 
 
 setup_page("Operations Center")
@@ -14,10 +21,11 @@ with right:
     st.markdown(f"<div class='panel'><div class='section-label'>PLATFORM STATUS</div>{status_chip('Running')}<p class='muted' style='margin-top:.8rem'>Demo workspace • Simulated telemetry</p></div>", unsafe_allow_html=True)
 
 st.write("")
-cols = st.columns(4)
-for col, args in zip(cols, [("Assets online", "42 / 45", "+2 since shift", "green"), ("Open incidents", "03", "1 critical", "red"), ("Agent confidence", "94.6%", "+1.8% today", "cyan"), ("Safety index", "91.2", "Within target", "green")]):
-    with col:
-        metric_card(*args)
+st.markdown("<div class='section-label'>EXECUTIVE MISSION CONTROL</div>", unsafe_allow_html=True)
+for metric_row in [executive_metrics()[:4], executive_metrics()[4:]]:
+    for col, args in zip(st.columns(4), metric_row):
+        with col:
+            metric_card(*args)
 
 st.write("")
-st.markdown("<div class='panel'><div class='section-label'>QUICK START</div><p class='muted'>Navigate with the sidebar to inspect assets, simulate an incident, search the SOP knowledge base, or review AI agent activity.</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='panel'><div class='section-label'>QUICK START</div><p class='muted'>Navigate with the sidebar to inspect assets, simulate an incident, ask the global copilot, inspect predictive health, or review AI activity.</p></div>", unsafe_allow_html=True)

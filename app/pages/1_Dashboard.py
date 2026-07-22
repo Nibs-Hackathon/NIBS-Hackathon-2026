@@ -1,5 +1,5 @@
 import streamlit as st
-from ui_helpers import activity_items, metric_card, mock_assets, mock_incidents, page_heading, render_sidebar, setup_page, trend_series
+from ui_helpers import activity_items, metric_card, mock_assets, mock_incidents, page_heading, render_health_heatmap, render_sidebar, setup_page, trend_series
 
 setup_page("Dashboard")
 render_sidebar("Executive Dashboard")
@@ -8,6 +8,9 @@ page_heading("OVERVIEW", "Operations Dashboard", "Real-time operational intellig
 for col, args in zip(st.columns(4), [("Fleet health", "88.4%", "+2.1% vs. prior shift", "green"), ("Assets online", "42 / 45", "3 under attention", "cyan"), ("Active incidents", "03", "1 requires escalation", "red"), ("AI decisions", "128", "94.6% confidence", "violet")]):
     with col: metric_card(*args)
 
+st.write("")
+st.markdown("<div class='section-label'>FACILITY HEALTH HEATMAP</div>", unsafe_allow_html=True)
+render_health_heatmap()
 st.write("")
 left, right = st.columns([1.65, 1])
 with left:
