@@ -1,5 +1,6 @@
-from agents.base import Agent
+from pathlib import Path
 
+from agents.base import Agent
 from mao.models.result import AgentResult
 
 class KnowledgeAgent(Agent):
@@ -54,20 +55,31 @@ class KnowledgeAgent(Agent):
         documents = self.retriever.retrieve(query)
 
 
-        context = "\n\n".join(
+        source_labels = []
+        context_parts = []
+        for index, document in enumerate(documents, start=1):
+            metadata = document.metadata or {}
+            source = Path(str(metadata.get("source", "Knowledge base document"))).name
+            page = metadata.get("page")
+            label = f"[{index}] {source}" + (f", page {page + 1}" if isinstance(page, int) else "")
+            source_labels.append(label)
+            context_parts.append(f"{label}\n{document.page_content}")
 
-            doc.page_content
-
-            for doc in documents
-
-        )
+        context = "\n\n".join(context_parts)
 
 
         prompt = f"""
 
-You are an expert oil and gas operations assistant.
+You are Command Nexus, an experienced refinery operations engineer.
 
-Answer the question using ONLY the SOP information below.
+Answer the operator naturally and professionally using ONLY the retrieved
+knowledge-base material below. Do not copy document text or present raw
+extraction bullets. Do not invent operating limits, causes, actions, or
+citations that are not supported by the sources.
+
+For any safety-critical point, be precise and state when the retrieved
+material does not provide enough information. Provide a concise operational
+rationale based on the source evidence, but do not reveal hidden chain-of-thought.
 
 
 Question:
@@ -75,24 +87,27 @@ Question:
 {query}
 
 
-SOP Information:
+Retrieved refinery knowledge:
 
 {context}
 
 
-Give response:
+Respond with Markdown using this structure where applicable:
 
-Immediate Actions:
--
+## Operational assessment
+A concise, operator-friendly answer.
 
-Possible Causes:
--
+## Recommended actions
+- Prioritized, grounded actions.
 
-Maintenance:
--
+## Safety considerations
+- Safety-critical constraints or escalation needs.
 
-Safety Notes:
--
+## Operational rationale
+A brief explanation tied to the retrieved evidence.
+
+## Sources
+- Cite every source-backed claim using the supplied labels, for example [1].
 
 """
 
@@ -121,7 +136,8 @@ Safety Notes:
 
             metadata={
 
-                "documents_used": len(documents)
+                "documents_used": len(documents),
+                "sources": source_labels,
 
             }
 

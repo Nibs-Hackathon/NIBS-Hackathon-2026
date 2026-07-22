@@ -10,6 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 import logging
 from pathlib import Path
+import re
 import sys
 from typing import TYPE_CHECKING, Callable
 
@@ -29,6 +30,67 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 ProgressCallback = Callable[[str], None]
+
+OPERATIONAL_KEYWORDS = (
+    "asset",
+    "compressor",
+    "pump",
+    "pipeline",
+    "tank",
+    "valve",
+    "maintenance",
+    "inspection",
+    "incident",
+    "alarm",
+    "safety",
+    "hazard",
+    "pressure",
+    "temperature",
+    "vibration",
+    "flow",
+    "gas",
+    "refinery",
+    "sop",
+    "procedure",
+)
+
+
+def conversational_response(question: str) -> str | None:
+    """Handle lightweight conversational intents without initializing RAG.
+
+    Operational language always takes precedence, so requests such as "help
+    with pump maintenance" continue to use the existing KnowledgeAgent.
+    """
+    normalized = re.sub(r"\s+", " ", question.strip().casefold())
+    if not normalized or any(keyword in normalized for keyword in OPERATIONAL_KEYWORDS):
+        return None
+
+    greeting_patterns = ("hi", "hello", "hey", "good morning", "good evening")
+    if normalized in greeting_patterns or any(normalized.startswith(f"{greeting} ") for greeting in greeting_patterns):
+        return (
+            "Hello — I’m **Command Nexus**, RigOS’s refinery operations copilot. "
+            "I can help interpret operational procedures, maintenance guidance, "
+            "asset conditions, incident response, and safety questions from the "
+            "configured knowledge base."
+        )
+
+    if "who are you" in normalized:
+        return (
+            "I’m **Command Nexus**, the RigOS knowledge copilot. For operational "
+            "questions, I retrieve the relevant refinery knowledge before answering."
+        )
+
+    if "what can you do" in normalized or normalized == "help" or normalized.startswith("help "):
+        return (
+            "I can help with refinery operations, equipment maintenance, safety "
+            "procedures, incidents, and asset questions. Ask an operational question "
+            "and I’ll consult the configured knowledge base."
+        )
+
+    if normalized in ("thanks", "thank you", "thx") or normalized.startswith("thanks "):
+        return "You’re welcome. Ask anytime if you need help with an operational or safety question."
+
+    return None
 
 
 def _emit(callback: ProgressCallback | None, message: str) -> None:
@@ -70,6 +132,11 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
     normalized_question = question.strip()
     if not normalized_question:
         raise KnowledgeAgentUnavailable("Enter a question before querying the Knowledge Agent.")
+
+    conversation = conversational_response(normalized_question)
+    if conversation is not None:
+        _emit(on_progress, "Conversational intent detected; RAG retrieval not required.")
+        return conversation
 
     _emit(on_progress, "Creating existing MAO Task for the Knowledge Agent.")
     task = Task(
