@@ -196,27 +196,54 @@ def render_nex_global() -> None:
     if "nex_panel_open" not in st.session_state:
         st.session_state.nex_panel_open = False
 
+    action = st.query_params.get("nex")
+    if action == "open":
+        st.session_state.nex_panel_open = True
+    elif action == "close":
+        st.session_state.nex_panel_open = False
+
     mascot_url = nex_mascot_data_url()
-    st.markdown(
+    # st.html inserts this native element directly into Streamlit's page DOM.
+    # It deliberately avoids styling a generated Streamlit container class.
+    st.html(
         f"""
         <style>
-        .st-key-nex-launcher button {{
-            background: url('{mascot_url}') center / contain no-repeat !important;
-            box-shadow: 0 14px 30px rgba(0,0,0,.46), 0 0 28px rgba(30,196,255,.58) !important;
+        #rigos-nex-launcher {{
+            position: fixed; left: 18px; bottom: 18px; z-index: 2147483000;
+            width: 88px; height: 88px; display: block; overflow: visible;
+            animation: rigos-nex-patrol 13s ease-in-out infinite;
+            pointer-events: auto;
         }}
-        .st-key-nex-launcher button::before {{
-            left: 29px; top: 31px; width: 24px; height: 24px;
-            background: transparent; border: 1px solid rgba(123,244,255,.65);
-            box-shadow: 0 0 10px rgba(85,214,255,.8), 0 0 24px rgba(85,214,255,.55);
+        #rigos-nex-launcher a {{ display: block; width: 100%; height: 100%; text-decoration: none; }}
+        #rigos-nex-launcher img {{
+            width: 84px; height: 84px; object-fit: contain; display: block;
+            filter: drop-shadow(0 10px 9px rgba(0,0,0,.46)) drop-shadow(0 0 14px rgba(49,203,255,.72));
+            animation: rigos-nex-float 4.2s ease-in-out infinite;
+            transition: transform .22s ease, filter .22s ease;
         }}
+        #rigos-nex-launcher::after {{
+            content: 'Command Nexus — Click to open AI Assistant'; white-space: normal;
+            position: absolute; left: 96px; bottom: 14px; width: 180px; padding: 9px 11px;
+            border: 1px solid rgba(85,214,255,.36); border-radius: 10px;
+            background: rgba(8,19,34,.94); color: #e6f9ff; font: 700 11px/1.45 sans-serif;
+            letter-spacing: .04em; opacity: 0; transform: translateX(-6px); pointer-events: none;
+            transition: opacity .2s ease, transform .2s ease;
+        }}
+        #rigos-nex-launcher:hover img {{ transform: scale(1.08) rotate(-2deg); filter: drop-shadow(0 12px 10px rgba(0,0,0,.48)) drop-shadow(0 0 24px rgba(49,203,255,1)); animation: rigos-nex-bounce .55s ease; }}
+        #rigos-nex-launcher:hover::after {{ opacity: 1; transform: translateX(0); }}
+        @keyframes rigos-nex-patrol {{ 0%,100% {{ transform: translate3d(0,0,0); }} 25% {{ transform: translate3d(17px,-5px,0); }} 50% {{ transform: translate3d(9px,-12px,0); }} 75% {{ transform: translate3d(24px,-6px,0); }} }}
+        @keyframes rigos-nex-float {{ 0%,100% {{ transform: translateY(0) rotate(-1deg); }} 50% {{ transform: translateY(-6px) rotate(2deg); }} }}
+        @keyframes rigos-nex-bounce {{ 0%,100% {{ transform: scale(1.08) translateY(0); }} 45% {{ transform: scale(1.11) translateY(-5px); }} }}
+        @media (max-width:700px) {{ #rigos-nex-launcher {{ left: 7px; bottom: 7px; transform: scale(.84); transform-origin: bottom left; }} }}
         </style>
+        <div id="rigos-nex-launcher" role="complementary" aria-label="Command Nexus AI Assistant">
+          <a href="?nex=open" aria-label="Open Command Nexus">
+            <img src="{mascot_url}" alt="NEX, the Command Nexus companion">
+          </a>
+        </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_javascript=False,
     )
-    _render_nex_presence_script()
-    with st.container(key="nex-launcher"):
-        if st.button("Open Command Nexus", key="nex_activate", help="Command Nexus — Click to open AI Assistant"):
-            st.session_state.nex_panel_open = True
 
     if not st.session_state.nex_panel_open:
         return
