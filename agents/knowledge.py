@@ -3,20 +3,18 @@ from pathlib import Path
 from agents.base import Agent
 from mao.models.result import AgentResult
 
+
 class KnowledgeAgent(Agent):
+    """Grounded refinery operations agent used for technical questions."""
 
     name = "knowledge"
 
-
     def __init__(self):
-
         self.retriever = None
-
         self.llm = None
 
-
     def _initialize_services(self):
-        """Load the RAG stack only when a knowledge task is executed."""
+        """Load the operational reference stack only when it is required."""
         if self.retriever is not None and self.llm is not None:
             return
 
@@ -26,127 +24,75 @@ class KnowledgeAgent(Agent):
         from services.llm import LLMManager
 
         embedder = Embedder()
-
         store = VectorStore(embedder.get_model())
-
         store.load("data/faiss_index")
-
         self.retriever = Retriever(store.db)
-
         self.llm = LLMManager()
 
-
-
     def think(self, task):
-
-        print(
-            "[knowledge] Retrieving SOP information..."
-        )
-
-
+        print("[knowledge] Preparing an operational assessment...")
 
     def execute(self, task, context=None):
-
         self._initialize_services()
-
         query = task.description
-
-
         documents = self.retriever.retrieve(query)
-
 
         source_labels = []
         context_parts = []
         for index, document in enumerate(documents, start=1):
             metadata = document.metadata or {}
-            source = Path(str(metadata.get("source", "Knowledge base document"))).name
+            source = Path(str(metadata.get("source", "Operational reference"))).name
             page = metadata.get("page")
             label = f"[{index}] {source}" + (f", page {page + 1}" if isinstance(page, int) else "")
             source_labels.append(label)
             context_parts.append(f"{label}\n{document.page_content}")
 
-        context = "\n\n".join(context_parts)
-
-
+        reference_material = "\n\n".join(context_parts)
         prompt = f"""
-
 You are Command Nexus, an experienced refinery operations engineer.
 
-Answer the operator naturally and professionally using ONLY the retrieved
-knowledge-base material below. Do not copy document text or present raw
-extraction bullets. Do not invent operating limits, causes, actions, or
-citations that are not supported by the sources.
+Deliver a confident, concise, professional operational response using ONLY the
+technical reference material supplied below. Do not copy passages verbatim.
+Do not invent operating limits, causes, actions, or citations that the material
+does not support. Never mention implementation details such as retrieval,
+documents, a knowledge base, databases, RAG, prompts, models, or internal
+systems.
 
-For any safety-critical point, be precise and state when the retrieved
-material does not provide enough information. Provide a concise operational
-rationale based on the source evidence, but do not reveal hidden chain-of-thought.
-
+For safety-critical matters, be exact. If the supplied material does not
+establish a fact, say that it is not established by the available operating
+information. Give a brief operational rationale without revealing hidden
+chain-of-thought.
 
 Question:
-
 {query}
 
+Technical reference material:
+{reference_material}
 
-Retrieved refinery knowledge:
+Respond in Markdown with every section below, using concise bullets where
+appropriate. Do not rename the headings:
 
-{context}
+## Situation Assessment
+## Immediate Actions
+## Safety Considerations
+## Possible Root Causes
+## Recommended Maintenance
+## Operational Impact
+## References
 
-
-Respond with Markdown using this structure where applicable:
-
-## Operational assessment
-A concise, operator-friendly answer.
-
-## Recommended actions
-- Prioritized, grounded actions.
-
-## Safety considerations
-- Safety-critical constraints or escalation needs.
-
-## Operational rationale
-A brief explanation tied to the retrieved evidence.
-
-## Sources
-- Cite every source-backed claim using the supplied labels, for example [1].
-
+Only cite source-backed operational statements in **References**, using the
+supplied labels, for example [1].
 """
-
-
         answer = self.llm.generate(prompt)
 
-
-
         return AgentResult(
-
             agent_name=self.name,
-
             success=True,
-
             confidence=0.95,
-
             summary=answer,
-
-            recommendations=[
-
-                "Follow retrieved SOP",
-
-                "Verify operating limits"
-
-            ],
-
-            metadata={
-
-                "documents_used": len(documents),
-                "sources": source_labels,
-
-            }
-
+            recommendations=["Follow approved operating procedures", "Verify operating limits"],
+            metadata={"documents_used": len(documents), "sources": source_labels},
         )
-
-
 
     def reflect(self, result):
-
-        print(
-            "[knowledge] Completed knowledge retrieval."
-        )
+        print("[knowledge] Operational assessment completed.")

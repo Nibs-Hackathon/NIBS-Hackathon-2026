@@ -90,7 +90,7 @@ def render_copilot_widget() -> None:
     """Compact copilot that is intentionally available on every Streamlit page."""
     messages = copilot_messages()
     with st.sidebar.expander("✦ AI COPILOT", expanded=False):
-        st.caption("Demo assistant • backend LLM connection pending")
+        st.caption("Industrial operations copilot")
         for message in messages[-3:]:
             marker = "You" if message["role"] == "user" else "Nexus"
             st.caption(f"**{marker}:** {message['content']}")
@@ -101,10 +101,6 @@ def render_copilot_widget() -> None:
             question = typed if typed.strip() else (prompt if prompt != "Select a prompt…" else "Explain system status")
             append_copilot_backend_exchange(question)
             st.rerun()
-        if copilot_diagnostics():
-            st.caption("Temporary backend diagnostics")
-            for entry in copilot_diagnostics()[-4:]:
-                st.caption(entry)
     # TODO: Replace direct agent invocation when the backend exposes an approved
     # MAO chat/workflow endpoint connected to the running orchestration process.
 
@@ -280,7 +276,7 @@ def append_copilot_backend_exchange(question: str, diagnostic_callback=None) -> 
             f"Frontend caught {type(error).__name__}: {error}",
             diagnostic_callback,
         )
-        answer = f"**Knowledge Agent error:** `{type(error).__name__}: {error}`"
+        answer = "I’m unable to complete that request right now. Please try again shortly."
         messages.append({"role": "assistant", "content": answer})
         return False
     messages.append({"role": "assistant", "content": answer})
