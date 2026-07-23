@@ -6,23 +6,15 @@ the Operations Center integration layer is being designed.
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime, timedelta
-from functools import lru_cache
-from pathlib import Path
 from random import Random
 
 import streamlit as st
-from streamlit.components.v1 import html as component_html
 
 # Streamlit launched with ``streamlit run app/Home.py`` puts ``app/`` on
 # sys.path. Use a frontend-specific package name to avoid shadowing the
 # repository's backend ``services`` package.
-from frontend_services.knowledge_agent_adapter import (
-    KnowledgeAgentUnavailable,
-    ask_knowledge_agent,
-    is_operational_query,
-)
+from frontend_services.knowledge_agent_adapter import KnowledgeAgentUnavailable, ask_knowledge_agent
 
 
 COLORS = {
@@ -33,14 +25,6 @@ COLORS = {
     "red": "#FF718D",
     "muted": "#8FA1BA",
 }
-
-
-@lru_cache(maxsize=1)
-def nex_mascot_data_url() -> str:
-    """Return the packaged NEX concept asset as a browser-safe data URL."""
-    asset_path = Path(__file__).resolve().parent / "assets" / "nex_mascot.png"
-    encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
 
 
 def setup_page(title: str, icon: str = "◈") -> None:
@@ -81,68 +65,19 @@ def setup_page(title: str, icon: str = "◈") -> None:
         .stButton > button { border-radius: 9px; border: 1px solid rgba(85,214,255,.45); background: linear-gradient(135deg,#1686b8,#5664c9); color:#fff; font-weight:650; }
         .stTextInput input, .stTextArea textarea, [data-baseweb="select"] > div { background:#101d31 !important; border-color:#284569 !important; color:#e8f0ff !important; }
         [data-testid="stDataFrame"] { border: 1px solid rgba(129,172,226,.14); border-radius: 12px; overflow: hidden; }
-        /* NEX is the global entry point; the legacy route remains directly addressable. */
-        [data-testid="stSidebarNav"] a[href*="AI_Assistant"] { display: none !important; }
-        .st-key-nex-launcher { position:fixed; left:18px; bottom:18px; z-index:10001; width:86px; height:86px; animation:nex-roam 13s cubic-bezier(.45,.05,.55,.95) infinite; will-change:transform; }
-        .st-key-nex-launcher > div { height:100%; }
-        .st-key-nex-launcher button { position:relative; width:82px !important; height:82px !important; min-height:82px !important; padding:0 !important; overflow:visible; border:0 !important; border-radius:50% !important; font-size:0 !important; background:radial-gradient(circle at 49% 43%,#fcfeff 0 28%,#c9d3df 29% 48%,#2b3747 49% 67%,#101a29 68% 100%) !important; box-shadow:0 10px 22px rgba(0,0,0,.42),0 0 24px rgba(85,214,255,.34),inset 0 2px 3px rgba(255,255,255,.7) !important; transform:translateZ(0); transition:transform .25s ease,box-shadow .25s ease,filter .25s ease; animation:nex-hover 4.2s ease-in-out infinite; will-change:transform; }
-        .st-key-nex-launcher button::before { content:''; position:absolute; width:29px; height:29px; left:26px; top:25px; border-radius:50%; background:radial-gradient(circle at 42% 42%,#fff 0 9%,#c7fbff 10% 17%,#46dbff 18% 33%,#0c536f 34% 62%,#020d16 63%); box-shadow:0 0 9px #75ecff,0 0 22px rgba(85,214,255,.85); animation:nex-eye-idle 3s ease-in-out infinite; }
-        .st-key-nex-launcher button::after { content:'COMMAND NEXUS\\A Click to open AI Assistant'; white-space:pre; position:absolute; left:96px; bottom:12px; width:180px; padding:9px 11px; border-radius:10px; color:#dff8ff; background:rgba(11,22,38,.92); border:1px solid rgba(85,214,255,.34); box-shadow:0 12px 30px rgba(0,0,0,.32); font-size:11px; font-weight:700; letter-spacing:.04em; text-align:left; opacity:0; transform:translateX(-6px); pointer-events:none; transition:opacity .2s ease,transform .2s ease; }
-        .st-key-nex-launcher button:hover { transform:scale(1.08) rotate(-2deg); filter:brightness(1.08); box-shadow:0 12px 28px rgba(0,0,0,.45),0 0 36px rgba(85,214,255,.8),inset 0 2px 3px rgba(255,255,255,.78) !important; animation:nex-bounce .55s ease; }
-        .st-key-nex-launcher button:hover::after { opacity:1; transform:translateX(0); }
-        .st-key-nex-launcher.nex-active button { animation:nex-activate .7s cubic-bezier(.2,.8,.2,1); }
-        .st-key-nex-launcher.nex-active button::before { animation:nex-thinking .7s ease-out; }
-        .st-key-nex-launcher.nex-sleeping { animation-duration:24s; opacity:.66; }
-        .st-key-nex-launcher.nex-sleeping button { animation-duration:8s; filter:saturate(.65); }
-        .st-key-nex-launcher.nex-near button { transform:rotate(-2deg) scale(1.04); box-shadow:0 12px 30px rgba(0,0,0,.45),0 0 40px rgba(85,214,255,.85),inset 0 2px 3px rgba(255,255,255,.75) !important; }
-        .st-key-nex-launcher.nex-near button::before { animation:none; transform:translate(var(--nex-eye-x,0px),var(--nex-eye-y,0px)); }
-        @keyframes nex-roam { 0%,100% { transform:translate3d(0,0,0); } 25% { transform:translate3d(20px,-5px,0); } 50% { transform:translate3d(10px,-14px,0); } 75% { transform:translate3d(27px,-7px,0); } }
-        @keyframes nex-hover { 0%,100% { transform:translateY(0) rotate(-1deg); } 50% { transform:translateY(-6px) rotate(2deg); } }
-        @keyframes nex-eye-idle { 0%,100% { transform:translate(0,0) scale(1); opacity:.92; } 35% { transform:translate(2px,-1px) scale(1.04); opacity:1; } 70% { transform:translate(-1px,1px) scale(.94); opacity:.88; } }
-        @keyframes nex-thinking { 0% { transform:scale(1); } 45% { transform:scale(1.22) rotate(140deg); box-shadow:0 0 18px #8cf5ff,0 0 38px #55d6ff; } 100% { transform:scale(1) rotate(360deg); } }
-        @keyframes nex-bounce { 0%,100% { transform:scale(1.08) translateY(0); } 45% { transform:scale(1.11) translateY(-5px); } }
-        @keyframes nex-activate { 0% { transform:scale(1); } 42% { transform:scale(1.2); box-shadow:0 0 0 0 rgba(85,214,255,.75),0 0 54px rgba(85,214,255,1); } 100% { transform:scale(1.03); box-shadow:0 0 0 42px rgba(85,214,255,0),0 0 26px rgba(85,214,255,.58); } }
-        .st-key-nex-panel { position:fixed; left:112px; bottom:20px; z-index:10000; width:min(430px,calc(100vw - 138px)); max-height:min(670px,calc(100vh - 42px)); padding:0 2px; border:1px solid rgba(109,211,255,.3); border-radius:19px; background:linear-gradient(145deg,rgba(18,35,59,.96),rgba(7,14,27,.98)); box-shadow:0 26px 72px rgba(0,0,0,.54),0 0 34px rgba(58,177,255,.17); backdrop-filter:blur(20px); animation:nex-panel-in .36s cubic-bezier(.2,.85,.22,1); overflow:hidden; }
-        .st-key-nex-panel > div { max-height:min(650px,calc(100vh - 56px)); overflow-y:auto; padding:14px 16px 12px; }
-        .st-key-nex-panel [data-testid="stChatMessage"] { padding:.4rem .1rem; }
-        .st-key-nex-panel [data-testid="stChatInput"] { padding-bottom:0; }
-        .st-key-nex-panel .stButton button { font-size:.76rem !important; height:auto !important; min-height:0 !important; padding:.3rem .55rem !important; background:transparent !important; border-color:rgba(143,161,186,.3) !important; box-shadow:none !important; }
-        @keyframes nex-panel-in { from { opacity:0; transform:translate3d(10px,12px,0) scale(.95); } to { opacity:1; transform:translate3d(0,0,0) scale(1); } }
-        /* Keep Streamlit's dialog itself as the compact floating window.  Styling
-           the full-screen dialog host caused its dark backdrop to become a giant panel. */
-        [data-testid="stDialog"] {
-            position:fixed !important; inset:auto 128px 126px auto !important;
-            z-index:999998 !important; display:block !important;
-            width:400px !important; max-width:calc(100vw - 152px) !important;
-            height:620px !important; max-height:calc(100vh - 150px) !important;
-            margin:0 !important; padding:0 !important; background:transparent !important;
-            overflow:visible !important;
-        }
-        [data-testid="stDialog"] [role="dialog"] {
-            box-sizing:border-box !important; width:100% !important; max-width:420px !important;
-            height:100% !important; max-height:620px !important; margin:0 !important;
-            border:1px solid rgba(109,211,255,.34); border-radius:18px !important;
-            background:linear-gradient(145deg,rgba(18,35,59,.93),rgba(7,14,27,.97));
-            box-shadow:0 26px 72px rgba(0,0,0,.58),0 0 34px rgba(58,177,255,.18);
-            backdrop-filter:blur(20px); overflow:hidden !important;
-            animation:nex-panel-in .25s cubic-bezier(.2,.85,.22,1) both;
-        }
-        @media (max-width:700px) {
-            [data-testid="stDialog"] { right:106px !important; bottom:106px !important; width:calc(100vw - 122px) !important; max-width:400px !important; height:min(620px,calc(100vh - 126px)) !important; }
-            .st-key-nex-launcher { right:8px; bottom:8px; transform:scale(.82); transform-origin:bottom right; }
-            .st-key-nex-panel { right:10px; bottom:98px; width:calc(100vw - 20px); }
         .agent-card {
+
             padding:18px;
             border-radius:14px;
             background:rgba(255,255,255,0.05);
             border:1px solid rgba(255,255,255,0.15);
             margin-bottom:15px;
+
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    render_nex_global()
 
 
 def render_sidebar(active: str) -> None:
@@ -157,6 +92,7 @@ def render_sidebar(active: str) -> None:
         st.divider()
         st.caption("LIVE DEMO ENVIRONMENT")
         st.caption("Data shown is simulated until backend integration is enabled.")
+        render_copilot_widget()
 
 
 def render_copilot_widget() -> None:
@@ -176,204 +112,6 @@ def render_copilot_widget() -> None:
             st.rerun()
     # TODO: Replace direct agent invocation when the backend exposes an approved
     # MAO chat/workflow endpoint connected to the running orchestration process.
-
-
-def _render_nex_presence_script() -> None:
-    """Run lightweight browser-only NEX awareness and sleep behavior."""
-    component_html(
-        """
-        <script>
-        (() => {
-          const host = window.parent;
-          let lastActivity = Date.now();
-          let framePending = false;
-          const launcher = () => host.document.querySelector('.st-key-nex-launcher');
-          const update = (event) => {
-            lastActivity = Date.now();
-            if (framePending) return;
-            framePending = true;
-            host.requestAnimationFrame(() => {
-              const node = launcher();
-              if (!node) { framePending = false; return; }
-              const rect = node.getBoundingClientRect();
-              const dx = event.clientX - (rect.left + rect.width / 2);
-              const dy = event.clientY - (rect.top + rect.height / 2);
-              const close = Math.hypot(dx, dy) < 210;
-              node.classList.toggle('nex-near', close);
-              node.classList.remove('nex-sleeping');
-              if (close) {
-                const eye = node.querySelector('button');
-                if (eye) {
-                  eye.style.setProperty('--nex-eye-x', `${Math.max(-3, Math.min(3, dx / 34))}px`);
-                  eye.style.setProperty('--nex-eye-y', `${Math.max(-2, Math.min(2, dy / 45))}px`);
-                }
-              }
-              framePending = false;
-            });
-          };
-          host.document.addEventListener('pointermove', update, { passive: true });
-          host.setInterval(() => {
-            const node = launcher();
-            if (node && Date.now() - lastActivity > 60000) node.classList.add('nex-sleeping');
-          }, 5000);
-        })();
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
-
-
-def render_nex_global() -> None:
-    """Render the floating NEX launcher and persistent Command Nexus panel."""
-    if "nex_panel_open" not in st.session_state:
-        st.session_state.nex_panel_open = False
-
-    action = st.query_params.get("nex")
-    if action == "open":
-        st.session_state.nex_panel_open = True
-    elif action == "close":
-        st.session_state.nex_panel_open = False
-
-    mascot_url = nex_mascot_data_url()
-    # Portal the launcher to document.body so it is a sibling of Streamlit's
-    # app root, never a child of the sidebar or another layout block.
-    st.html(
-        f"""
-        <script>
-        (() => {{
-          const existing = document.getElementById('rigos-nex-overlay-root');
-          if (existing) existing.remove();
-          const root = document.createElement('div');
-          root.id = 'rigos-nex-overlay-root';
-          root.innerHTML = `
-        <style>
-        #rigos-nex-launcher {{
-            position: fixed; left: 24px; bottom: 24px; z-index: 999999;
-            width: 88px; height: 88px; display: block; overflow: visible;
-            animation: rigos-nex-patrol 13s ease-in-out infinite;
-            pointer-events: auto;
-        }}
-        #rigos-nex-launcher a {{ display: block; width: 100%; height: 100%; text-decoration: none; }}
-        #rigos-nex-launcher img {{
-            width: 84px; height: 84px; object-fit: contain; display: block;
-            filter: drop-shadow(0 10px 9px rgba(0,0,0,.46)) drop-shadow(0 0 14px rgba(49,203,255,.72));
-            animation: rigos-nex-float 4.2s ease-in-out infinite;
-            transition: transform .22s ease, filter .22s ease;
-        }}
-        #rigos-nex-launcher::after {{
-            content: 'Command Nexus — Click to open AI Assistant'; white-space: normal;
-            position: absolute; left: 96px; bottom: 14px; width: 180px; padding: 9px 11px;
-            border: 1px solid rgba(85,214,255,.36); border-radius: 10px;
-            background: rgba(8,19,34,.94); color: #e6f9ff; font: 700 11px/1.45 sans-serif;
-            letter-spacing: .04em; opacity: 0; transform: translateX(-6px); pointer-events: none;
-            transition: opacity .2s ease, transform .2s ease;
-        }}
-        #rigos-nex-launcher:hover img {{ transform: scale(1.08) rotate(-2deg); filter: drop-shadow(0 12px 10px rgba(0,0,0,.48)) drop-shadow(0 0 24px rgba(49,203,255,1)); animation: rigos-nex-bounce .55s ease; }}
-        #rigos-nex-launcher:hover::after {{ opacity: 1; transform: translateX(0); }}
-        @keyframes rigos-nex-patrol {{ 0%,100% {{ transform: translate3d(0,0,0); }} 25% {{ transform: translate3d(17px,-5px,0); }} 50% {{ transform: translate3d(9px,-12px,0); }} 75% {{ transform: translate3d(24px,-6px,0); }} }}
-        @keyframes rigos-nex-float {{ 0%,100% {{ transform: translateY(0) rotate(-1deg); }} 50% {{ transform: translateY(-6px) rotate(2deg); }} }}
-        @keyframes rigos-nex-bounce {{ 0%,100% {{ transform: scale(1.08) translateY(0); }} 45% {{ transform: scale(1.11) translateY(-5px); }} }}
-        @media (max-width:700px) {{ #rigos-nex-launcher {{ left: 7px; bottom: 7px; transform: scale(.84); transform-origin: bottom left; }} }}
-        </style>
-        <div id="rigos-nex-launcher" role="complementary" aria-label="Command Nexus AI Assistant">
-          <a href="?nex=open" aria-label="Open Command Nexus">
-            <img src="{mascot_url}" alt="NEX, the Command Nexus companion">
-          </a>
-        </div>
-          `;
-          document.body.appendChild(root);
-        }})();
-        </script>
-        """,
-        unsafe_allow_javascript=True,
-    )
-
-    if not st.session_state.nex_panel_open:
-        return
-    render_nex_chat_dialog()
-
-
-@st.dialog("Command Nexus", width="large", dismissible=False)
-def render_nex_chat_dialog() -> None:
-    """Render the existing chat flow in Streamlit's root-level dialog portal."""
-    st.markdown("<div class='section-label'>NEX OPERATIONS COPILOT</div>", unsafe_allow_html=True)
-    st.caption("Operational intelligence for the current shift")
-    if st.button("Close Command Nexus", key="nex_close"):
-        st.session_state.nex_panel_open = False
-        st.query_params["nex"] = "close"
-        st.rerun()
-
-    for message in copilot_messages()[-8:]:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    suggestions = [
-        "Summarize today's incidents",
-        "Predict asset failures",
-        "Explain system status",
-        "Generate executive report",
-        "Recommend maintenance",
-    ]
-    selected = st.selectbox("Suggested prompt", ["Select a prompt"] + suggestions, key="nex_suggestion")
-    use_selected = st.button("Use selected prompt", key="nex_use_suggestion", disabled=selected == "Select a prompt")
-    prompt = st.chat_input("Ask Command Nexus...", key="nex_chat_input")
-    question = prompt or (selected if use_selected else "")
-    if question:
-        # Reuse the backend's existing intent classifier so the NEX presentation
-        # follows the same routing decision as the adapter. Casual prompts go
-        # straight to Gemini without operational UI; refinery prompts retain the
-        # operational loading state and KnowledgeAgent/RAG path.
-        if is_operational_query(question):
-            with st.spinner("NEX is thinking..."):
-                append_copilot_backend_exchange(question)
-        else:
-            append_copilot_backend_exchange(question)
-        st.rerun()
-
-
-def render_nex_global() -> None:
-    """Render the reliable fixed NEX fallback without custom portal JavaScript.
-
-    This intentionally replaces the earlier body-portal attempt while the
-    overlay is validated in the live application. ``st.html`` places a real
-    image element in the Streamlit DOM and CSS fixes it to the viewport.
-    """
-    if "nex_panel_open" not in st.session_state:
-        st.session_state.nex_panel_open = False
-
-    action = st.query_params.get("nex")
-    if action == "open":
-        st.session_state.nex_panel_open = True
-    elif action == "close":
-        st.session_state.nex_panel_open = False
-
-    st.html(
-        f"""
-        <style>
-        #rigos-nex-fallback {{
-            position: fixed !important; right: 24px !important; left: auto !important; bottom: 24px !important;
-            z-index: 999999 !important; display: block !important; visibility: visible !important;
-            opacity: 1 !important; overflow: visible !important; width: 88px; height: 88px;
-            pointer-events: auto; animation: rigos-nex-fallback-float 4.2s ease-in-out infinite;
-        }}
-        #rigos-nex-fallback a {{ display: block; width: 100%; height: 100%; }}
-        #rigos-nex-fallback img {{ width: 84px; height: 84px; object-fit: contain; display: block; filter: drop-shadow(0 10px 9px rgba(0,0,0,.46)) drop-shadow(0 0 16px rgba(49,203,255,.8)); transition: transform .2s ease, filter .2s ease; }}
-        #rigos-nex-fallback:hover img {{ transform: scale(1.08) rotate(-2deg); filter: drop-shadow(0 12px 10px rgba(0,0,0,.48)) drop-shadow(0 0 26px rgba(49,203,255,1)); }}
-        @media (max-width:700px) {{ #rigos-nex-fallback {{ right:10px !important; bottom:10px !important; transform:scale(.9); transform-origin:bottom right; }} }}
-        @keyframes rigos-nex-fallback-float {{ 0%,100% {{ transform: translateY(0) rotate(-1deg); }} 50% {{ transform: translateY(-6px) rotate(2deg); }} }}
-        </style>
-        <div id="rigos-nex-fallback" role="complementary" aria-label="Command Nexus AI Assistant">
-          <a href="?nex=open" aria-label="Open Command Nexus">
-            <img src="{nex_mascot_data_url()}" alt="NEX, the Command Nexus companion">
-          </a>
-        </div>
-        """,
-        unsafe_allow_javascript=False,
-    )
-
-    if st.session_state.nex_panel_open:
-        render_nex_chat_dialog()
 
 
 def page_heading(eyebrow: str, title: str, subtitle: str) -> None:
@@ -647,3 +385,5 @@ def render_health_heatmap() -> None:
     cells = [("Process A", "96%", "#4FE3B2"), ("Process B", "82%", "#FFBF69"), ("Terminal", "91%", "#4FE3B2"), ("Pipeline", "68%", "#FFBF69"), ("Utilities", "43%", "#FF718D")]
     blocks = "".join(f"<div style='flex:1;min-width:100px;padding:14px 10px;border-radius:11px;background:{color}20;border:1px solid {color}66'><b>{zone}</b><br><span style='font-size:1.45rem;color:{color}'>{score}</span></div>" for zone, score, color in cells)
     st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{blocks}</div>", unsafe_allow_html=True)
+
+    
