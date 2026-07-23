@@ -32,7 +32,7 @@ class SafetyAgent(Agent):
 
         pressure = telemetry.get("pressure", 0)
         temperature = telemetry.get("temperature", 0)
-        gas = telemetry.get("gas_level", 0)
+        gas = telemetry.get("gas_level", telemetry.get("gas", 0))
         vibration = telemetry.get("vibration", 0)
 
         alerts = []

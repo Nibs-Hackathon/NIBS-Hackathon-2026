@@ -21,6 +21,7 @@ class Orchestrator:
         memory_manager,
         logger,
         event_store,
+        health_service=None,
     ):
         self.planner = planner
         self.workflow_engine = workflow_engine
@@ -32,6 +33,7 @@ class Orchestrator:
         self.memory = memory_manager
         self.logger = logger
         self.event_store = event_store
+        self.health_service = health_service
 
     def run(self, event):
 
@@ -40,6 +42,7 @@ class Orchestrator:
             state_manager=self.state,
             memory_manager=self.memory,
             logger=self.logger,
+            health_service=self.health_service,
         )
 
         self.logger.info(
