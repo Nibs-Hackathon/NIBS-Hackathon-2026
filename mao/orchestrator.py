@@ -33,7 +33,6 @@ class Orchestrator:
         self.logger = logger
         self.event_store = event_store
 
-
     def run(self, event):
 
         context = ExecutionContext(
@@ -43,89 +42,61 @@ class Orchestrator:
             logger=self.logger,
         )
 
-
         self.logger.info(
             "Kernel",
-            f"Received event '{event.name}'"
+            f"[{context.execution_id}] Received event '{event.name}'",
         )
 
-
-        # Persist event
-
+        # Persist incoming event
         self.state.add_event(event)
-
         self.event_store.save(event)
 
-
-
         # Select workflow
-
         workflow_name = self.planner.choose_workflow(event)
-
         context.workflow = workflow_name
-
 
         self.logger.info(
             "Planner",
-            f"Selected workflow '{workflow_name}'",
+            f"[{context.execution_id}] Selected workflow '{workflow_name}'",
         )
 
-
-
-        # Build tasks
-
+        # Build workflow tasks
         tasks = self.workflow_engine.create_tasks(
             workflow_name,
             event,
         )
 
-
         self.logger.info(
             "WorkflowEngine",
-            f"Generated {len(tasks)} task(s)",
+            f"[{context.execution_id}] Generated {len(tasks)} task(s)",
         )
 
-
-
         # Schedule tasks
-
         for task in tasks:
-
             self.scheduler.submit(task)
 
-
-
         # Execute tasks
-
         while not self.scheduler.empty():
 
             task = self.scheduler.next()
 
-
             self.logger.info(
                 "Executor",
-                f"Executing '{task.name}'",
+                f"[{context.execution_id}] Executing '{task.name}'",
             )
-
 
             result = self.executor.execute(
                 task,
-                context
+                context,
             )
 
-
-            context.results.append(result)
+            # NEW
+            context.add_result(result)
 
             self.state.add_task(task)
 
-
-
         # Aggregate results
-
-        decision = self.supervisor.summarize(
-            context.results
-        )
-
+        decision = self.supervisor.summarize(context)
 
         report = ExecutionReport(
             execution_id=context.execution_id,
@@ -136,32 +107,27 @@ class Orchestrator:
             agent_results=context.results,
             final_summary=decision["summary"],
             recommendations=decision["recommendations"],
+            total_agents=context.execution_metrics["agents_executed"],
+            successful_agents=context.execution_metrics["successful_agents"],
+            failed_agents=context.execution_metrics["failed_agents"],
+            average_confidence=context.execution_metrics["average_confidence"],
+            approval_required=context.requires_human_approval,
+            incident_severity=context.incident_level or "Unknown",
+            metadata=context.metadata,
         )
-
-
 
         self.state.add_report(report)
 
-
-
         self.logger.info(
             "Kernel",
-            "Execution completed.",
+            f"[{context.execution_id}] Execution completed.",
         )
 
-
-
-        # Memory persistence
-
+        # Persist into memory
         self.memory.remember_event(event)
-
         self.memory.remember_report(report)
 
-
         for result in report.agent_results:
-
             self.memory.remember_result(result)
-
-
 
         return report

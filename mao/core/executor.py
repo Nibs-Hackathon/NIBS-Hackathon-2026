@@ -5,9 +5,7 @@ from mao.core.exceptions import AgentNotFound
 class Executor:
 
     def __init__(self, registry):
-
         self.registry = registry
-
 
     def execute(self, task, context):
 
@@ -15,39 +13,38 @@ class Executor:
             task.assigned_agent
         )
 
-
         if agent is None:
-
             raise AgentNotFound(
                 f"Agent '{task.assigned_agent}' not found."
             )
 
-
-        # Agent lifecycle
-
-        agent.think(task)
-
-
         try:
 
-            result = agent.execute(
+            # Agent.run() handles:
+            # think()
+            # execute()
+            # validate_result()
+            # reflect()
+            result = agent.run(
                 task,
-                context
+                context,
             )
-
 
         except Exception as e:
 
             result = AgentResult(
                 agent_name=agent.name,
                 success=False,
+                finding="Agent execution failed.",
                 confidence=0.0,
                 summary=str(e),
-                recommendations=[],
+                recommendations=[
+                    "Review execution logs."
+                ],
+                metadata={
+                    "exception": type(e).__name__,
+                },
             )
-
-
-        agent.reflect(result)
 
         result.metadata.update(
             {
@@ -57,6 +54,5 @@ class Executor:
                 "asset_id": context.event.source,
             }
         )
-
 
         return result

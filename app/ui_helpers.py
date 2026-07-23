@@ -131,6 +131,12 @@ def setup_page(title: str, icon: str = "◈") -> None:
             [data-testid="stDialog"] { right:106px !important; bottom:106px !important; width:calc(100vw - 122px) !important; max-width:400px !important; height:min(620px,calc(100vh - 126px)) !important; }
             .st-key-nex-launcher { right:8px; bottom:8px; transform:scale(.82); transform-origin:bottom right; }
             .st-key-nex-panel { right:10px; bottom:98px; width:calc(100vw - 20px); }
+        .agent-card {
+            padding:18px;
+            border-radius:14px;
+            background:rgba(255,255,255,0.05);
+            border:1px solid rgba(255,255,255,0.15);
+            margin-bottom:15px;
         }
         </style>
         """,

@@ -129,7 +129,6 @@ class MAOKernel:
 
         # Store report
 
-        self.state.add_report(report)
 
 
 
