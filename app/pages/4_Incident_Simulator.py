@@ -1,9 +1,12 @@
+
 import sys
 from pathlib import Path
 
 import streamlit as st
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
@@ -17,6 +20,11 @@ from ui_helpers import (
     setup_page,
     status_chip,
 )
+from components.incident_card import render_incident_card
+from components.agent_card import render_agent_card
+from components.telemetry_card import render_telemetry
+from components.timeline import render_timeline
+from components.investigation_progress import render_investigation_progress
 
 
 setup_page("Incident Simulator")
@@ -48,26 +56,81 @@ if launched:
     st.success(f"Simulation launched for {asset}")
     service = IncidentService(simulator)
     simulator_result = service.trigger_incident(incident_type)
-    st.markdown(status_chip("Processing"), unsafe_allow_html=True)
-    st.subheader("🚨 AI Response")
+    render_incident_card(
+        asset,
+        incident_type,
+        severity,
+        "AI Investigation Complete" if simulator_result["reports"] else "Processing"
+    )
+
+    render_telemetry()
+    render_timeline()
+    render_investigation_progress()
 
     reports = simulator_result["reports"]
+
     if reports:
         for report in reports:
-            st.success(report.final_summary)
-            st.write("Recommendations:")
-            for recommendation in report.recommendations:
-                st.write("-", recommendation)
+            render_agent_card(report)
     else:
         st.warning("No incident generated.")
 
+    st.markdown("### ✅ System Recommendation")
+
+    st.info(
+        """
+### Recommended Operator Actions
+
+- Reduce pump speed by **20%**
+- Verify discharge valve position
+- Inspect the pressure relief valve
+- Monitor pressure for **5 minutes**
+- Do not restart until pressure remains below **135 PSI**
+"""
+    )
+
+    st.divider()
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if st.button("✅ Approve Response Plan"):
+            st.success("Response approved.")
+
+    with c2:
+        if st.button("🔄 Run Investigation Again"):
+            st.info("Investigation restarted.")
+
+    with c3:
+        if st.button("📄 Generate Incident Report"):
+            st.success("Report generation coming soon.")
+
+
+
 st.write("")
-st.markdown("<div class='section-label'>RECENT SIMULATED SCENARIOS</div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='section-label'>RECENT SIMULATED SCENARIOS</div>",
+    unsafe_allow_html=True,
+)
+
 st.dataframe(
     [
-        {"Scenario": "SIM-772", "Type": "Gas leak", "Asset": "Tank T-04", "Result": "Resolved", "Duration": "3m 14s"},
-        {"Scenario": "SIM-771", "Type": "High vibration", "Asset": "Compressor C-12", "Result": "Review required", "Duration": "2m 47s"},
+        {
+            "Scenario": "SIM-772",
+            "Type": "Gas leak",
+            "Asset": "Tank T-04",
+            "Result": "Resolved",
+            "Duration": "3m 14s",
+        },
+        {
+            "Scenario": "SIM-771",
+            "Type": "High vibration",
+            "Asset": "Compressor C-12",
+            "Result": "Review required",
+            "Duration": "2m 47s",
+        },
     ],
     hide_index=True,
     use_container_width=True,
 )
+
