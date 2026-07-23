@@ -73,3 +73,5 @@ class LLMManager:
             "All configured Gemini API keys failed. Check quota, permissions, "
             "and network access."
         ) from last_error
+
+e
