@@ -8,6 +8,10 @@ from agents.base import Agent
 from mao.models.result import AgentResult
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FAISS_INDEX_PATH = PROJECT_ROOT / "data" / "faiss_index"
+
+
 class KnowledgeAgent(Agent):
     """Retrieve refinery guidance for workflows and create grounded chat answers."""
 
@@ -30,7 +34,7 @@ class KnowledgeAgent(Agent):
 
             embedder = Embedder()
             store = VectorStore(embedder.get_model())
-            store.load("data/faiss_index")
+            store.load(str(FAISS_INDEX_PATH))
             self.retriever = Retriever(store.db)
 
         if require_llm and self.llm is None:
