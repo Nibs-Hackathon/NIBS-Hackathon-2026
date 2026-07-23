@@ -10,4 +10,7 @@ class Planner:
             "FlowRestriction": "flow_response",
         }
 
-        return workflows.get(event.name, "default")
+        return workflows.get(
+            event.name,
+            "default"
+        )

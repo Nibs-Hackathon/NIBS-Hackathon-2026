@@ -16,7 +16,7 @@ class Scheduler:
         heapq.heappush(
             self._queue,
 
-            (-task.priority,
+            (task.priority,
 
              next(self._counter),
 

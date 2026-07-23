@@ -18,6 +18,7 @@ class SimulatedAsset:
             SensorType.GAS: 5,
         }
 
+
     def tick(self, fault=None):
 
         telemetry = []
@@ -35,7 +36,9 @@ class SimulatedAsset:
 
                 value += random.uniform(-2, 2)
 
+
             self.sensors[sensor] = value
+
 
             telemetry.append(
                 Sensor(
@@ -46,5 +49,6 @@ class SimulatedAsset:
                     unit="",
                 )
             )
+
 
         return telemetry

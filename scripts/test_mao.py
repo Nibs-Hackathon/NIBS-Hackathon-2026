@@ -1,4 +1,4 @@
-from agents.safety_agent import SafetyAgent
+from agents.safety import SafetyAgent
 from mao.events.event import Event
 from mao.orchestrator import MAO
 

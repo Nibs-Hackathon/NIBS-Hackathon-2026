@@ -5,7 +5,9 @@ from mao.models.result import AgentResult
 class MockAgent(Agent):
 
     def __init__(self):
+
         super().__init__("mock")
+
 
     def execute(self, task):
 

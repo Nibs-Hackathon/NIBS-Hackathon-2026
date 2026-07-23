@@ -50,16 +50,19 @@ class SimulatedFacility:
             value=15,
         )
 
-    def tick(self, tick_number):
+    def tick(self, tick_number, fault=None):
 
         telemetry = []
 
         for index, asset in enumerate(self.assets):
 
-            fault = self.injector.get_fault(
-                tick_number,
-                index,
-            )
+            if fault and index == 0:
+                fault=  fault
+            else:
+                fault = self.injector.get_fault(
+                    tick_number,
+                    index
+                )
 
             telemetry.extend(
                 asset.tick(

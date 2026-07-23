@@ -22,19 +22,25 @@ class StateManager:
 
         # Workflow Tasks
         self.tasks = []
-        
+
         # Memory
         self.memory = []
+
 
     # -------------------------
     # Assets
     # -------------------------
 
     def add_asset(self, asset):
+
         self.assets[asset.id] = asset
 
+
     def get_asset(self, asset_id):
+
         return self.assets.get(asset_id)
+
+
 
     # -------------------------
     # Telemetry
@@ -49,48 +55,76 @@ class StateManager:
             history.append(reading)
 
             if len(history) > 100:
+
                 history.pop(0)
 
+
+
     def get_history(self, asset_id):
+
         return self.telemetry.get(asset_id, [])
+
+
 
     # -------------------------
     # Events
     # -------------------------
 
     def add_event(self, event):
+
         self.events.append(event)
+
+
 
     # -------------------------
     # Reports
     # -------------------------
 
     def add_report(self, report):
+
         self.execution_reports.append(report)
+
+
 
     # -------------------------
     # Agent Results
     # -------------------------
 
     def add_agent_result(self, result):
+
         self.agent_results.append(result)
+
+
 
     # -------------------------
     # Tasks
     # -------------------------
 
     def add_task(self, task):
+
         self.tasks.append(task)
 
+
     def get_tasks(self):
+
         return self.tasks
 
+
     def clear_tasks(self):
+
         self.tasks.clear()
 
+
+
+    # -------------------------
+    # Memory
+    # -------------------------
+
     def add_memory(self, item):
+
         self.memory.append(item)
-    
+
+
     def get_memory(self):
 
         return self.memory

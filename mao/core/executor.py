@@ -5,22 +5,36 @@ from mao.core.exceptions import AgentNotFound
 class Executor:
 
     def __init__(self, registry):
+
         self.registry = registry
+
 
     def execute(self, task, context):
 
-        agent = self.registry.get(task.assigned_agent)
+        agent = self.registry.get(
+            task.assigned_agent
+        )
+
 
         if agent is None:
+
             raise AgentNotFound(
                 f"Agent '{task.assigned_agent}' not found."
             )
 
+
         # Agent lifecycle
+
         agent.think(task)
 
+
         try:
-            result = agent.execute(task, context)
+
+            result = agent.execute(
+                task,
+                context
+            )
+
 
         except Exception as e:
 
@@ -32,6 +46,17 @@ class Executor:
                 recommendations=[],
             )
 
+
         agent.reflect(result)
+
+        result.metadata.update(
+            {
+                "task_name": task.name,
+                "task_description": task.description,
+                "event_name": context.event.name,
+                "asset_id": context.event.source,
+            }
+        )
+
 
         return result
