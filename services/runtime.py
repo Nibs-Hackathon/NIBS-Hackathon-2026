@@ -17,7 +17,7 @@ from agents.maintenance import MaintenanceAgent
 from agents.diagnostic import DiagnosticAgent
 from agents.planning import PlanningAgent
 from rag.embedder import Embedder
-from rag.neon_vector_store import NeonVectorStoreVectorStore
+from rag.neon_vector_store import NeonVectorStore
 
 kernel = MAOKernel()
 
