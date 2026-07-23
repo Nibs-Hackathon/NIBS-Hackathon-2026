@@ -6,8 +6,9 @@ const zlib = require('zlib');
 const root = path.resolve(__dirname, '..');
 const outputMd = path.join(root, 'Project_Code_Inventory_Updated.md');
 const outputDocx = path.join(root, 'Project_Code_Inventory_Updated.docx');
+const outputByFolder = path.join(root, 'Project_Code_Inventory_By_Folder');
 const allowed = new Set(['.py', '.md', '.txt', '.ini', '.mako', '.yml', '.yaml', '.json', '.toml']);
-const skipDirectories = new Set(['.git', '.venv', '.agents', '.codex', 'node_modules', '__pycache__', 'data']);
+const skipDirectories = new Set(['.git', '.venv', '.agents', '.codex', '.pytest_cache', 'Project_Code_Inventory_By_Folder', 'node_modules', '__pycache__', 'data']);
 const skipFiles = new Set([
   'Project_Code_Inventory.docx',
   'Project_Code_Inventory_Updated.docx',
@@ -93,6 +94,50 @@ for (const item of fileItems) {
 }
 fs.writeFileSync(outputMd, md, 'utf8');
 
+function sourceSection(items) {
+  return items.map(item => {
+    const fence = mdFence(item.text);
+    return `## ${item.path}\n\n**File path:** \`${item.path}\`\n\n${fence}${codeLanguage(item.path)}\n${item.text}${item.text.endsWith('\n') ? '' : '\n'}${fence}\n`;
+  }).join('\n');
+}
+
+const groups = new Map();
+for (const item of fileItems) {
+  const [topLevel] = item.path.split('/');
+  const group = item.path.includes('/') ? topLevel : 'root';
+  if (!groups.has(group)) groups.set(group, []);
+  groups.get(group).push(item);
+}
+fs.mkdirSync(outputByFolder, { recursive: true });
+const groupNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+const index = [
+  '# Project Code Inventory by Folder',
+  '',
+  `Generated: ${generatedAt}`,
+  '',
+  'Each file below contains the complete text source for one top-level project folder. Use `root.md` for files stored directly in the repository root.',
+  '',
+  '## Sections',
+  '',
+  ...groupNames.map(group => `- [${group}](${group}.md) (${groups.get(group).length} files)`),
+  '',
+].join('\n');
+fs.writeFileSync(path.join(outputByFolder, 'README.md'), index, 'utf8');
+for (const group of groupNames) {
+  const items = groups.get(group);
+  const title = group === 'root' ? 'Repository Root' : `Folder: ${group}`;
+  const content = [
+    `# ${title} Code Inventory`,
+    '',
+    `Generated: ${generatedAt}`,
+    '',
+    `Contains ${items.length} project file${items.length === 1 ? '' : 's'}.`,
+    '',
+    sourceSection(items),
+  ].join('\n');
+  fs.writeFileSync(path.join(outputByFolder, `${group}.md`), content, 'utf8');
+}
+
 function crc32(buf) {
   let c = 0 ^ -1;
   for (const b of buf) {
@@ -156,4 +201,4 @@ const entries = [
   ['docProps/app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Codex</Application></Properties>'],
 ];
 fs.writeFileSync(outputDocx, zip(entries));
-console.log(`Created ${path.basename(outputMd)} and ${path.basename(outputDocx)} with ${fileItems.length} files.`);
+console.log(`Created ${path.basename(outputMd)}, ${path.basename(outputDocx)}, and ${path.basename(outputByFolder)} with ${fileItems.length} files.`);

@@ -1,14 +1,20 @@
 import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from components.phase_two_views import render_report_detail_panel
-from ui_helpers import metric_card, page_heading, render_sidebar, reports_demo_snapshot, setup_page
+from ui_helpers import (
+    metric_card,
+    page_heading,
+    render_sidebar,
+    setup_page
+)
 
+from frontend_services.report_adapter import get_reports
 setup_page("Reports")
 render_sidebar("Reports & Intelligence")
 page_heading("DECISION RECORD", "Reports & Intelligence", "Review operational reports, AI recommendations, and response outcomes.")
 render_live_signal_banner("REPORT DEMO REGISTER", "Existing demonstration records are shown until MAO execution reports are available through a read-only integration.", "Info")
 st.write("")
-snapshot = reports_demo_snapshot()
+snapshot = get_reports()
 
 for col, args in zip(st.columns(4), snapshot["metrics"]):
     with col: metric_card(*args)

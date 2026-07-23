@@ -4,7 +4,7 @@ rag/embedder.py
 Gemini Embedding Manager for RigOS
 
 This module replaces the previous HuggingFace embedding model with
-Google's Gemini embedding model (text-embedding-004).
+Google's Gemini embedding model (text-embedding-001).
 
 The public API intentionally remains the same:
 
@@ -88,7 +88,7 @@ class Embedder:
         )
 
         Embedder._model = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="gemini-embedding-001",
             google_api_key=api_key,
         )
 

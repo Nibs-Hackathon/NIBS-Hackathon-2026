@@ -1,10 +1,10 @@
 # Project Code Inventory (Updated)
 
-Generated: 2026-07-23 08:59:38 UTC
+Generated: 2026-07-23 12:30:25 UTC
 
 ## Scope
 
-This document contains the complete text source for 177 project files (5473 lines) from the repository root. It includes application code, tests, scripts, configuration, and Markdown documentation. It excludes Git metadata, virtual environments, generated/binary data, generated inventory files, and the secret-bearing `.env` file.
+This document contains the complete text source for 181 project files (6592 lines) from the repository root. It includes application code, tests, scripts, configuration, and Markdown documentation. It excludes Git metadata, virtual environments, generated/binary data, generated inventory files, and the secret-bearing `.env` file.
 
 ## Project root
 
@@ -190,10 +190,14 @@ project/
 │   ├── sensor.py
 │   └── simulator.py
 ├── tests
-│   ├── mock_agent.py
-│   ├── mock_workflow.py
-│   ├── test_kernel.py
-│   └── test_neon.py
+│   ├── conftest.py
+│   ├── test_agent_pipeline.py
+│   ├── test_diagnostic_agent.py
+│   ├── test_knowledge_agent.py
+│   ├── test_maintenance_agent.py
+│   ├── test_neon.py
+│   ├── test_planning_agent.py
+│   └── test_safety_agent.py
 ├── tools
 │   ├── __init__.py
 │   ├── base_tool.py
@@ -375,6 +379,21 @@ Summary:
 **File path:** `agents/diagnostic.py`
 
 ```python
+"""
+agents/diagnostic.py
+
+Production Diagnostic Agent
+
+Responsibilities
+----------------
+- Analyze telemetry
+- Use Safety Agent findings
+- Determine probable root causes
+- Publish diagnosis metadata
+"""
+
+from __future__ import annotations
+
 from agents.base import Agent
 from mao.models.result import AgentResult
 
@@ -385,37 +404,167 @@ class DiagnosticAgent(Agent):
 
     def execute(self, task, context):
 
-        return AgentResult(
+        telemetry = self._extract_telemetry(context)
 
-            agent_name=self.name,
+        safety = self._get_safety(context)
 
-            success=True,
+        pressure = telemetry.get("pressure", 0)
+        temperature = telemetry.get("temperature", 0)
+        gas = telemetry.get("gas_level", 0)
+        vibration = telemetry.get("vibration", 0)
+        flow = telemetry.get("flow_rate", 0)
 
-            finding=
-            "Possible cavitation detected in pump system",
+        diagnosis = []
+        evidence = []
 
-            confidence=0.95,
+        # Pressure
+        if pressure >= 150:
+            diagnosis.append("Pressure surge")
+            evidence.append(
+                "Pressure exceeded safe operating threshold."
+            )
 
+        # Temperature
+        if temperature >= 85:
+            diagnosis.append("Equipment overheating")
+            evidence.append(
+                "Temperature above recommended operating range."
+            )
 
-            evidence=[
-                "Abnormal vibration pattern",
-                "Reduced suction pressure"
-            ],
+        # Gas
+        if gas >= 40:
+            diagnosis.append("Possible gas leak")
+            evidence.append(
+                "Gas concentration indicates potential leak."
+            )
 
+        # Vibration
+        if vibration >= 8:
+            diagnosis.append("Mechanical wear")
+            evidence.append(
+                "High vibration suggests bearing or shaft wear."
+            )
 
-            recommendations=[
-                "Inspect pump inlet",
-                "Check suction pressure"
-            ],
+        # Flow
+        if flow and flow <= 25:
+            diagnosis.append("Flow restriction")
+            evidence.append(
+                "Low flow rate indicates blockage or valve restriction."
+            )
 
+        if not diagnosis:
+            diagnosis.append("System operating normally")
 
-            required_action=
-            "Perform pump inspection",
+        confidence = 0.95 if safety.get("status") != "SAFE" else 0.90
 
+        recommendations = []
 
-            requires_human_approval=True
+        if "Pressure surge" in diagnosis:
+            recommendations.append(
+                "Inspect pressure relief valve."
+            )
 
+        if "Equipment overheating" in diagnosis:
+            recommendations.append(
+                "Check cooling system."
+            )
+
+        if "Possible gas leak" in diagnosis:
+            recommendations.append(
+                "Inspect pipelines and gas sensors."
+            )
+
+        if "Mechanical wear" in diagnosis:
+            recommendations.append(
+                "Inspect rotating equipment."
+            )
+
+        if "Flow restriction" in diagnosis:
+            recommendations.append(
+                "Inspect valves and pipelines."
+            )
+
+        if not recommendations:
+            recommendations.append(
+                "Continue monitoring."
+            )
+
+        metadata = {
+            "diagnosis": diagnosis,
+            "confidence": confidence,
+            "evidence": evidence,
+            "source": "DiagnosticAgent",
+        }
+
+        self._store_metadata(
+            context,
+            metadata,
         )
+
+        return AgentResult(
+            agent_name=self.name,
+            success=True,
+            finding=", ".join(diagnosis),
+            confidence=confidence,
+            evidence=evidence,
+            recommendations=recommendations,
+            required_action=(
+                "Maintenance inspection"
+                if diagnosis != ["System operating normally"]
+                else "None"
+            ),
+            requires_human_approval=False,
+            metadata=metadata,
+            summary=f"Diagnosis complete: {', '.join(diagnosis)}",
+        )
+
+    def _extract_telemetry(self, context):
+
+        if isinstance(context, dict):
+
+            event = context.get("event")
+
+            if isinstance(event, dict):
+                return event.get("payload", {})
+
+            return context.get("payload", {})
+
+        event = getattr(context, "event", None)
+
+        if event is None:
+            return {}
+
+        return getattr(event, "payload", {}) or {}
+
+    def _get_safety(self, context):
+
+        if isinstance(context, dict):
+            return context.get("metadata", {}).get("safety", {})
+
+        if not hasattr(context, "metadata"):
+            return {}
+
+        return context.metadata.get("safety", {})
+
+    def _store_metadata(
+        self,
+        context,
+        metadata,
+    ):
+
+        if isinstance(context, dict):
+
+            context.setdefault(
+                "metadata",
+                {}
+            )["diagnosis"] = metadata
+
+            return
+
+        if not hasattr(context, "metadata"):
+            context.metadata = {}
+
+        context.metadata["diagnosis"] = metadata
 ```
 
 ### agents/knowledge.py
@@ -423,104 +572,160 @@ class DiagnosticAgent(Agent):
 **File path:** `agents/knowledge.py`
 
 ```python
-from pathlib import Path
+"""
+agents/knowledge.py
+
+Production Knowledge Agent
+
+Responsibilities
+----------------
+- Query the RAG knowledge base
+- Retrieve relevant SOPs and manuals
+- Provide contextual recommendations
+- Publish knowledge metadata
+"""
+
+from __future__ import annotations
 
 from agents.base import Agent
 from mao.models.result import AgentResult
+from rag.retriever import Retriever
 
 
 class KnowledgeAgent(Agent):
-    """Grounded refinery operations agent used for technical questions."""
 
     name = "knowledge"
 
-    def __init__(self):
-        self.retriever = None
-        self.llm = None
+    def __init__(self,vector_store):
 
-    def _initialize_services(self):
-        """Load the operational reference stack only when it is required."""
-        if self.retriever is not None and self.llm is not None:
-            return
+        super().__init__()
+        self.retriever = Retriever(vector_store)
 
-        from rag.embedder import Embedder
-        from rag.retriever import Retriever
-        from rag.vector_store import VectorStore
-        from services.llm import LLMManager
+    def execute(self, task, context):
 
-        embedder = Embedder()
-        store = VectorStore(embedder.get_model())
-        store.load("data/faiss_index")
-        self.retriever = Retriever(store.db)
-        self.llm = LLMManager()
+        diagnosis = self._get_metadata(
+            context,
+            "diagnosis",
+        )
 
-    def think(self, task):
-        print("[knowledge] Preparing an operational assessment...")
+        planning = self._get_metadata(
+            context,
+            "planning",
+        )
 
-    def execute(self, task, context=None):
-        self._initialize_services()
-        query = task.description
-        documents = self.retriever.retrieve(query)
+        findings = diagnosis.get(
+            "diagnosis",
+            [],
+        )
 
-        source_labels = []
-        context_parts = []
-        for index, document in enumerate(documents, start=1):
-            metadata = document.metadata or {}
-            source = Path(str(metadata.get("source", "Operational reference"))).name
-            page = metadata.get("page")
-            label = f"[{index}] {source}" + (f", page {page + 1}" if isinstance(page, int) else "")
-            source_labels.append(label)
-            context_parts.append(f"{label}\n{document.page_content}")
+        execution_plan = planning.get(
+            "execution_plan",
+            [],
+        )
 
-        reference_material = "\n\n".join(context_parts)
-        prompt = f"""
-You are Command Nexus, an experienced refinery operations engineer.
+        query = self._build_query(findings)
 
-Deliver a confident, concise, professional operational response using ONLY the
-technical reference material supplied below. Do not copy passages verbatim.
-Do not invent operating limits, causes, actions, or citations that the material
-does not support. Never mention implementation details such as retrieval,
-documents, a knowledge base, databases, RAG, prompts, models, or internal
-systems.
+        documents = []
 
-For safety-critical matters, be exact. If the supplied material does not
-establish a fact, say that it is not established by the available operating
-information. Give a brief operational rationale without revealing hidden
-chain-of-thought.
+        try:
+            documents = self.retriever.retrieve(query)
 
-Question:
-{query}
+        except Exception:
 
-Technical reference material:
-{reference_material}
+            documents = []
 
-Respond in Markdown with every section below, using concise bullets where
-appropriate. Do not rename the headings:
+        references = []
+        summaries = []
 
-## Situation Assessment
-## Immediate Actions
-## Safety Considerations
-## Possible Root Causes
-## Recommended Maintenance
-## Operational Impact
-## References
+        for doc in documents:
 
-Only cite source-backed operational statements in **References**, using the
-supplied labels, for example [1].
-"""
-        answer = self.llm.generate(prompt)
+            references.append(
+                doc.metadata.get(
+                    "source",
+                    "Unknown"
+                )
+            )
+
+            summaries.append(
+                doc.page_content[:300]
+            )
+
+        recommendations = list(execution_plan)
+
+        if summaries:
+
+            recommendations.append(
+                "Review retrieved operating procedures before execution."
+            )
+
+        metadata = {
+            "query": query,
+            "references": references,
+            "documents": summaries,
+        }
+
+        self._store_metadata(
+            context,
+            metadata,
+        )
 
         return AgentResult(
             agent_name=self.name,
             success=True,
-            confidence=0.95,
-            summary=answer,
-            recommendations=["Follow approved operating procedures", "Verify operating limits"],
-            metadata={"documents_used": len(documents), "sources": source_labels},
+            finding=(
+                f"{len(documents)} knowledge document(s) retrieved."
+            ),
+            confidence=0.94,
+            evidence=references,
+            recommendations=recommendations,
+            required_action="Consult retrieved documentation",
+            requires_human_approval=False,
+            metadata=metadata,
+            summary=(
+                f"Knowledge retrieval completed with "
+                f"{len(documents)} matching document(s)."
+            ),
         )
 
-    def reflect(self, result):
-        print("[knowledge] Operational assessment completed.")
+    def _build_query(self, findings):
+
+        if not findings:
+            return "general oil and gas operational procedures"
+
+        return " ".join(findings)
+
+    def _get_metadata(self, context, key):
+
+        if isinstance(context, dict):
+            return context.get(
+                "metadata",
+                {},
+            ).get(key, {})
+
+        if not hasattr(context, "metadata"):
+            return {}
+
+        return context.metadata.get(key, {})
+
+    def _store_metadata(
+        self,
+        context,
+        metadata,
+    ):
+
+        if isinstance(context, dict):
+
+            context.setdefault(
+                "metadata",
+                {}
+            )["knowledge"] = metadata
+
+            return
+
+        if not hasattr(context, "metadata"):
+            context.metadata = {}
+
+        context.metadata["knowledge"] = metadata
 ```
 
 ### agents/maintenance.py
@@ -528,6 +733,22 @@ supplied labels, for example [1].
 **File path:** `agents/maintenance.py`
 
 ```python
+"""
+agents/maintenance.py
+
+Production Maintenance Agent
+
+Responsibilities
+----------------
+- Review diagnostic findings
+- Assess maintenance urgency
+- Recommend maintenance actions
+- Estimate downtime
+- Publish maintenance metadata
+"""
+
+from __future__ import annotations
+
 from agents.base import Agent
 from mao.models.result import AgentResult
 
@@ -538,16 +759,137 @@ class MaintenanceAgent(Agent):
 
     def execute(self, task, context):
 
+        diagnosis = self._get_metadata(
+            context,
+            "diagnosis",
+        )
+
+        safety = self._get_metadata(
+            context,
+            "safety",
+        )
+
+        findings = diagnosis.get(
+            "diagnosis",
+            [],
+        )
+
+        work_orders = []
+        priority = "LOW"
+        downtime = "None"
+
+        if "Pressure surge" in findings:
+            work_orders.append(
+                "Inspect pressure relief system"
+            )
+            priority = "HIGH"
+            downtime = "2-4 hours"
+
+        if "Equipment overheating" in findings:
+            work_orders.append(
+                "Inspect cooling system"
+            )
+            priority = "HIGH"
+            downtime = "3-5 hours"
+
+        if "Possible gas leak" in findings:
+            work_orders.append(
+                "Emergency pipeline inspection"
+            )
+            priority = "CRITICAL"
+            downtime = "Immediate shutdown"
+
+        if "Mechanical wear" in findings:
+            work_orders.append(
+                "Replace worn bearings"
+            )
+
+            if priority != "CRITICAL":
+                priority = "MEDIUM"
+
+            downtime = "4-6 hours"
+
+        if "Flow restriction" in findings:
+            work_orders.append(
+                "Inspect valves and clean pipeline"
+            )
+
+            if priority == "LOW":
+                priority = "MEDIUM"
+
+            downtime = "2 hours"
+
+        if not work_orders:
+            work_orders.append(
+                "No maintenance required"
+            )
+
+        metadata = {
+            "priority": priority,
+            "downtime": downtime,
+            "work_orders": work_orders,
+            "risk_status": safety.get("status", "SAFE"),
+        }
+
+        self._store_metadata(
+            context,
+            metadata,
+        )
+
         return AgentResult(
             agent_name=self.name,
             success=True,
-            confidence=0.94,
-            summary="Maintenance inspection recommended.",
-            recommendations=[
-                "Inspect bearings",
-                "Schedule maintenance within 24 hours",
-            ],
+            finding=f"Maintenance Priority: {priority}",
+            confidence=0.95,
+            evidence=work_orders,
+            recommendations=work_orders,
+            required_action=priority,
+            requires_human_approval=(
+                priority in ("HIGH", "CRITICAL")
+            ),
+            metadata=metadata,
+            summary=(
+                f"{len(work_orders)} maintenance task(s) "
+                f"generated. Priority: {priority}."
+            ),
         )
+
+    def _get_metadata(
+        self,
+        context,
+        key,
+    ):
+
+        if isinstance(context, dict):
+            return context.get(
+                "metadata",
+                {},
+            ).get(key, {})
+
+        if not hasattr(context, "metadata"):
+            return {}
+
+        return context.metadata.get(key, {})
+
+    def _store_metadata(
+        self,
+        context,
+        metadata,
+    ):
+
+        if isinstance(context, dict):
+
+            context.setdefault(
+                "metadata",
+                {}
+            )["maintenance"] = metadata
+
+            return
+
+        if not hasattr(context, "metadata"):
+            context.metadata = {}
+
+        context.metadata["maintenance"] = metadata
 ```
 
 ### agents/planning.py
@@ -555,6 +897,21 @@ class MaintenanceAgent(Agent):
 **File path:** `agents/planning.py`
 
 ```python
+"""
+agents/planning.py
+
+Production Planning Agent
+
+Responsibilities
+----------------
+- Build an operational response plan
+- Prioritize maintenance actions
+- Recommend execution sequence
+- Publish planning metadata
+"""
+
+from __future__ import annotations
+
 from agents.base import Agent
 from mao.models.result import AgentResult
 
@@ -565,16 +922,115 @@ class PlanningAgent(Agent):
 
     def execute(self, task, context):
 
+        safety = self._get_metadata(context, "safety")
+        diagnosis = self._get_metadata(context, "diagnosis")
+        maintenance = self._get_metadata(context, "maintenance")
+
+        status = safety.get("status", "SAFE")
+        findings = diagnosis.get("diagnosis", [])
+        work_orders = maintenance.get("work_orders", [])
+        priority = maintenance.get("priority", "LOW")
+
+        execution_plan = []
+
+        if status == "CRITICAL":
+            execution_plan.append(
+                "Immediately reduce operating load."
+            )
+            execution_plan.append(
+                "Notify control room."
+            )
+
+        if "Possible gas leak" in findings:
+            execution_plan.append(
+                "Isolate affected pipeline section."
+            )
+
+        if "Pressure surge" in findings:
+            execution_plan.append(
+                "Stabilize system pressure."
+            )
+
+        if "Equipment overheating" in findings:
+            execution_plan.append(
+                "Start cooling procedure."
+            )
+
+        execution_plan.extend(work_orders)
+
+        if not execution_plan:
+            execution_plan.append(
+                "Continue normal operation."
+            )
+
+        estimated_duration = self._estimate_duration(priority)
+
+        metadata = {
+            "priority": priority,
+            "execution_plan": execution_plan,
+            "estimated_duration": estimated_duration,
+            "status": status,
+        }
+
+        self._store_metadata(
+            context,
+            metadata,
+        )
+
         return AgentResult(
             agent_name=self.name,
             success=True,
-            confidence=0.92,
-            summary="Maintenance scheduled.",
-            recommendations=[
-                "Assign technician",
-                "Notify operations",
-            ],
+            finding=f"Execution plan created ({priority} priority)",
+            confidence=0.96,
+            evidence=execution_plan,
+            recommendations=execution_plan,
+            required_action="Execute plan",
+            requires_human_approval=(
+                status == "CRITICAL"
+            ),
+            metadata=metadata,
+            summary=(
+                f"Operational plan generated with "
+                f"{len(execution_plan)} step(s)."
+            ),
         )
+
+    def _estimate_duration(self, priority):
+
+        mapping = {
+            "LOW": "15-30 minutes",
+            "MEDIUM": "30-60 minutes",
+            "HIGH": "1-3 hours",
+            "CRITICAL": "Immediate",
+        }
+
+        return mapping.get(priority, "Unknown")
+
+    def _get_metadata(self, context, key):
+
+        if isinstance(context, dict):
+            return context.get("metadata", {}).get(key, {})
+
+        if not hasattr(context, "metadata"):
+            return {}
+
+        return context.metadata.get(key, {})
+
+    def _store_metadata(self, context, metadata):
+
+        if isinstance(context, dict):
+
+            context.setdefault(
+                "metadata",
+                {}
+            )["planning"] = metadata
+
+            return
+
+        if not hasattr(context, "metadata"):
+            context.metadata = {}
+
+        context.metadata["planning"] = metadata
 ```
 
 ### agents/safety.py
@@ -582,6 +1038,21 @@ class PlanningAgent(Agent):
 **File path:** `agents/safety.py`
 
 ```python
+"""
+agents/safety.py
+
+Production Safety Agent
+
+Responsibilities
+----------------
+- Analyze incoming telemetry
+- Assess operational risk
+- Detect safety threshold violations
+- Publish safety metadata for downstream agents
+"""
+
+from __future__ import annotations
+
 from agents.base import Agent
 from mao.models.result import AgentResult
 
@@ -590,18 +1061,164 @@ class SafetyAgent(Agent):
 
     name = "safety"
 
+    PRESSURE_LIMIT = 150
+    TEMPERATURE_LIMIT = 85
+    GAS_LIMIT = 40
+    VIBRATION_LIMIT = 8
+
     def execute(self, task, context):
+
+        telemetry = self._extract_telemetry(context)
+
+        pressure = telemetry.get("pressure", 0)
+        temperature = telemetry.get("temperature", 0)
+        gas = telemetry.get("gas_level", 0)
+        vibration = telemetry.get("vibration", 0)
+
+        alerts = []
+
+        risk_score = 0
+
+        if pressure >= self.PRESSURE_LIMIT:
+            alerts.append(
+                f"High pressure detected ({pressure} PSI)"
+            )
+            risk_score += 30
+
+        if temperature >= self.TEMPERATURE_LIMIT:
+            alerts.append(
+                f"High temperature detected ({temperature} °C)"
+            )
+            risk_score += 25
+
+        if gas >= self.GAS_LIMIT:
+            alerts.append(
+                f"Gas concentration elevated ({gas})"
+            )
+            risk_score += 35
+
+        if vibration >= self.VIBRATION_LIMIT:
+            alerts.append(
+                f"Abnormal vibration detected ({vibration})"
+            )
+            risk_score += 20
+
+        risk_score = min(risk_score, 100)
+
+        if risk_score >= 80:
+            status = "CRITICAL"
+
+        elif risk_score >= 40:
+            status = "WARNING"
+
+        else:
+            status = "SAFE"
+
+        recommendations = []
+
+        if status == "CRITICAL":
+
+            recommendations.extend([
+                "Reduce operating load immediately",
+                "Notify control room",
+                "Inspect affected equipment",
+            ])
+
+        elif status == "WARNING":
+
+            recommendations.extend([
+                "Increase monitoring frequency",
+                "Schedule inspection",
+            ])
+
+        else:
+
+            recommendations.append(
+                "Continue normal operation"
+            )
+
+        metadata = {
+            "status": status,
+            "risk_score": risk_score,
+            "alerts": alerts,
+            "telemetry": telemetry,
+            "confidence": 0.96,
+        }
+
+        self._store_metadata(
+            context,
+            metadata,
+        )
+
+        summary = (
+            f"Safety assessment completed. "
+            f"Status: {status}. "
+            f"Risk Score: {risk_score}/100."
+        )
+
+        finding = (
+            alerts[0]
+            if alerts
+            else "No safety issues detected."
+        )
 
         return AgentResult(
             agent_name=self.name,
             success=True,
+            finding=finding,
             confidence=0.96,
-            summary="Safety limits verified. Continue monitoring.",
-            recommendations=[
-                "Reduce operating pressure",
-                "Inspect relief valve",
-            ],
+            evidence=alerts,
+            recommendations=recommendations,
+            required_action=(
+                "Immediate intervention"
+                if status == "CRITICAL"
+                else "Continue monitoring"
+            ),
+            requires_human_approval=(
+                status == "CRITICAL"
+            ),
+            metadata=metadata,
+            summary=summary,
         )
+
+    def _extract_telemetry(self, context):
+
+        if isinstance(context, dict):
+
+            event = context.get("event")
+
+            if isinstance(event, dict):
+                return event.get("payload", {})
+
+            return context.get("payload", {})
+
+        event = getattr(context, "event", None)
+
+        if event is None:
+            return {}
+
+        return getattr(event, "payload", {}) or {}
+
+    def _store_metadata(
+        self,
+        context,
+        metadata,
+    ):
+
+        if isinstance(context, dict):
+
+            context.setdefault(
+                "metadata",
+                {}
+            )["safety"] = metadata
+
+            return
+
+        if not hasattr(context, "metadata"):
+
+            context.metadata = {}
+
+        context.metadata["safety"] = metadata
 ```
 
 ### alembic.ini
@@ -4254,22 +4871,89 @@ class MaintenanceWorkflow(Workflow):
 **File path:** `mao/workflows/planner.py`
 
 ```python
+"""
+mao/workflows/planner.py
+
+Workflow Planner
+
+Determines which workflow should execute based on the
+incoming event and telemetry payload.
+
+Supports both:
+    • Explicit event names
+    • Automatic telemetry-based routing
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
 class Planner:
+    """
+    Selects the most appropriate workflow for an incoming event.
+    """
 
-    def choose_workflow(self, event):
+    EVENT_MAP = {
+        "PressureSpike": "pressure_response",
+        "HighTemperature": "temperature_response",
+        "GasLeak": "gas_response",
+        "HighVibration": "maintenance_response",
+        "FlowRestriction": "flow_response",
+    }
 
-        workflows = {
-            "PressureSpike": "pressure_response",
-            "HighTemperature": "temperature_response",
-            "GasLeak": "gas_response",
-            "HighVibration": "maintenance_response",
-            "FlowRestriction": "flow_response",
-        }
+    def choose_workflow(self, event: Any) -> str:
+        """
+        Determine which workflow should handle an event.
 
-        return workflows.get(
-            event.name,
-            "default"
+        Priority:
+            1. Telemetry inspection
+            2. Event-name lookup
+            3. Default workflow
+        """
+
+        payload = getattr(event, "payload", {}) or {}
+
+        workflow = self._workflow_from_payload(payload)
+
+        if workflow is not None:
+            return workflow
+
+        return self.EVENT_MAP.get(
+            getattr(event, "name", ""),
+            "default",
         )
+
+    def _workflow_from_payload(
+        self,
+        payload: dict,
+    ) -> str | None:
+        """
+        Infer workflow directly from telemetry.
+        """
+
+        pressure = payload.get("pressure")
+        temperature = payload.get("temperature")
+        gas = payload.get("gas_level")
+        vibration = payload.get("vibration")
+        flow = payload.get("flow_rate")
+
+        if pressure is not None and pressure >= 150:
+            return "pressure_response"
+
+        if temperature is not None and temperature >= 85:
+            return "temperature_response"
+
+        if gas is not None and gas >= 40:
+            return "gas_response"
+
+        if vibration is not None and vibration >= 8:
+            return "maintenance_response"
+
+        if flow is not None and flow <= 25:
+            return "flow_response"
+
+        return None
 ```
 
 ### mao/workflows/policy_engine.py
@@ -4794,25 +5478,134 @@ class Sensor(BaseModel):
 **File path:** `rag/embedder.py`
 
 ```python
-from langchain_huggingface import HuggingFaceEmbeddings
+"""
+rag/embedder.py
+
+Gemini Embedding Manager for RigOS
+
+This module replaces the previous HuggingFace embedding model with
+Google's Gemini embedding model (text-embedding-004).
+
+The public API intentionally remains the same:
+
+    embedder = Embedder()
+    model = embedder.get_model()
+
+so existing code such as VectorStore and Retriever continues to work.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Optional
+
+from dotenv import load_dotenv
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 
 class Embedder:
+    """
+    Singleton wrapper around Google's Gemini embedding model.
 
+    Compatible with:
+        - FAISS
+        - LangChain VectorStore
+        - Retriever
+        - Existing RigOS code
+
+    Example
+    -------
+        embedder = Embedder()
+        embeddings = embedder.get_model()
+    """
+
+    _model: Optional[GoogleGenerativeAIEmbeddings] = None
+
+    API_KEY_ENVIRONMENTS = (
+        "GOOGLE_API_KEY_1",
+        "GOOGLE_API_KEY_2",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY_1",
+        "GEMINI_API_KEY_2",
+        "GEMINI_API_KEY",
+    )
 
     def __init__(self):
+        if Embedder._model is None:
+            self._initialize()
 
-        self.model = HuggingFaceEmbeddings(
+    def _initialize(self) -> None:
+        """
+        Initialize Gemini embeddings once.
+        """
 
-            model_name=
-            "sentence-transformers/all-MiniLM-L6-v2"
+        api_key = None
+        selected_variable = None
 
+        for variable in self.API_KEY_ENVIRONMENTS:
+            value = os.getenv(variable)
+
+            if value:
+                api_key = value
+                selected_variable = variable
+                break
+
+        if api_key is None:
+            raise RuntimeError(
+                "No Gemini API key found.\n\n"
+                "Expected one of:\n"
+                + "\n".join(f" - {v}" for v in self.API_KEY_ENVIRONMENTS)
+            )
+
+        logger.info(
+            "Initializing Gemini embeddings using %s",
+            selected_variable,
         )
 
+        Embedder._model = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-004",
+            google_api_key=api_key,
+        )
 
-    def get_model(self):
+        logger.info("Gemini embeddings initialized successfully.")
 
-        return self.model
+    def get_model(self) -> GoogleGenerativeAIEmbeddings:
+        """
+        Returns the embedding model.
+
+        This preserves compatibility with the previous implementation.
+
+        Returns
+        -------
+        GoogleGenerativeAIEmbeddings
+        """
+
+        if Embedder._model is None:
+            self._initialize()
+
+        return Embedder._model
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """
+        Embed multiple documents.
+        """
+
+        return self.get_model().embed_documents(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        """
+        Embed a single query.
+        """
+
+        return self.get_model().embed_query(text)
+
+    def __repr__(self) -> str:
+        return "Embedder(model='models/text-embedding-004')"
 ```
 
 ### rag/ingestion.py
@@ -5813,40 +6606,61 @@ class IncidentService:
 **File path:** `services/kernel_factory.py`
 
 ```python
+"""
+services/kernel_factory.py
+
+Creates and caches the global MAO kernel instance.
+
+The kernel is initialized only once and all production workflows
+are registered automatically.
+"""
+
+from __future__ import annotations
+
+import logging
 from functools import lru_cache
 
 from mao import MAOKernel
-
+from mao.workflows.flow_workflow import FlowWorkflow
+from mao.workflows.gas_workflow import GasWorkflow
+from mao.workflows.maintenance_workflow import MaintenanceWorkflow
 from mao.workflows.pressure_workflow import PressureWorkflow
 from mao.workflows.temperature_workflow import TemperatureWorkflow
-from mao.workflows.gas_workflow import GasWorkflow
-from mao.workflows.flow_workflow import FlowWorkflow
-from mao.workflows.maintenance_workflow import MaintenanceWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def create_kernel():
+def create_kernel() -> MAOKernel:
+    """
+    Create and return the singleton MAO kernel.
+
+    The kernel is cached so the entire application
+    shares a single workflow registry.
+    """
+
+    logger.info("Initializing MAO Kernel...")
 
     kernel = MAOKernel()
 
-    kernel.register_workflow(
-        PressureWorkflow()
-    )
+    workflows = [
+        PressureWorkflow(),
+        TemperatureWorkflow(),
+        GasWorkflow(),
+        FlowWorkflow(),
+        MaintenanceWorkflow(),
+    ]
 
-    kernel.register_workflow(
-        TemperatureWorkflow()
-    )
+    for workflow in workflows:
+        kernel.register_workflow(workflow)
+        logger.info(
+            "Registered workflow: %s",
+            workflow.__class__.__name__,
+        )
 
-    kernel.register_workflow(
-        GasWorkflow()
-    )
-
-    kernel.register_workflow(
-        FlowWorkflow()
-    )
-
-    kernel.register_workflow(
-        MaintenanceWorkflow()
+    logger.info(
+        "MAO Kernel initialized with %d workflows.",
+        len(workflows),
     )
 
     return kernel
@@ -6676,85 +7490,307 @@ class Simulator:
         return telemetry, reports
 ```
 
-### tests/mock_agent.py
+### tests/conftest.py
 
-**File path:** `tests/mock_agent.py`
+**File path:** `tests/conftest.py`
 
 ```python
-from agents.base import Agent
-from mao.models.result import AgentResult
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+import pytest
+from mao.core.context import ExecutionContext
 
 
-class MockAgent(Agent):
-
-    def __init__(self):
-
-        super().__init__("mock")
+class DummyEvent:
+    def __init__(self, payload):
+        self.payload = payload
 
 
-    def execute(self, task):
+@pytest.fixture
+def normal_context():
+    event = DummyEvent(
+        {
+            "pressure": 120,
+            "temperature": 50,
+            "gas_level": 5,
+            "vibration": 2,
+            "flow_rate": 80,
+        }
+    )
 
-        return AgentResult(
-            agent_name=self.name,
-            success=True,
-            confidence=1.0,
-            summary="Mock execution successful.",
-            recommendations=[],
-            metadata={},
-            execution_time=0.0,
-        )
+    return ExecutionContext(
+        event,
+        state_manager=None,
+        memory_manager=None,
+        logger=None,
+    )
+
+
+@pytest.fixture
+def critical_context():
+
+    event = DummyEvent(
+        {
+            "pressure": 170,
+            "temperature": 95,
+            "gas_level": 60,
+            "vibration": 10,
+            "flow_rate": 20,
+        }
+    )
+
+    return ExecutionContext(
+        event,
+        state_manager=None,
+        memory_manager=None,
+        logger=None,
+    )
 ```
 
-### tests/mock_workflow.py
+### tests/test_agent_pipeline.py
 
-**File path:** `tests/mock_workflow.py`
+**File path:** `tests/test_agent_pipeline.py`
 
 ```python
-from mao.workflows.workflow import Workflow
+from unittest.mock import MagicMock
+
+from agents.safety import SafetyAgent
+from agents.diagnostic import DiagnosticAgent
+from agents.maintenance import MaintenanceAgent
+from agents.planning import PlanningAgent
+from agents.knowledge import KnowledgeAgent
+
 from mao.models.task import Task
 
 
-class MockWorkflow(Workflow):
+def test_pipeline(critical_context):
 
-    name = "default"
+    SafetyAgent().run(
+        Task(
+            name="Safety",
+            description="Safety Assessment",
+            assigned_agent="safety",
+            priority=1,
+        ),
+        critical_context
+    )
 
-    def build(self, event):
+    DiagnosticAgent().run(
+        Task(
+            name="Diagnosis",
+            description="Run diagnostics",
+            assigned_agent="diagnostic",
+            priority=2,
+        ),
+        critical_context
+    )
 
-        return [
-            Task(
-                name="Mock Task",
-                description="Test task",
-                assigned_agent="mock",
-                priority=1,
-            )
-        ]
+    MaintenanceAgent().run(
+        Task(
+            name="Maintenance",
+            description="Generate maintenance plan",
+            assigned_agent="maintenance",
+            priority=3,
+        ),
+        critical_context
+    )
+
+    PlanningAgent().run(
+        Task(
+            name="Planning",
+            description="Generate execution plan",
+            assigned_agent="planning",
+            priority=4,
+        ),
+        critical_context
+    )
+
+    agent = KnowledgeAgent(
+        MagicMock()
+    )
+
+    agent.retriever = MagicMock()
+
+    agent.retriever.retrieve.return_value = []
+
+    agent.run(
+        Task(
+            name="Knowledge",
+            description="Retrieve knowledge",
+            assigned_agent="knowledge",
+            priority=5,
+        ),
+        critical_context
+    )
+
+    expected = [
+        "safety",
+        "diagnosis",
+        "maintenance",
+        "planning",
+        "knowledge",
+    ]
+
+    for key in expected:
+        assert key in critical_context.metadata
 ```
 
-### tests/test_kernel.py
+### tests/test_diagnostic_agent.py
 
-**File path:** `tests/test_kernel.py`
+**File path:** `tests/test_diagnostic_agent.py`
 
 ```python
-from mao import MAOKernel
-from mao.events.event import Event
+from agents.diagnostic import DiagnosticAgent
+from agents.safety import SafetyAgent
+from mao.models.task import Task
 
-from tests.mock_agent import MockAgent
-from tests.mock_workflow import MockWorkflow
 
-kernel = MAOKernel()
-
-kernel.register_agent(MockAgent())
-kernel.register_workflow(MockWorkflow())
-
-event = Event(
-    name="PressureSpike",
-    source="Pump-A",
-    payload={"pressure": 120},
+safety_task = Task(
+    name="Safety",
+    description="Safety Assessment",
+    assigned_agent="safety",
+    priority=1,
 )
 
-report = kernel.handle_event(event)
+diag_task = Task(
+    name="Diagnosis",
+    description="Run diagnostics",
+    assigned_agent="diagnostic",
+    priority=2,
+)
 
-print(report)
+def test_diagnosis(critical_context):
+
+    SafetyAgent().run(
+        safety_task,
+        critical_context,
+    )
+
+    result = DiagnosticAgent().run(
+        diag_task,
+        critical_context,
+    )
+
+    assert result.success
+
+    assert "diagnosis" in critical_context.metadata
+
+    diagnosis = critical_context.metadata["diagnosis"]
+
+    assert len(diagnosis["diagnosis"]) > 0
+```
+
+### tests/test_knowledge_agent.py
+
+**File path:** `tests/test_knowledge_agent.py`
+
+```python
+from unittest.mock import MagicMock
+
+from agents.knowledge import KnowledgeAgent
+
+from mao.models.task import Task
+
+
+def test_knowledge():
+
+    retriever = MagicMock()
+
+    retriever.retrieve.return_value = []
+
+    vector_store = MagicMock()
+
+    agent = KnowledgeAgent(vector_store)
+
+    agent.retriever = retriever
+
+    from mao.core.context import ExecutionContext
+
+
+    class Event:
+        payload = {}
+
+
+    context = ExecutionContext(
+        Event(),
+        None,
+        None,
+        None,
+    )
+
+    result = agent.run(
+        Task(
+            name="Knowledge",
+            description="Retrieve knowledge",
+            assigned_agent="knowledge",
+            priority=5,
+        ),
+        context,
+    )
+
+    assert result.success
+
+    assert "knowledge" in context.metadata
+```
+
+### tests/test_maintenance_agent.py
+
+**File path:** `tests/test_maintenance_agent.py`
+
+```python
+from agents.safety import SafetyAgent
+from agents.diagnostic import DiagnosticAgent
+from agents.maintenance import MaintenanceAgent
+
+from mao.models.task import Task
+
+
+def test_maintenance_plan(critical_context):
+
+    SafetyAgent().run(Task(
+            name="Safety",
+            description="Safety Assessment",
+            assigned_agent="safety",
+            priority=1,
+        ),
+        critical_context,
+    )
+    
+
+    DiagnosticAgent().run(
+        Task(
+            name="Diagnosis",
+            description="Run diagnostics",
+            assigned_agent="diagnostic",
+            priority=2,
+            
+        ),
+        critical_context,
+    )
+
+    result = MaintenanceAgent().run(
+        Task(
+            name="Maintenance",
+            description="Generate maintenance plan",
+            assigned_agent="maintenance",
+            priority=3,
+        ),
+        critical_context,
+    )
+
+    assert result.success
+
+    metadata = critical_context.metadata["maintenance"]
+
+    assert "priority" in metadata
+
+    assert "work_orders" in metadata
+
+    assert len(metadata["work_orders"]) > 0
 ```
 
 ### tests/test_neon.py
@@ -6773,6 +7809,122 @@ conn = psycopg2.connect(
 
 print("connected to database")
 conn.close()
+```
+
+### tests/test_planning_agent.py
+
+**File path:** `tests/test_planning_agent.py`
+
+```python
+from agents.safety import SafetyAgent
+from agents.diagnostic import DiagnosticAgent
+from agents.maintenance import MaintenanceAgent
+from agents.planning import PlanningAgent
+
+from mao.models.task import Task
+
+
+def test_plan_generation(critical_context):
+
+    SafetyAgent().run(
+        Task(
+            name="Safety",
+            description="Safety Assessment",
+            assigned_agent="safety",
+            priority=1,
+        ),
+        critical_context
+    )
+
+    DiagnosticAgent().run(
+        Task(
+            name="Diagnosis",
+            description="Run diagnostics",
+            assigned_agent="diagnostic",
+            priority=2,
+        ),
+        critical_context
+    )
+
+    MaintenanceAgent().run(
+  
+        Task(
+            name="Diagnosis",
+            description="Run diagnostics",
+            assigned_agent="diagnostic",
+            priority=2,
+        ),
+        critical_context
+    )
+
+    result = PlanningAgent().run(
+        Task(
+            name="Planning",
+            description="Generate execution plan",
+            assigned_agent="planning",
+            priority=4,
+        ),
+        critical_context,   
+    )
+
+    assert result.success
+
+    assert "planning" in critical_context.metadata
+
+    plan = critical_context.metadata["planning"]
+
+    assert len(plan["execution_plan"]) > 0
+```
+
+### tests/test_safety_agent.py
+
+**File path:** `tests/test_safety_agent.py`
+
+```python
+from agents.safety import SafetyAgent
+from mao.models.task import Task
+
+
+task = Task(
+    name="Safety",
+    description="",
+    assigned_agent="safety",
+    priority=1,
+)
+
+
+def test_safe_system(normal_context):
+
+    agent = SafetyAgent()
+
+    result = agent.run(task, normal_context)
+
+    assert result.success
+    assert result.confidence > 0
+
+    assert "safety" in normal_context.metadata
+
+    assert (
+        normal_context.metadata["safety"]["status"]
+        == "SAFE"
+    )
+
+
+def test_critical_system(critical_context):
+
+    agent = SafetyAgent()
+
+    result = agent.run(task, critical_context)
+
+    assert result.success
+
+    metadata = critical_context.metadata["safety"]
+
+    assert metadata["status"] == "CRITICAL"
+
+    assert metadata["risk_score"] >= 80
+
+    assert len(metadata["alerts"]) > 0
 ```
 
 ### tools/__init__.py

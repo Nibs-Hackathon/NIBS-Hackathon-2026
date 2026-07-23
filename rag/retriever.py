@@ -1,20 +1,18 @@
 class Retriever:
 
-
     def __init__(self, vector_store):
 
-        self.db = vector_store
+        self.vector_store = vector_store
 
 
+    def retrieve(self, query):
 
-    def retrieve(self, query, k=3):
+        db = self.vector_store.get()
 
-        results = self.db.similarity_search(
+        if db is None:
+            return []
 
-            query,
 
-            k=k
-
+        return db.similarity_search(
+            query
         )
-
-        return results
