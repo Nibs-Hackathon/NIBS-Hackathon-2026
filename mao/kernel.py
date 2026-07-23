@@ -97,6 +97,8 @@ class MAOKernel:
 
             event_store=self.event_store,
 
+            health_service=self.health,
+
         )
 
 
@@ -114,12 +116,6 @@ class MAOKernel:
 
 
     def handle_event(self, event):
-
-        # Store incoming event
-
-        self.state.add_event(event)
-
-
 
         # Run MAO pipeline
 

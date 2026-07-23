@@ -23,6 +23,9 @@ class StateManager:
         # Workflow Tasks
         self.tasks = []
 
+        # Runtime Notifications
+        self.notifications = []
+
         # Memory
         self.memory = []
 
@@ -113,6 +116,24 @@ class StateManager:
     def clear_tasks(self):
 
         self.tasks.clear()
+
+
+    # -------------------------
+    # Notifications
+    # -------------------------
+
+    def add_notification(self, notification):
+
+        self.notifications.append(notification)
+
+        if len(self.notifications) > 200:
+
+            self.notifications.pop(0)
+
+
+    def get_notifications(self):
+
+        return self.notifications
 
 
 

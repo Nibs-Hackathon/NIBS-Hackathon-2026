@@ -1,4 +1,5 @@
 from sqlalchemy import text
+from langchain_core.documents import Document
 
 from database.connection import get_session
 from database.models import KnowledgeDB
@@ -105,10 +106,10 @@ class NeonVectorStore:
             for row in results:
 
                 documents.append(
-                    {
-                        "content": row.content,
-                        "source": row.source
-                    }
+                    Document(
+                        page_content=row.content,
+                        metadata={"source": row.source},
+                    )
                 )
 
 

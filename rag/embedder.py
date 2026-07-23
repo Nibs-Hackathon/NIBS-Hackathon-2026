@@ -23,6 +23,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+from services.llm import _has_invalid_gemini_proxy
+
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -88,8 +90,9 @@ class Embedder:
         )
 
         Embedder._model = GoogleGenerativeAIEmbeddings(
-            model="gemini-embedding-001",
+            model="models/gemini-embedding-001",
             google_api_key=api_key,
+            client_args={"trust_env": False} if _has_invalid_gemini_proxy() else None,
         )
 
         logger.info("Gemini embeddings initialized successfully.")
@@ -125,4 +128,4 @@ class Embedder:
         return self.get_model().embed_query(text)
 
     def __repr__(self) -> str:
-        return "Embedder(model='models/text-embedding-004')"
+        return "Embedder(model='models/gemini-embedding-001', dimensions=3072)"

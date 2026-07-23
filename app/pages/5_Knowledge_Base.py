@@ -1,59 +1,48 @@
 import streamlit as st
-from ui_helpers import (
-    page_heading,
-    render_sidebar,
-    setup_page
-)
 
-from frontend_services.knowledge_adapter import search_knowledge
+from frontend_services.knowledge_adapter import KnowledgeSearchError, search_knowledge
+from ui_helpers import page_heading, render_sidebar, setup_page
+
 
 setup_page("Knowledge Base")
 render_sidebar("Knowledge Base")
-page_heading("RETRIEVAL INTELLIGENCE", "Knowledge Base", "Search operational procedures, safety manuals, and maintenance guidance.")
+page_heading(
+    "RETRIEVAL INTELLIGENCE",
+    "Knowledge Base",
+    "Search the live operational procedures, safety manuals, and maintenance guidance in Neon.",
+)
 
-query = st.text_input("Search approved operational knowledge", placeholder="e.g. pressure spike response procedure")
-filters = st.columns(3)
-with filters[0]: st.selectbox("Source", ["All sources", "SOP", "Safety manual", "Maintenance manual"])
-with filters[1]: st.selectbox("Asset family", ["All assets", "Pumps", "Pipelines", "Tanks", "Compressors"])
-with filters[2]: st.selectbox("Confidence", ["Any confidence", "90%+", "75%+"])
-
-if query:
-
-    st.success(
-        f"Searching knowledge base for “{query}”"
+with st.form("knowledge_search", border=False):
+    query = st.text_input(
+        "Search approved operational knowledge",
+        placeholder="e.g. pressure spike response procedure",
     )
+    submitted = st.form_submit_button("Search knowledge", icon=":material/search:")
 
-    results = search_knowledge(query)
+if submitted:
+    if not query.strip():
+        st.warning("Enter a search query to retrieve operational knowledge.")
+    else:
+        with st.spinner("Searching the operational knowledge base..."):
+            try:
+                st.session_state["knowledge_search_results"] = search_knowledge(query)
+                st.session_state["knowledge_search_query"] = query.strip()
+                st.session_state.pop("knowledge_search_error", None)
+            except KnowledgeSearchError as error:
+                st.session_state["knowledge_search_results"] = []
+                st.session_state["knowledge_search_error"] = str(error)
 
+if error := st.session_state.get("knowledge_search_error"):
+    st.error(error)
 
+results = st.session_state.get("knowledge_search_results")
+if results is not None and not st.session_state.get("knowledge_search_error"):
+    query_label = st.session_state.get("knowledge_search_query", "your query")
     if not results:
-
-        st.warning(
-            "No matching knowledge documents found."
-        )
-
-
-    for result in results:
-
-        st.markdown(
-            f"""
-            <div class='panel'>
-
-            <b>{result["Title"]}</b>
-
-            <p class='muted'>
-            {result["Summary"]}
-            </p>
-
-            <span style='color:#55d6ff;font-weight:700'>
-            {result["Confidence"]}
-            </span>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.write("")
-st.markdown("<div class='section-label'>SUGGESTED SEARCHES</div>", unsafe_allow_html=True)
-st.caption("Gas leak isolation • Compressor vibration limits • Flow restriction recovery • Emergency shutdown sequence")
+        st.info(f"No matching knowledge documents were found for “{query_label}”.")
+    else:
+        st.caption(f"{len(results)} live Neon retrieval result(s) for “{query_label}”")
+        for index, result in enumerate(results, start=1):
+            with st.expander(f"{index}. {result['filename']}", expanded=index == 1):
+                st.caption(f"Source: {result['source']}")
+                st.write(result["content"])

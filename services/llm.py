@@ -9,7 +9,9 @@ Supports:
 
 import logging
 import os
+import socket
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -36,6 +38,46 @@ SUPPORTED_GEMINI_ENV_VARS = (
 )
 
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+
+_PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _has_invalid_gemini_proxy() -> bool:
+    """Return whether this process inherited the known dead loopback proxy.
+
+    The check does not change environment variables.  It only lets the Gemini
+    client opt out of proxy inheritance when a request would otherwise be sent
+    to the non-listening local port that caused WinError 10061.
+    """
+    for name in _PROXY_ENV_VARS:
+        value = os.getenv(name)
+        if not value:
+            continue
+        try:
+            proxy = urlsplit(value)
+            if proxy.hostname not in _LOOPBACK_HOSTS or proxy.port is None:
+                continue
+            # Port 9 is the observed discarded-service proxy. For any other
+            # loopback proxy, preserve it only while it has a listener.
+            if proxy.port == 9:
+                return True
+            with socket.create_connection((proxy.hostname, proxy.port), timeout=0.15):
+                pass
+        except OSError:
+            return True
+        except ValueError:
+            # Preserve normal proxy handling for malformed values rather than
+            # making an assumption about a user-managed configuration.
+            continue
+    return False
 
 
 def get_gemini_model() -> str:
@@ -131,12 +173,14 @@ class LLMManager:
 
 
     def _create_model(self, key):
-
+        # Scope the proxy bypass to the HTTP client created by the Gemini SDK.
+        # Do not mutate os.environ: other application clients retain their
+        # existing proxy behavior.
+        client_args = {"trust_env": False} if _has_invalid_gemini_proxy() else None
         return ChatGoogleGenerativeAI(
-
             model=self.model_name,
-
             google_api_key=key,
+            client_args=client_args,
         )
 
 

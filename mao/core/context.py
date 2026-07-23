@@ -11,6 +11,7 @@ class ExecutionContext:
         state_manager,
         memory_manager,
         logger,
+        health_service=None,
     ):
 
         # Unique execution information
@@ -25,6 +26,7 @@ class ExecutionContext:
         self.state = state_manager
         self.memory = memory_manager
         self.logger = logger
+        self.health_service = health_service
 
         # Agent execution
         self.results: List[Any] = []

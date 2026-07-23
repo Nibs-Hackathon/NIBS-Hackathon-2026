@@ -26,7 +26,7 @@ OPERATIONAL_KEYWORDS = (
     "temperature", "vibration", "flow", "gas", "refinery", "sop", "procedure",
     "equipment", "motor", "turbine", "boiler", "heat exchanger", "reactor",
     "distillation", "column", "flare", "corrosion", "shutdown", "startup",
-    "trip", "failure", "process", "telemetry", "sensor",
+    "trip", "failure", "process", "telemetry", "sensor", "knowledge",
 )
 
 
@@ -68,11 +68,14 @@ class KnowledgeAgentUnavailable(RuntimeError):
 
 @lru_cache(maxsize=1)
 def get_knowledge_agent() -> "KnowledgeAgent":
-    """Initialize the existing agent once per Streamlit server process."""
+    """Return the KnowledgeAgent registered on the shared MAO kernel."""
     try:
-        from agents.knowledge import KnowledgeAgent
+        from services.runtime import kernel
 
-        return KnowledgeAgent()
+        agent = kernel.registry.get("knowledge")
+        if agent is None:
+            raise RuntimeError("KnowledgeAgent is not registered on the MAO kernel.")
+        return agent
     except Exception as error:
         raise KnowledgeAgentUnavailable("Command Nexus is temporarily unavailable. Please try again shortly.") from error
 

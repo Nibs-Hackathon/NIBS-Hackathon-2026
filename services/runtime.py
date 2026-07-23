@@ -16,6 +16,10 @@ from agents.knowledge import KnowledgeAgent
 from agents.maintenance import MaintenanceAgent
 from agents.diagnostic import DiagnosticAgent
 from agents.planning import PlanningAgent
+from agents.notification import NotificationAgent
+from agents.prediction import PredictionAgent
+from agents.report import ReportAgent
+from agents.sensor import SensorAgent
 from rag.embedder import Embedder
 from rag.neon_vector_store import NeonVectorStore
 
@@ -35,9 +39,6 @@ embedder = Embedder()
 vector_store = NeonVectorStore(
     embedder.get_model()
 )
-vector_store.load(
-    "rag/index"
-)
 
 for agent in (
     SafetyAgent(),
@@ -45,6 +46,10 @@ for agent in (
     MaintenanceAgent(),
     DiagnosticAgent(),
     PlanningAgent(),
+    SensorAgent(),
+    PredictionAgent(),
+    NotificationAgent(),
+    ReportAgent(),
 ):
     kernel.register_agent(agent)
 
