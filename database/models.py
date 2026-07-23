@@ -170,3 +170,55 @@ class ActivityEventDB(Base):
     evidence = Column(JSON, default=list)
     confidence = Column(Float)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PredictionDB(Base):
+
+    __tablename__ = "predictions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    execution_id = Column(String, nullable=False)
+    agent_result_id = Column(String, unique=True, nullable=False)
+    asset_id = Column(String)
+    health = Column(Float, nullable=False)
+    failure_probability = Column(Float, nullable=False)
+    rul_days = Column(Float, nullable=False)
+    confidence = Column(Float, nullable=False)
+    evidence = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NotificationDB(Base):
+
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True)
+    execution_id = Column(String, nullable=False)
+    asset_id = Column(String)
+    source = Column(String, nullable=False)
+    severity = Column(String, nullable=False)
+    summary = Column(Text, nullable=False)
+    status = Column(String, default="pending_acknowledgement")
+    requires_human_approval = Column(Boolean, default=False)
+    details = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    acknowledged_at = Column(DateTime)
+    acknowledged_by = Column(String)
+
+
+class MaintenanceTaskDB(Base):
+
+    __tablename__ = "maintenance_tasks"
+
+    id = Column(String, primary_key=True)
+    execution_id = Column(String, nullable=False)
+    incident_id = Column(String)
+    asset_id = Column(String)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    assigned_agent = Column(String, nullable=False)
+    priority = Column(Float, nullable=False)
+    status = Column(String, nullable=False)
+    input_data = Column(JSON, default=dict)
+    output_data = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)

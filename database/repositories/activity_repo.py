@@ -12,6 +12,13 @@ class ActivityRepository:
         self.session.refresh(activity)
         return activity
 
+    def create_many(self, activities):
+        if not activities:
+            return []
+        self.session.add_all(activities)
+        self.session.commit()
+        return activities
+
     def get_recent(self, limit=200):
         return (
             self.session.query(ActivityEventDB)

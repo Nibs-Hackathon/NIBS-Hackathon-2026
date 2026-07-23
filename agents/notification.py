@@ -39,6 +39,19 @@ class NotificationAgent(Agent):
             "notification_count": len(notifications),
             "severity": severity,
             "notification_ids": [notification.id for notification in notifications],
+            "notifications": [
+                {
+                    "id": notification.id,
+                    "source": notification.source,
+                    "severity": notification.severity,
+                    "summary": notification.summary,
+                    "asset_id": notification.asset_id,
+                    "requires_human_approval": notification.requires_human_approval,
+                    "metadata": notification.metadata,
+                    "created_at": notification.created_at,
+                }
+                for notification in notifications
+            ],
         }
         context.metadata["notification"] = metadata
         return AgentResult(

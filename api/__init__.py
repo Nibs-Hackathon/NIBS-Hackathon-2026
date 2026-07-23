@@ -1,0 +1,1 @@
+"""RigOS REST API package."""

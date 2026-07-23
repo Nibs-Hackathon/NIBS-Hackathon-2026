@@ -2,6 +2,7 @@ from datetime import datetime
 
 from mao.core.context import ExecutionContext
 from mao.models.execution_report import ExecutionReport
+from mao.models.task import TaskStatus
 
 
 class Orchestrator:
@@ -92,6 +93,15 @@ class Orchestrator:
                 task,
                 context,
             )
+
+            task.status = (
+                TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
+            )
+            task.output_data = {
+                "agent_result_id": result.id,
+                "summary": result.summary,
+                "recommendations": result.recommendations,
+            }
 
             # NEW
             context.add_result(result)

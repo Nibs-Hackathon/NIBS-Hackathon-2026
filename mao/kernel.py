@@ -134,7 +134,11 @@ class MAOKernel:
 
             self.state.add_agent_result(result)
 
-        self.persistence.record_execution(event, report)
+        self.persistence.record_execution(
+            event,
+            report,
+            tasks=self.state.get_tasks()[-len(report.agent_results):],
+        )
 
 
 
