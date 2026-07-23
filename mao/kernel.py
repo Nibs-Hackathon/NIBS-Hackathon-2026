@@ -114,13 +114,6 @@ class MAOKernel:
 
 
     def handle_event(self, event):
-
-        # Store incoming event
-
-        self.state.add_event(event)
-
-
-
         # Run MAO pipeline
 
         report = self.orchestrator.run(event)

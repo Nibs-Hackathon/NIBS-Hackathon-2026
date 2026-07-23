@@ -25,23 +25,23 @@ class MaintenanceWorkflow(Workflow):
             ),
 
             Task(
-                name="Retrieve Manual",
-                description="Retrieve maintenance manuals and procedures.",
-                assigned_agent="knowledge",
-                priority=3,
-            ),
-
-            Task(
                 name="Maintenance Planning",
                 description="Generate maintenance recommendations.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=3,
             ),
 
             Task(
                 name="Execution Plan",
                 description="Create the maintenance execution plan.",
                 assigned_agent="planning",
+                priority=4,
+            ),
+
+            Task(
+                name="Retrieve Manual",
+                description="Retrieve maintenance manuals and procedures.",
+                assigned_agent="knowledge",
                 priority=5,
             ),
         ]

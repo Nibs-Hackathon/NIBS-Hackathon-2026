@@ -43,9 +43,9 @@ def test_pressure_spike_runs_through_kernel_end_to_end():
     assert [result.agent_name for result in report.agent_results] == [
         "safety",
         "diagnostic",
-        "knowledge",
         "maintenance",
         "planning",
+        "knowledge",
     ]
     assert report.metadata["safety"]["status"] == "SAFE"
     assert report.metadata["diagnosis"]["diagnosis"] == ["Pressure surge"]
@@ -54,5 +54,6 @@ def test_pressure_spike_runs_through_kernel_end_to_end():
         report.metadata["planning"]["execution_plan"]
     )
     assert kernel.event_store.all() == [event]
+    assert kernel.state.events == [event]
     assert kernel.state.execution_reports == [report]
     kernel.persistence.record_execution.assert_called_once_with(event, report)

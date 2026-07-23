@@ -25,23 +25,23 @@ class GasWorkflow(Workflow):
             ),
 
             Task(
-                name="Retrieve SOP",
-                description="Retrieve gas leak emergency procedures.",
-                assigned_agent="knowledge",
-                priority=3,
-            ),
-
-            Task(
                 name="Maintenance Recommendation",
                 description="Recommend repair actions for the gas leak.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=3,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate a gas leak recovery plan.",
                 assigned_agent="planning",
+                priority=4,
+            ),
+
+            Task(
+                name="Retrieve SOP",
+                description="Retrieve gas leak emergency procedures.",
+                assigned_agent="knowledge",
                 priority=5,
             ),
         ]

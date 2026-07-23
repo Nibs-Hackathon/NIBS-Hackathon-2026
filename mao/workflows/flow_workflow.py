@@ -25,23 +25,23 @@ class FlowWorkflow(Workflow):
             ),
 
             Task(
-                name="Retrieve SOP",
-                description="Retrieve flow restriction operating procedures.",
-                assigned_agent="knowledge",
-                priority=3,
-            ),
-
-            Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for restricted flow.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=3,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate a flow recovery procedure.",
                 assigned_agent="planning",
+                priority=4,
+            ),
+
+            Task(
+                name="Retrieve SOP",
+                description="Retrieve flow restriction operating procedures.",
+                assigned_agent="knowledge",
                 priority=5,
             ),
         ]
