@@ -1,11 +1,19 @@
 import streamlit as st
 from components.phase_one_views import render_live_signal_banner
-from ui_helpers import dashboard_demo_snapshot, metric_card, page_heading, render_health_heatmap, render_sidebar, setup_page, trend_series
+from ui_helpers import (
+    metric_card,
+    page_heading,
+    render_health_heatmap,
+    render_sidebar,
+    setup_page
+)
+
+from frontend_services.dashboard_adapter import get_dashboard
 
 setup_page("Dashboard")
 render_sidebar("Executive Dashboard")
 page_heading("OVERVIEW", "Operations Dashboard", "Real-time operational intelligence across the facility.")
-snapshot = dashboard_demo_snapshot()
+snapshot = get_dashboard()
 render_live_signal_banner("LIVE DEMO TELEMETRY", "Operational data shown is the existing frontend demo snapshot. Backend stream integration is pending.")
 st.write("")
 
@@ -19,7 +27,9 @@ st.write("")
 left, right = st.columns([1.65, 1])
 with left:
     st.markdown("<div class='section-label'>24-HOUR OPERATIONAL HEALTH</div>", unsafe_allow_html=True)
-    st.line_chart(trend_series(), color=["#55D6FF", "#9B8CFF"], height=280)
+    st.info(
+        "Live health trend will appear after telemetry history is populated."
+    )
 with right:
     st.markdown("<div class='section-label'>ATTENTION QUEUE</div>", unsafe_allow_html=True)
     for item in snapshot["incidents"]:

@@ -1,6 +1,14 @@
 import streamlit as st
 from components.phase_one_views import render_agent_execution_view, render_live_signal_banner
-from ui_helpers import agent_monitor_demo_agents, metric_card, page_heading, render_sidebar, setup_page, status_chip
+from ui_helpers import (
+    metric_card,
+    page_heading,
+    render_sidebar,
+    setup_page,
+    status_chip
+)
+
+from frontend_services.agent_adapter import get_agents
 
 setup_page("Agent Monitor")
 render_sidebar("Agent Monitor")
@@ -12,7 +20,7 @@ for col, args in zip(st.columns(4), [("Agents online", "5 / 5", "All systems ava
     with col: metric_card(*args)
 
 st.write("")
-agents = agent_monitor_demo_agents()
+agents = get_agents()
 st.markdown("<div class='section-label'>AGENT FLEET</div>", unsafe_allow_html=True)
 st.dataframe(agents, hide_index=True, use_container_width=True)
 

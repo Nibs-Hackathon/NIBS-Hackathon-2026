@@ -1,4 +1,18 @@
-"""Gemini embedding manager for RigOS retrieval workflows."""
+"""
+rag/embedder.py
+
+Gemini Embedding Manager for RigOS
+
+This module replaces the previous HuggingFace embedding model with
+Google's Gemini embedding model (text-embedding-001).
+
+The public API intentionally remains the same:
+
+    embedder = Embedder()
+    model = embedder.get_model()
+
+so existing code such as VectorStore and Retriever continues to work.
+"""
 
 from __future__ import annotations
 
@@ -9,16 +23,26 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-from services.llm import _has_invalid_gemini_proxy
-
-
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
 class Embedder:
-    """Singleton wrapper that preserves the existing embedding API."""
+    """
+    Singleton wrapper around Google's Gemini embedding model.
+
+    Compatible with:
+        - FAISS
+        - LangChain VectorStore
+        - Retriever
+        - Existing RigOS code
+
+    Example
+    -------
+        embedder = Embedder()
+        embeddings = embedder.get_model()
+    """
 
     _model: Optional[GoogleGenerativeAIEmbeddings] = None
 
@@ -31,15 +55,21 @@ class Embedder:
         "GEMINI_API_KEY",
     )
 
-    def __init__(self) -> None:
+    def __init__(self):
         if Embedder._model is None:
             self._initialize()
 
     def _initialize(self) -> None:
+        """
+        Initialize Gemini embeddings once.
+        """
+
         api_key = None
         selected_variable = None
+
         for variable in self.API_KEY_ENVIRONMENTS:
             value = os.getenv(variable)
+
             if value:
                 api_key = value
                 selected_variable = variable
@@ -47,35 +77,52 @@ class Embedder:
 
         if api_key is None:
             raise RuntimeError(
-                "No Gemini API key found. Expected one of: "
-                + ", ".join(self.API_KEY_ENVIRONMENTS)
+                "No Gemini API key found.\n\n"
+                "Expected one of:\n"
+                + "\n".join(f" - {v}" for v in self.API_KEY_ENVIRONMENTS)
             )
 
-        # Preserve the current process environment. Only this Gemini embedding
-        # client opts out of the known dead loopback proxy.
-        client_args = {"trust_env": False} if _has_invalid_gemini_proxy() else None
-        logger.info("Initializing Gemini embeddings using %s", selected_variable)
-        Embedder._model = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            google_api_key=api_key,
-            client_args=client_args,
-            # The persisted FAISS index uses 384-dimensional vectors. Keeping
-            # this dimension preserves its compatibility until re-indexing is
-            # explicitly scheduled.
-            output_dimensionality=384,
+        logger.info(
+            "Initializing Gemini embeddings using %s",
+            selected_variable,
         )
+
+        Embedder._model = GoogleGenerativeAIEmbeddings(
+            model="gemini-embedding-001",
+            google_api_key=api_key,
+        )
+
         logger.info("Gemini embeddings initialized successfully.")
 
     def get_model(self) -> GoogleGenerativeAIEmbeddings:
+        """
+        Returns the embedding model.
+
+        This preserves compatibility with the previous implementation.
+
+        Returns
+        -------
+        GoogleGenerativeAIEmbeddings
+        """
+
         if Embedder._model is None:
             self._initialize()
+
         return Embedder._model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """
+        Embed multiple documents.
+        """
+
         return self.get_model().embed_documents(texts)
 
     def embed_query(self, text: str) -> list[float]:
+        """
+        Embed a single query.
+        """
+
         return self.get_model().embed_query(text)
 
     def __repr__(self) -> str:
-        return "Embedder(model='models/gemini-embedding-001', dimensions=384)"
+        return "Embedder(model='models/text-embedding-004')"

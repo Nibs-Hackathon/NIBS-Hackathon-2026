@@ -80,7 +80,7 @@ class KnowledgeDB(Base):
     content = Column(Text)
     source = Column(Text)
     embedding = Column(
-        Vector(384)
+        Vector(3072)
     )
 
 class AgentExecutionDB(Base):

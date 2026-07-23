@@ -16,7 +16,8 @@ from agents.knowledge import KnowledgeAgent
 from agents.maintenance import MaintenanceAgent
 from agents.diagnostic import DiagnosticAgent
 from agents.planning import PlanningAgent
-
+from rag.embedder import Embedder
+from rag.neon_vector_store import NeonVectorStoreVectorStore
 
 kernel = MAOKernel()
 
@@ -29,10 +30,18 @@ for workflow in (
     MaintenanceWorkflow(),
 ):
     kernel.register_workflow(workflow)
+embedder = Embedder()
+
+vector_store = NeonVectorStore(
+    embedder.get_model()
+)
+vector_store.load(
+    "rag/index"
+)
 
 for agent in (
     SafetyAgent(),
-    KnowledgeAgent(),
+    KnowledgeAgent(vector_store),
     MaintenanceAgent(),
     DiagnosticAgent(),
     PlanningAgent(),

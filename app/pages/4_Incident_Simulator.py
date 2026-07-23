@@ -11,8 +11,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 from components.phase_one_views import render_incident_response_flow, render_live_signal_banner
-from services.incident_service import IncidentService
-from services.runtime import simulator
+from frontend_services.incident_adapter import trigger_incident
 from ui_helpers import (
     incident_simulator_demo_flow,
     page_heading,
@@ -54,8 +53,9 @@ with right:
 
 if launched:
     st.success(f"Simulation launched for {asset}")
-    service = IncidentService(simulator)
-    simulator_result = service.trigger_incident(incident_type)
+    simulator_result = trigger_incident(
+        incident_type
+    )
     render_incident_card(
         asset,
         incident_type,
