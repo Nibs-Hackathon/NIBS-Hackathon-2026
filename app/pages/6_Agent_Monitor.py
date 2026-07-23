@@ -1,38 +1,51 @@
 import streamlit as st
-from components.phase_one_views import render_agent_execution_view, render_live_signal_banner
-from ui_helpers import (
-    metric_card,
-    page_heading,
-    render_sidebar,
-    setup_page,
-    status_chip
-)
 
-from frontend_services.agent_adapter import get_agents
+from components.phase_one_views import render_agent_execution_view
+from frontend_services.agent_adapter import get_agent_monitor_metrics, get_agents
+from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
+
 
 setup_page("Agent Monitor")
 render_sidebar("Agent Monitor")
-page_heading("AI SUPERVISION", "Agent Monitor", "Observe autonomous specialists, workflow handoffs, and decision confidence.")
-render_live_signal_banner("DEMO AGENT STATE", "The current view preserves the existing demonstration data. Live registry and workflow state are pending backend integration.", "Info")
-st.write("")
+page_heading("AI SUPERVISION", "Agent Monitor", "Registered MAO specialists and their latest runtime decisions.")
 
-for col, args in zip(st.columns(4), [("Agents online", "5 / 5", "All systems available", "green"), ("Workflows active", "02", "1 awaiting input", "amber"), ("Avg. confidence", "94.6%", "+1.8% today", "cyan"), ("Decisions today", "128", "Within review SLA", "violet")]):
-    with col: metric_card(*args)
-
-st.write("")
 agents = get_agents()
-st.markdown("<div class='section-label'>AGENT FLEET</div>", unsafe_allow_html=True)
-st.dataframe(agents, hide_index=True, use_container_width=True)
+for col, args in zip(st.columns(4), get_agent_monitor_metrics(agents)):
+    with col:
+        metric_card(*args)
 
-render_agent_execution_view(agents)
+st.write("")
+st.markdown("<div class='section-label'>AGENT FLEET</div>", unsafe_allow_html=True)
+if agents:
+    st.dataframe(
+        agents,
+        hide_index=True,
+        height=300,
+        column_config={
+            "Decision": st.column_config.TextColumn("Latest decision", width="large"),
+            "Confidence": st.column_config.TextColumn("Confidence"),
+        },
+    )
+    render_agent_execution_view(agents)
+else:
+    st.warning("No agents are registered with the shared MAO runtime.")
 
 left, right = st.columns(2)
 with left:
     st.markdown("<div class='section-label'>WORKFLOW PROGRESS</div>", unsafe_allow_html=True)
-    st.progress(72, text="Vibration response workflow • 72% complete")
-    st.progress(38, text="Pressure variance workflow • 38% complete")
+    active = [agent for agent in agents if agent["State"] in {"Ready", "Attention"}]
+    if active:
+        st.progress(100, text=f"{len(active)} agent(s) ready for the next approved workflow")
+    else:
+        st.caption("Workflow progress is available after the scheduler records an active task.")
 with right:
     st.markdown("<div class='section-label'>LATEST HANDOFF</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='panel'>{status_chip('Info')}<p><b>Diagnostic → Planning</b></p><span class='muted'>Root-cause confidence reached threshold. Recovery plan generation has been queued.</span></div>", unsafe_allow_html=True)
-    # TODO: Surface live MAOKernel registry, scheduler, task, and report state
-    # through an approved read-only backend integration; do not instantiate a kernel here.
+    latest = next((agent for agent in agents if agent["State"] != "Ready"), None)
+    if latest:
+        st.markdown(
+            f"<div class='panel'>{status_chip(latest['State'])}<p><b>{latest['Agent']} agent</b></p>"
+            f"<span class='muted'>{latest['Decision']} · {latest['Last execution']}</span></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("No agent handoff has been recorded yet.")

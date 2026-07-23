@@ -90,8 +90,10 @@ def render_sidebar(active: str) -> None:
         st.markdown(f"**{active}**")
         st.markdown("<span class='status status-running'>● SYSTEMS NOMINAL</span>", unsafe_allow_html=True)
         st.divider()
-        st.caption("LIVE DEMO ENVIRONMENT")
-        st.caption("Data shown is simulated until backend integration is enabled.")
+        st.caption("RUNTIME CONNECTED ENVIRONMENT")
+        st.caption("Views read from the shared MAO runtime and persisted intelligence records.")
+        from frontend_services.demo_mode import render_demo_mode_control
+        render_demo_mode_control()
         render_copilot_widget()
 
 
@@ -380,10 +382,18 @@ def gauge_card(label: str, value: int, detail: str, color: str = "#55D6FF") -> N
     )
 
 
-def render_health_heatmap() -> None:
-    """Compact CSS heatmap for the executive dashboard; data remains demo-only."""
-    cells = [("Process A", "96%", "#4FE3B2"), ("Process B", "82%", "#FFBF69"), ("Terminal", "91%", "#4FE3B2"), ("Pipeline", "68%", "#FFBF69"), ("Utilities", "43%", "#FF718D")]
-    blocks = "".join(f"<div style='flex:1;min-width:100px;padding:14px 10px;border-radius:11px;background:{color}20;border:1px solid {color}66'><b>{zone}</b><br><span style='font-size:1.45rem;color:{color}'>{score}</span></div>" for zone, score, color in cells)
-    st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{blocks}</div>", unsafe_allow_html=True)
+def render_health_heatmap(zones: list[dict]) -> None:
+    """Render live zone-health aggregates supplied by the dashboard adapter."""
+    if not zones:
+        st.info("Zone health will appear when assets are registered with the shared runtime.")
+        return
+    blocks = []
+    for item in zones:
+        health = item["health"]
+        color = "#4FE3B2" if health >= 80 else ("#FFBF69" if health >= 60 else "#FF718D")
+        blocks.append(
+            f"<div style='flex:1;min-width:100px;padding:14px 10px;border-radius:11px;background:{color}20;border:1px solid {color}66'><b>{item['zone']}</b><br><span style='font-size:1.45rem;color:{color}'>{health}%</span></div>"
+        )
+    st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{''.join(blocks)}</div>", unsafe_allow_html=True)
 
     

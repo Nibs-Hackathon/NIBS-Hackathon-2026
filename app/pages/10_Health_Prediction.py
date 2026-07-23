@@ -1,314 +1,90 @@
 import streamlit as st
 
-from ui_helpers import (
-    gauge_card,
-    metric_card,
-    page_heading,
-    render_sidebar,
-    setup_page
-)
-
 from frontend_services.asset_adapter import get_assets
 from frontend_services.health_prediction_adapter import get_health_prediction
+from ui_helpers import gauge_card, metric_card, page_heading, render_sidebar, setup_page
+
+
+def _score(value: str | int | float | None) -> int:
+    if value is None or value == "Not available":
+        return 0
+    return max(0, min(100, int(float(str(value).replace("%", "")))))
 
 
 setup_page("Health Prediction")
-
 render_sidebar("Predictive Health")
+page_heading("PREDICTIVE INTELLIGENCE", "Asset Health Prediction", "Persisted PredictionAgent outputs with supporting runtime telemetry.")
 
-
-page_heading(
-    "PREDICTIVE INTELLIGENCE",
-    "Asset Health Prediction",
-    "Forecast degradation risk early enough to plan safe, efficient intervention."
-)
-
-
-
-# -----------------------------
-# Load assets
-# -----------------------------
-
-asset_snapshot = get_assets()
-
-assets = asset_snapshot["assets"]
-
-
+assets = get_assets()["assets"]
 if not assets:
-    st.warning("No assets available.")
+    st.warning("No assets are available from the shared MAO runtime.")
     st.stop()
 
-
-asset_names = [
-    asset["Asset"]
-    for asset in assets
-]
-
-
-
-# -----------------------------
-# Asset selection
-# -----------------------------
-
 left, right = st.columns([1, 1.5])
-
-
 with left:
-
-    selected_name = st.selectbox(
-        "Forecast asset",
-        asset_names
-    )
-
-
-    horizon = st.select_slider(
-        "Forecast horizon",
-        options=[
-            "7 days",
-            "14 days",
-            "30 days"
-        ],
-        value="14 days"
-    )
-
-
-    selected_asset = next(
-        asset
-        for asset in assets
-        if asset["Asset"] == selected_name
-    )
-
-
-    horizon_days = int(
-        horizon.split()[0]
-    )
-
-
-    profile = get_health_prediction(
-        selected_asset["id"],
-        horizon_days
-    )
-
-
-    st.markdown(
-        """
-        <div class='panel'>
-        <div class='section-label'>
-        MODEL STATUS
-        </div>
-
-        <b>Forecast engine: LIVE TELEMETRY MODE</b>
-
-        <p class='muted'>
-        Prediction generated from asset telemetry history
-        and current health calculations.
-        </p>
-
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-
-# -----------------------------
-# Prediction graph
-# -----------------------------
+    selected_name = st.selectbox("Forecast asset", [asset["Asset"] for asset in assets])
+    horizon = st.select_slider("Requested forecast horizon", options=["7 days", "14 days", "30 days"], value="14 days")
+    selected_asset = next(asset for asset in assets if asset["Asset"] == selected_name)
+    profile = get_health_prediction(selected_asset["id"], int(horizon.split()[0]))
+    if profile["is_demo"]:
+        st.warning("Demo Mode: sample telemetry is shown locally because this asset has no live readings. Nothing is persisted.")
+    if profile["warning"]:
+        st.caption(profile["warning"])
+    st.markdown("<div class='panel'><div class='section-label'>MODEL STATUS</div>", unsafe_allow_html=True)
+    if profile["has_prediction"]:
+        st.markdown("<b>Prediction source: PERSISTED PREDICTION AGENT OUTPUT</b>", unsafe_allow_html=True)
+        st.caption("Forecast values are read from existing MAO prediction records.")
+    else:
+        st.markdown("<b>Prediction source: AWAITING PREDICTION AGENT OUTPUT</b>", unsafe_allow_html=True)
+        st.caption("Current observed health is shown when available; no forecast is manufactured.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with right:
-
-    st.markdown(
-        f"""
-        <div class='section-label'>
-        PROJECTED HEALTH · {selected_name.upper()}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-    st.line_chart(
-        profile["predicted"],
-        height=280
-    )
-
-
-
-# -----------------------------
-# Gauges
-# -----------------------------
-
-gauge_columns = st.columns(3)
-
-
-with gauge_columns[0]:
-
-    gauge_card(
-        "Health score",
-        profile["health"],
-        "Current modeled condition",
-        "#55D6FF"
-    )
-
-
-with gauge_columns[1]:
-
-    confidence = profile["confidence"]
-
-    if confidence.endswith("%"):
-        confidence_value = int(
-            confidence.replace("%","")
-        )
+    st.markdown(f"<div class='section-label'>PERSISTED PREDICTION HISTORY · {selected_name.upper()}</div>", unsafe_allow_html=True)
+    if profile["predicted"]["Prediction health"]:
+        st.line_chart(profile["predicted"], height=280)
     else:
-        confidence_value = 50
+        st.info("No persisted prediction is available for this asset yet.")
 
-
-    gauge_card(
-        "Model confidence",
-        confidence_value,
-        "Evidence consistency",
-        "#4FE3B2"
-    )
-
-
-
-with gauge_columns[2]:
-
-    risk = profile["failure_probability"]
-
-    risk_value = int(
-        risk.replace("%","")
-    )
-
-
-    gauge_card(
-        "Failure risk",
-        risk_value,
-        f"{horizon} probability",
-        "#FF718D"
-    )
-
-
-
-# -----------------------------
-# Metrics
-# -----------------------------
+for col, args in zip(
+    st.columns(3),
+    [
+        ("Health score", _score(profile["health"]), "Latest observed or predicted condition", "#55D6FF"),
+        ("Model confidence", _score(profile["confidence"]), "Persisted prediction evidence", "#4FE3B2"),
+        ("Failure risk", _score(profile["failure_probability"]), f"Requested horizon: {horizon}", "#FF718D"),
+    ],
+):
+    with col:
+        gauge_card(*args)
 
 for col, args in zip(
     st.columns(4),
     [
-        (
-            "Current health",
-            f"{profile['health']}%",
-            "Calculated from telemetry",
-            "amber"
-        ),
-
-        (
-            "Remaining useful life",
-            profile["rul"],
-            "Estimate before intervention",
-            "cyan"
-        ),
-
-        (
-            "Failure probability",
-            profile["failure_probability"],
-            f"At end of {horizon}",
-            "red"
-        ),
-
-        (
-            "Model confidence",
-            profile["confidence"],
-            "Evidence quality",
-            "green"
-        )
-    ]
+        ("Current health", f"{profile['health']}%" if profile["health"] is not None else "Not available", "Observed runtime condition", "amber"),
+        ("Remaining useful life", profile["rul"], "Persisted prediction value", "cyan"),
+        ("Failure probability", profile["failure_probability"], "Persisted prediction value", "red"),
+        ("Model confidence", profile["confidence"], "Persisted prediction evidence", "green"),
+    ],
 ):
-
     with col:
         metric_card(*args)
 
-
-
-st.write("")
-
-
-
-# -----------------------------
-# Historical health
-# -----------------------------
-
-left, right = st.columns([1.25,1])
-
-
+left, right = st.columns([1.25, 1])
 with left:
-
-    st.markdown(
-        "<div class='section-label'>HISTORICAL HEALTH TIMELINE</div>",
-        unsafe_allow_html=True
-    )
-
-
-    st.line_chart(
-        profile["historical"],
-        height=210
-    )
-
-
-
+    st.markdown("<div class='section-label'>OBSERVED HEALTH TIMELINE</div>", unsafe_allow_html=True)
+    if profile["historical"]["Observed health"]:
+        st.line_chart({"Observed health": profile["historical"]["Observed health"]}, height=210)
+    else:
+        st.caption("Observed health timeline will populate as telemetry arrives.")
 with right:
+    st.markdown("<div class='section-label'>AI DECISION EVIDENCE</div>", unsafe_allow_html=True)
+    if profile["evidence"]:
+        st.markdown("<div class='panel'><b>Prediction evidence</b><ul>" + "".join(f"<li>{item}</li>" for item in profile["evidence"]) + "</ul></div>", unsafe_allow_html=True)
+    else:
+        st.info("Evidence will appear with the next PredictionAgent result.")
 
-    st.markdown(
-        """
-        <div class='section-label'>
-        AI DECISION EXPLANATION
-        </div>
-
-        <div class='panel'>
-
-        <b>Why this prediction was made</b>
-
-        <p class='muted'>
-        Prediction generated from current telemetry behaviour,
-        sensor deviations, and asset condition history.
-        </p>
-
-
-        <b>Recommended action</b>
-
-        <p class='muted'>
-        Review operating conditions and schedule inspection
-        based on calculated risk level.
-        </p>
-
-
-        <b>Expected impact</b>
-
-        <p class='muted'>
-        Early intervention reduces probability of unexpected downtime.
-        </p>
-
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-
-# -----------------------------
-# Telemetry table
-# -----------------------------
-
-st.markdown(
-    "<div class='section-label'>SUPPORTING TELEMETRY</div>",
-    unsafe_allow_html=True
-)
-
-
-st.dataframe(
-    profile["telemetry"],
-    hide_index=True,
-    use_container_width=True
-)
+st.markdown("<div class='section-label'>SUPPORTING TELEMETRY</div>", unsafe_allow_html=True)
+if profile["telemetry"]:
+    st.dataframe(profile["telemetry"], hide_index=True)
+else:
+    st.caption("No telemetry has been recorded for this asset.")
