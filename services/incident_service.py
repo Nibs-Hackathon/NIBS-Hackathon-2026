@@ -1,5 +1,5 @@
 from models.sensor import SensorType
-
+from services.kernel_factory import get_kernel
 
 class IncidentService:
 

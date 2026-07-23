@@ -1,33 +1,26 @@
-from datetime import datetime
-from typing import Any
-from uuid import uuid4
-
-from pydantic import BaseModel, Field
+from dataclasses import dataclass, field
+from typing import List, Dict
 
 
-class AgentResult(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4()))
+@dataclass
+class AgentResult:
 
     agent_name: str
 
-    success: bool = True
+    success: bool
 
-    confidence: float
+    finding: str = ""
 
-    summary: str
+    confidence: float = 0.0
 
-    decision: str = "monitor"
+    evidence: List[str] = field(default_factory=list)
 
-    evidence: list[str] = Field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
 
-    recommendations: list[str] = Field(default_factory=list)
+    required_action: str = ""
 
-    actions_required: list[str] = Field(default_factory=list)
+    requires_human_approval: bool = True
 
-    requires_human_approval: bool = False
+    metadata: Dict = field(default_factory=dict)
 
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    execution_time: float = 0.0
-
-    timestamp: datetime = Field(default_factory=datetime.now)
+    summary: str = ""

@@ -9,12 +9,33 @@ class DiagnosticAgent(Agent):
     def execute(self, task, context):
 
         return AgentResult(
+
             agent_name=self.name,
+
             success=True,
+
+            finding=
+            "Possible cavitation detected in pump system",
+
             confidence=0.95,
-            summary="Possible cavitation detected.",
+
+
+            evidence=[
+                "Abnormal vibration pattern",
+                "Reduced suction pressure"
+            ],
+
+
             recommendations=[
                 "Inspect pump inlet",
-                "Check suction pressure",
+                "Check suction pressure"
             ],
+
+
+            required_action=
+            "Perform pump inspection",
+
+
+            requires_human_approval=True
+
         )

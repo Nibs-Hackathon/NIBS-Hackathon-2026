@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from mao import MAOKernel
 
 from mao.workflows.pressure_workflow import PressureWorkflow
@@ -7,6 +9,7 @@ from mao.workflows.flow_workflow import FlowWorkflow
 from mao.workflows.maintenance_workflow import MaintenanceWorkflow
 
 
+@lru_cache(maxsize=1)
 def create_kernel():
 
     kernel = MAOKernel()
@@ -30,6 +33,5 @@ def create_kernel():
     kernel.register_workflow(
         MaintenanceWorkflow()
     )
-
 
     return kernel
