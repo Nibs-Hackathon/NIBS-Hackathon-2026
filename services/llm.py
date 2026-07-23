@@ -1,4 +1,11 @@
-"""Centralized, failover-safe access to Gemini models."""
+"""
+Centralized, failover-safe access to Gemini models.
+
+Supports:
+- Local development (.env)
+- Streamlit Cloud (st.secrets)
+- Multiple API keys with automatic failover
+"""
 
 import logging
 import os
@@ -9,68 +16,191 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 logger = logging.getLogger(__name__)
+
+
+# Load local .env
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env")
+
+load_dotenv(
+    PROJECT_ROOT / ".env"
+)
 
 
 class LLMManager:
-    """Route all LLM requests through configured Gemini keys with failover."""
+    """
+    Central Gemini router.
 
-    def __init__(self, model_name="gemini-2.5-flash", temperature=0.2):
+    Agents should NEVER directly call Gemini.
+    They should use this class.
+    """
+
+
+    def __init__(
+        self,
+        model_name="gemini-2.5-flash",
+        temperature=0.2
+    ):
+
         self.model_name = model_name
         self.temperature = temperature
+
         self.keys = self._load_keys()
+
         self.current_key_index = 0
+
 
         if not self.keys:
             raise RuntimeError(
-                "No Gemini API keys are configured. Add GOOGLE_API_KEY_1 and "
-                "GOOGLE_API_KEY_2 to the project-root .env file."
+                "No Gemini API keys configured. "
+                "Add GOOGLE_API_KEY_1 and GOOGLE_API_KEY_2 "
+                "to .env or Streamlit secrets."
             )
+
+
+        logger.info(
+            "LLMManager initialized with %s Gemini key(s)",
+            len(self.keys)
+        )
+
 
     @staticmethod
     def _load_keys():
-        """Read new names first while retaining legacy names during migration."""
-        names = (
+
+        key_names = [
             "GOOGLE_API_KEY_1",
             "GOOGLE_API_KEY_2",
             "GEMINI_API_KEY_1",
             "GEMINI_API_KEY_2",
+        ]
+
+
+        keys = []
+
+
+        # ---------------------------------
+        # Local environment (.env)
+        # ---------------------------------
+
+        for name in key_names:
+
+            value = os.getenv(name)
+
+            if value:
+                keys.append(value)
+
+
+
+        # ---------------------------------
+        # Streamlit Cloud secrets
+        # ---------------------------------
+
+        try:
+
+            import streamlit as st
+
+
+            for name in key_names:
+
+                if name in st.secrets:
+
+                    keys.append(
+                        st.secrets[name]
+                    )
+
+
+        except Exception:
+
+            # Running outside Streamlit
+            pass
+
+
+
+        # Remove duplicates
+        return list(
+            dict.fromkeys(keys)
         )
-        return list(dict.fromkeys(
-            key for name in names if (key := os.getenv(name))
-        ))
+
 
     def _create_model(self, key):
+
         return ChatGoogleGenerativeAI(
+
             model=self.model_name,
-            api_key=key,
+
+            google_api_key=key,
+
             temperature=self.temperature,
         )
 
+
+
     def generate(self, prompt):
-        """Generate a response, switching keys after each provider failure."""
+
+        """
+        Generate Gemini response.
+
+        Automatically rotates keys if one fails.
+        """
+
         last_error = None
 
-        for _ in range(len(self.keys)):
-            key_number = self.current_key_index + 1
-            key = self.keys[self.current_key_index]
+
+        total_keys = len(self.keys)
+
+
+        for attempt in range(total_keys):
+
+
+            index = self.current_key_index
+
+
+            key = self.keys[index]
+
 
             try:
-                return self._create_model(key).invoke(prompt).content
-            except Exception as error:
-                last_error = error
-                logger.warning(
-                    "Gemini request failed for configured key %s; trying failover.",
-                    key_number,
-                    exc_info=True,
+
+                logger.info(
+                    "Using Gemini key %s",
+                    index + 1
                 )
+
+
+                response = (
+                    self
+                    ._create_model(key)
+                    .invoke(prompt)
+                )
+
+
+                return response.content
+
+
+
+            except Exception as error:
+
+
+                last_error = error
+
+
+                logger.warning(
+
+                    "Gemini key %s failed. Switching key.",
+
+                    index + 1,
+
+                    exc_info=True
+                )
+
+
+                # Move to next key
+
                 self.current_key_index = (
                     self.current_key_index + 1
-                ) % len(self.keys)
+                ) % total_keys
+
+
 
         raise RuntimeError(
-            "All configured Gemini API keys failed. Check quota, permissions, "
-            "and network access."
+            "All Gemini API keys failed. "
+            "Check quota, permissions, and configuration."
         ) from last_error
-
