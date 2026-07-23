@@ -25,6 +25,23 @@ load_dotenv(
     PROJECT_ROOT / ".env"
 )
 
+SUPPORTED_GEMINI_ENV_VARS = (
+    "GEMINI_API_KEY_1",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_KEY_1",
+    "GOOGLE_API_KEY_1",
+    "GOOGLE_API_KEY_2",
+    "GEMINI_API_KEY_2",
+)
+
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+
+
+def get_gemini_model() -> str:
+    """Return the configured Gemini model without exposing credentials."""
+    return os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+
 
 class LLMManager:
     """
@@ -37,12 +54,10 @@ class LLMManager:
 
     def __init__(
         self,
-        model_name="gemini-2.5-flash",
-        temperature=0.2
+        model_name=None,
     ):
 
-        self.model_name = model_name
-        self.temperature = temperature
+        self.model_name = model_name or get_gemini_model()
 
         self.keys = self._load_keys()
 
@@ -51,9 +66,8 @@ class LLMManager:
 
         if not self.keys:
             raise RuntimeError(
-                "No Gemini API keys configured. "
-                "Add GOOGLE_API_KEY_1 and GOOGLE_API_KEY_2 "
-                "to .env or Streamlit secrets."
+                "No Gemini API key was found. Copy .env.example to .env and "
+                "configure one of: " + ", ".join(SUPPORTED_GEMINI_ENV_VARS) + "."
             )
 
 
@@ -66,12 +80,7 @@ class LLMManager:
     @staticmethod
     def _load_keys():
 
-        key_names = [
-            "GOOGLE_API_KEY_1",
-            "GOOGLE_API_KEY_2",
-            "GEMINI_API_KEY_1",
-            "GEMINI_API_KEY_2",
-        ]
+        key_names = SUPPORTED_GEMINI_ENV_VARS
 
 
         keys = []
@@ -128,8 +137,6 @@ class LLMManager:
             model=self.model_name,
 
             google_api_key=key,
-
-            temperature=self.temperature,
         )
 
 
@@ -172,7 +179,16 @@ class LLMManager:
                 )
 
 
-                return response.content
+                content = response.content
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    return "".join(
+                        part if isinstance(part, str) else part.get("text", "")
+                        for part in content
+                        if isinstance(part, str) or isinstance(part, dict)
+                    )
+                return str(content)
 
 
 
