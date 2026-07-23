@@ -26,7 +26,7 @@ OPERATIONAL_KEYWORDS = (
     "temperature", "vibration", "flow", "gas", "refinery", "sop", "procedure",
     "equipment", "motor", "turbine", "boiler", "heat exchanger", "reactor",
     "distillation", "column", "flare", "corrosion", "shutdown", "startup",
-    "trip", "failure", "process", "telemetry", "sensor",
+    "trip", "failure", "process", "telemetry", "sensor", "knowledge",
 )
 
 

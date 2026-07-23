@@ -18,7 +18,11 @@ from streamlit.components.v1 import html as component_html
 # Streamlit launched with ``streamlit run app/Home.py`` puts ``app/`` on
 # sys.path. Use a frontend-specific package name to avoid shadowing the
 # repository's backend ``services`` package.
-from frontend_services.knowledge_agent_adapter import KnowledgeAgentUnavailable, ask_knowledge_agent
+from frontend_services.knowledge_agent_adapter import (
+    KnowledgeAgentUnavailable,
+    ask_knowledge_agent,
+    is_operational_query,
+)
 
 
 COLORS = {
@@ -103,10 +107,31 @@ def setup_page(title: str, icon: str = "◈") -> None:
         .st-key-nex-panel [data-testid="stChatMessage"] { padding:.4rem .1rem; }
         .st-key-nex-panel [data-testid="stChatInput"] { padding-bottom:0; }
         .st-key-nex-panel .stButton button { font-size:.76rem !important; height:auto !important; min-height:0 !important; padding:.3rem .55rem !important; background:transparent !important; border-color:rgba(143,161,186,.3) !important; box-shadow:none !important; }
-        @keyframes nex-panel-in { from { opacity:0; transform:translateX(-22px) scale(.97); } to { opacity:1; transform:translateX(0) scale(1); } }
-        [data-testid="stDialog"] { align-items:flex-end !important; justify-content:flex-start !important; padding:0 0 24px 128px !important; z-index:999998 !important; }
-        [data-testid="stDialog"] [role="dialog"] { width:min(440px,calc(100vw - 152px)) !important; max-height:calc(100vh - 48px); border:1px solid rgba(109,211,255,.34); border-radius:19px; background:linear-gradient(145deg,rgba(18,35,59,.97),rgba(7,14,27,.99)); box-shadow:0 26px 72px rgba(0,0,0,.58),0 0 34px rgba(58,177,255,.18); backdrop-filter:blur(20px); animation:nex-panel-in .36s cubic-bezier(.2,.85,.22,1); }
-        @media (max-width:700px) { .st-key-nex-launcher { left:8px; bottom:8px; transform:scale(.82); transform-origin:bottom left; } .st-key-nex-panel { left:10px; bottom:98px; width:calc(100vw - 20px); } }
+        @keyframes nex-panel-in { from { opacity:0; transform:translate3d(10px,12px,0) scale(.95); } to { opacity:1; transform:translate3d(0,0,0) scale(1); } }
+        /* Keep Streamlit's dialog itself as the compact floating window.  Styling
+           the full-screen dialog host caused its dark backdrop to become a giant panel. */
+        [data-testid="stDialog"] {
+            position:fixed !important; inset:auto 128px 126px auto !important;
+            z-index:999998 !important; display:block !important;
+            width:400px !important; max-width:calc(100vw - 152px) !important;
+            height:620px !important; max-height:calc(100vh - 150px) !important;
+            margin:0 !important; padding:0 !important; background:transparent !important;
+            overflow:visible !important;
+        }
+        [data-testid="stDialog"] [role="dialog"] {
+            box-sizing:border-box !important; width:100% !important; max-width:420px !important;
+            height:100% !important; max-height:620px !important; margin:0 !important;
+            border:1px solid rgba(109,211,255,.34); border-radius:18px !important;
+            background:linear-gradient(145deg,rgba(18,35,59,.93),rgba(7,14,27,.97));
+            box-shadow:0 26px 72px rgba(0,0,0,.58),0 0 34px rgba(58,177,255,.18);
+            backdrop-filter:blur(20px); overflow:hidden !important;
+            animation:nex-panel-in .25s cubic-bezier(.2,.85,.22,1) both;
+        }
+        @media (max-width:700px) {
+            [data-testid="stDialog"] { right:106px !important; bottom:106px !important; width:calc(100vw - 122px) !important; max-width:400px !important; height:min(620px,calc(100vh - 126px)) !important; }
+            .st-key-nex-launcher { right:8px; bottom:8px; transform:scale(.82); transform-origin:bottom right; }
+            .st-key-nex-panel { right:10px; bottom:98px; width:calc(100vw - 20px); }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -289,7 +314,14 @@ def render_nex_chat_dialog() -> None:
     prompt = st.chat_input("Ask Command Nexus...", key="nex_chat_input")
     question = prompt or (selected if use_selected else "")
     if question:
-        with st.spinner("NEX is preparing an operational response..."):
+        # Reuse the backend's existing intent classifier so the NEX presentation
+        # follows the same routing decision as the adapter. Casual prompts go
+        # straight to Gemini without operational UI; refinery prompts retain the
+        # operational loading state and KnowledgeAgent/RAG path.
+        if is_operational_query(question):
+            with st.spinner("NEX is thinking..."):
+                append_copilot_backend_exchange(question)
+        else:
             append_copilot_backend_exchange(question)
         st.rerun()
 
@@ -314,7 +346,7 @@ def render_nex_global() -> None:
         f"""
         <style>
         #rigos-nex-fallback {{
-            position: fixed !important; left: 24px !important; bottom: 24px !important;
+            position: fixed !important; right: 24px !important; left: auto !important; bottom: 24px !important;
             z-index: 999999 !important; display: block !important; visibility: visible !important;
             opacity: 1 !important; overflow: visible !important; width: 88px; height: 88px;
             pointer-events: auto; animation: rigos-nex-fallback-float 4.2s ease-in-out infinite;
@@ -322,7 +354,7 @@ def render_nex_global() -> None:
         #rigos-nex-fallback a {{ display: block; width: 100%; height: 100%; }}
         #rigos-nex-fallback img {{ width: 84px; height: 84px; object-fit: contain; display: block; filter: drop-shadow(0 10px 9px rgba(0,0,0,.46)) drop-shadow(0 0 16px rgba(49,203,255,.8)); transition: transform .2s ease, filter .2s ease; }}
         #rigos-nex-fallback:hover img {{ transform: scale(1.08) rotate(-2deg); filter: drop-shadow(0 12px 10px rgba(0,0,0,.48)) drop-shadow(0 0 26px rgba(49,203,255,1)); }}
-        #rigos-nex-debug {{ position: fixed; left: 24px; bottom: 4px; z-index: 999999; color: #86e9ff; font: 600 9px/1.3 monospace; text-shadow: 0 1px 4px #000; pointer-events: none; }}
+        @media (max-width:700px) {{ #rigos-nex-fallback {{ right:10px !important; bottom:10px !important; transform:scale(.9); transform-origin:bottom right; }} }}
         @keyframes rigos-nex-fallback-float {{ 0%,100% {{ transform: translateY(0) rotate(-1deg); }} 50% {{ transform: translateY(-6px) rotate(2deg); }} }}
         </style>
         <div id="rigos-nex-fallback" role="complementary" aria-label="Command Nexus AI Assistant">
@@ -330,7 +362,6 @@ def render_nex_global() -> None:
             <img src="{nex_mascot_data_url()}" alt="NEX, the Command Nexus companion">
           </a>
         </div>
-        <div id="rigos-nex-debug">NEX render function executed<br>Portal created: fallback active<br>Mascot appended</div>
         """,
         unsafe_allow_javascript=False,
     )
