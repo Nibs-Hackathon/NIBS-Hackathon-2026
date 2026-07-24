@@ -12,11 +12,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.runtime import kernel
+# ✅ FIXED - Use runtime proxy
+from services.runtime import runtime
 
 
 def _result_index() -> dict[tuple[str, str], Any]:
     """Index completed agent output by its workflow task and assigned agent."""
+    kernel = runtime.kernel
     return {
         (result.metadata.get("task_name", ""), result.agent_name): result
         for result in kernel.state.agent_results
@@ -25,6 +27,7 @@ def _result_index() -> dict[tuple[str, str], Any]:
 
 def _task_asset_name(task: Any, result: Any | None) -> str:
     """Resolve an asset label only when it is present in live task/result data."""
+    kernel = runtime.kernel
     input_data = getattr(task, "input_data", {}) or {}
     output_data = getattr(task, "output_data", {}) or {}
     for source in (input_data, output_data, getattr(result, "metadata", {}) or {}):
@@ -40,11 +43,8 @@ def _priority_label(priority: int) -> str:
 
 
 def get_maintenance_plan() -> dict:
-    """Format state-manager tasks and agent output for the planner UI.
-
-    TODO: Add a maintenance-task repository when schedule windows and crew
-    assignments become persisted backend concepts.
-    """
+    """Format state-manager tasks and agent output for the planner UI."""
+    kernel = runtime.kernel
     results = _result_index()
     rows = []
     for task in kernel.state.get_tasks():

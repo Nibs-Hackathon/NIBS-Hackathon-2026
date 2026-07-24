@@ -16,8 +16,10 @@ from ui_helpers import (
     setup_page
 )
 from frontend_services.report_adapter import get_reports
+from components.global_notifications import render_global_notifications
 
 setup_page("Reports")
+render_global_notifications()
 render_sidebar("Reports & Intelligence")
 page_heading("DECISION RECORD", "Reports & Intelligence", "Review operational reports, AI recommendations, and response outcomes.")
 render_live_signal_banner("REPORT DEMO REGISTER", "Existing demonstration records are shown until MAO execution reports are available through a read-only integration.", "Info")

@@ -1,7 +1,8 @@
 """Dashboard adapter using BackendAPI."""
 
 from app.frontend_services.backend_api_new import api
-from services.runtime import kernel
+# ✅ FIXED - Use runtime proxy
+from services.runtime import runtime
 
 
 def calculate_severity(event):
@@ -27,6 +28,9 @@ def get_dashboard():
     assets = api.get_assets()
     incidents = api.get_incidents()
     activity = api.get_agent_activity(limit=5)
+
+    # ✅ Use runtime.kernel
+    kernel = runtime.kernel
 
     # Calculate metrics
     total_assets = len(assets)

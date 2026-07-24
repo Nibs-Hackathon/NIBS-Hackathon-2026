@@ -1,6 +1,6 @@
 # Folder: database Code Inventory
 
-Generated: 2026-07-24 07:30:05 UTC
+Generated: 2026-07-24 12:23:53 UTC
 
 Contains 19 project files.
 
@@ -80,34 +80,36 @@ def create_schema():
 **File path:** `database/connection.py`
 
 ```python
+"""Optimized database connection with pooling and query caching."""
+
 import os
 from pathlib import Path
+from functools import lru_cache
+from contextlib import contextmanager
+import time
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.pool import QueuePool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-# Load local .env if available
 load_dotenv(PROJECT_ROOT / ".env")
-
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-
 if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL is missing. Add it to .env locally or Streamlit Secrets."
-    )
-
+    raise RuntimeError("DATABASE_URL is missing. Add it to .env locally or Streamlit Secrets.")
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True
+    poolclass=QueuePool,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    echo=False,
 )
-
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -115,9 +117,72 @@ SessionLocal = sessionmaker(
     bind=engine
 )
 
+# ✅ Scoped session for thread safety
+db_session = scoped_session(SessionLocal)
 
+
+@contextmanager
+def get_session_context():
+    """Context manager for database sessions with automatic cleanup."""
+    session = db_session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# ✅ SIMPLE SESSION FUNCTION (returns a session, NOT a context manager)
 def get_session():
-    return SessionLocal()
+    """Return a database session."""
+    return db_session()
+
+
+# ✅ Cache for frequently accessed data
+_cache_data = {}
+_cache_timestamps = {}
+_CACHE_TTL = 5
+
+
+def cached_query(key: str, func, *args, **kwargs):
+    """Get cached data or compute it."""
+    now = time.time()
+    if key in _cache_data and now - _cache_timestamps.get(key, 0) < _CACHE_TTL:
+        return _cache_data[key]
+    
+    result = func(*args, **kwargs)
+    _cache_data[key] = result
+    _cache_timestamps[key] = now
+    return result
+
+
+def invalidate_cache(key: str = None):
+    """Invalidate cache for a key or all keys."""
+    if key:
+        _cache_data.pop(key, None)
+        _cache_timestamps.pop(key, None)
+    else:
+        _cache_data.clear()
+        _cache_timestamps.clear()
+
+
+@lru_cache(maxsize=128)
+def get_all_assets_cached():
+    """Cache all assets for 5 seconds."""
+    session = get_session()
+    try:
+        from database.models import AssetDB
+        return session.query(AssetDB).all()
+    finally:
+        session.close()
+
+
+def invalidate_asset_cache():
+    """Invalidate the asset cache when new assets are added."""
+    get_all_assets_cached.cache_clear()
 ```
 
 ## database/migrations/env.py
@@ -585,15 +650,14 @@ class ActivityRepository:
 ```python
 from database.models import AgentExecutionDB
 
-class AgentRepository:
 
-    def __init__(self,session):
+class AgentRepository:
+    def __init__(self, session):
         self.session = session
 
-    def create(self,execution):
+    def create(self, execution):
         self.session.add(execution)
         self.session.commit()
-
         self.session.refresh(execution)
         return execution
 
@@ -603,47 +667,20 @@ class AgentRepository:
         return executions
 
     def get_all(self):
-        return (
-            self.session
-            .query(AgentExecutionDB)
-            .order_by(
-                AgentExecutionDB.timestamp.desc()
-            )
-            .all()
-        )
-    def get_recent(self, limit = 20):
-        return (
-            self.session.query(AgentExecutionDB).order_by(AgentExecutionDB.timestamp.desc()).limit(limit).all()
-        )
-    def get_success_rate(self, agent_name =None):
+        return self.session.query(AgentExecutionDB).order_by(AgentExecutionDB.timestamp.desc()).all()
 
-        query =(
-            self.session
-            .query(AgentExecutionDB)
-        )
+    def get_recent(self, limit=20):
+        return self.session.query(AgentExecutionDB).order_by(AgentExecutionDB.timestamp.desc()).limit(limit).all()
 
+    def get_success_rate(self, agent_name=None):
+        query = self.session.query(AgentExecutionDB)
         if agent_name:
-
-            query = query.filter(
-                AgentExecutionDB.agent_name == agent_name
-            )
-
+            query = query.filter(AgentExecutionDB.agent_name == agent_name)
         executions = query.all()
         if not executions:
             return 0.0
-
-        successful = sum(
-            1
-            for execution in executions
-            if execution.success
-        )
-
-        return (
-            successful/len(executions)
-        ) * 100
-    
-    
-        
+        successful = sum(1 for e in executions if e.success)
+        return (successful / len(executions)) * 100
 ```
 
 ## database/repositories/asset_repo.py
@@ -651,52 +688,61 @@ class AgentRepository:
 **File path:** `database/repositories/asset_repo.py`
 
 ```python
-from database.models import AssetDB
+"""Optimized Asset Repository with batch operations."""
 
+from database.models import AssetDB
+from sqlalchemy import text
+from typing import List, Optional
 
 
 class AssetRepository:
-
-
     def __init__(self, session):
-
         self.session = session
 
-
-
     def create(self, asset):
-
         self.session.add(asset)
-
         self.session.commit()
-
         return asset
 
-
+    def create_batch(self, assets: List[AssetDB]) -> List[AssetDB]:
+        """Batch insert for better performance."""
+        self.session.add_all(assets)
+        self.session.commit()
+        return assets
 
     def get_all(self):
+        return self.session.query(AssetDB).all()
 
-        return (
-            self.session
-            .query(AssetDB)
-            .all()
-        )
+    def get(self, asset_id):
+        return self.session.query(AssetDB).filter_by(id=asset_id).first()
 
-
-
-    def get(
-        self,
-        asset_id
-    ):
-
-        return (
-            self.session
-            .query(AssetDB)
-            .filter_by(
-                id=asset_id
-            )
-            .first()
-        )
+    def bulk_update_health(self, updates: dict):
+        """Bulk update asset health in one query."""
+        if not updates:
+            return
+        
+        case_parts = []
+        id_list = []
+        for asset_id, health in updates.items():
+            case_parts.append(f"WHEN '{asset_id}' THEN {health}")
+            id_list.append(f"'{asset_id}'")
+        
+        if not case_parts:
+            return
+        
+        stmt = f"""
+            UPDATE assets 
+            SET health = CASE id {' '.join(case_parts)} END,
+                status = CASE 
+                    WHEN health >= 80 THEN 'Running'
+                    WHEN health >= 50 THEN 'Warning'
+                    ELSE 'Critical'
+                END
+            WHERE id IN ({','.join(id_list)})
+        """
+        
+        self.session.execute(text(stmt))
+        self.session.commit()
 ```
 
 ## database/repositories/incident_repo.py

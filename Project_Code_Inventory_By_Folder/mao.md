@@ -1,6 +1,6 @@
 # Folder: mao Code Inventory
 
-Generated: 2026-07-24 07:30:05 UTC
+Generated: 2026-07-24 12:23:53 UTC
 
 Contains 30 project files.
 
@@ -141,64 +141,78 @@ class TaskExecutionFailed(MAOException):
 **File path:** `mao/core/executor.py`
 
 ```python
+"""Optimized executor with parallel processing and timeout."""
+
+import concurrent.futures
+import time
+from typing import Optional
 from mao.models.result import AgentResult
 from mao.core.exceptions import AgentNotFound
 
 
 class Executor:
-
-    def __init__(self, registry):
+    def __init__(self, registry, max_workers: int = 4, timeout: int = 30):
         self.registry = registry
+        self.max_workers = max_workers
+        self.timeout = timeout
+        self.execution_stats = {}
 
     def execute(self, task, context):
-
-        agent = self.registry.get(
-            task.assigned_agent
-        )
+        agent = self.registry.get(task.assigned_agent)
 
         if agent is None:
-            raise AgentNotFound(
-                f"Agent '{task.assigned_agent}' not found."
-            )
+            raise AgentNotFound(f"Agent '{task.assigned_agent}' not found.")
 
+        start = time.time()
+        
         try:
+            # Execute with timeout
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(agent.run, task, context)
+                try:
+                    result = future.result(timeout=self.timeout)
+                except concurrent.futures.TimeoutError:
+                    raise TimeoutError(f"Agent {agent.name} exceeded {self.timeout}s timeout")
 
-            # Agent.run() handles:
-            # think()
-            # execute()
-            # validate_result()
-            # reflect()
-            result = agent.run(
-                task,
-                context,
-            )
+            elapsed = time.time() - start
+            
+            # Track stats
+            self.execution_stats[agent.name] = {
+                "last_execution": elapsed,
+                "total_executions": self.execution_stats.get(agent.name, {}).get("total_executions", 0) + 1,
+                "avg_time": 0
+            }
+            
+            stats = self.execution_stats[agent.name]
+            total = stats["total_executions"]
+            avg = (stats.get("avg_time", 0) * (total - 1) + elapsed) / total
+            stats["avg_time"] = round(avg, 2)
 
         except Exception as e:
-
+            elapsed = time.time() - start
             result = AgentResult(
                 agent_name=agent.name,
                 success=False,
                 finding="Agent execution failed.",
                 confidence=0.0,
                 summary=str(e),
-                recommendations=[
-                    "Review execution logs."
-                ],
-                metadata={
-                    "exception": type(e).__name__,
-                },
+                recommendations=["Review execution logs."],
+                metadata={"exception": type(e).__name__, "execution_time": elapsed},
             )
 
-        result.metadata.update(
-            {
-                "task_name": task.name,
-                "task_description": task.description,
-                "event_name": context.event.name,
-                "asset_id": context.event.source,
-            }
-        )
+        result.metadata.update({
+            "task_name": task.name,
+            "task_description": task.description,
+            "event_name": context.event.name,
+            "asset_id": context.event.source,
+            "execution_time": elapsed,
+        })
 
         return result
+
+    def get_stats(self):
+        """Get execution statistics for all agents."""
+        return self.execution_stats
 ```
 
 ## mao/core/logger.py
@@ -905,17 +919,16 @@ class Task(BaseModel):
 **File path:** `mao/orchestrator.py`
 
 ```python
-from datetime import datetime
+"""Optimized Orchestrator with parallel agent execution."""
 
+import concurrent.futures
+import time
+from datetime import datetime
 from mao.core.context import ExecutionContext
 from mao.models.execution_report import ExecutionReport
 
 
 class Orchestrator:
-    """
-    Coordinates the complete execution lifecycle for a single event.
-    """
-
     def __init__(
         self,
         *,
@@ -931,7 +944,7 @@ class Orchestrator:
         health_service=None,
     ):
         self.planner = planner
-        self.workflow_engine = workflow_engine
+        self.workflow_engine = workflow_engine        
         self.scheduler = scheduler
         self.executor = executor
         self.supervisor = supervisor
@@ -943,7 +956,6 @@ class Orchestrator:
         self.health_service = health_service
 
     def run(self, event):
-
         context = ExecutionContext(
             event=event,
             state_manager=self.state,
@@ -952,58 +964,52 @@ class Orchestrator:
             health_service=self.health_service,
         )
 
-        self.logger.info(
-            "Kernel",
-            f"[{context.execution_id}] Received event '{event.name}'",
-        )
+        self.logger.info("Kernel", f"[{context.execution_id}] Received event '{event.name}'")
 
-        # Persist incoming event
         self.state.add_event(event)
         self.event_store.save(event)
 
-        # Select workflow
         workflow_name = self.planner.choose_workflow(event)
         context.workflow = workflow_name
 
-        self.logger.info(
-            "Planner",
-            f"[{context.execution_id}] Selected workflow '{workflow_name}'",
-        )
+        self.logger.info("Planner", f"[{context.execution_id}] Selected workflow '{workflow_name}'")
 
-        # Build workflow tasks
-        tasks = self.workflow_engine.create_tasks(
-            workflow_name,
-            event,
-        )
+        tasks = self.workflow_engine.create_tasks(workflow_name, event)
 
-        self.logger.info(
-            "WorkflowEngine",
-            f"[{context.execution_id}] Generated {len(tasks)} task(s)",
-        )
+        self.logger.info("WorkflowEngine", f"[{context.execution_id}] Generated {len(tasks)} task(s)")
 
         # Schedule tasks
         for task in tasks:
             self.scheduler.submit(task)
 
-        # Execute tasks
-        while not self.scheduler.empty():
-
-            task = self.scheduler.next()
-
-            self.logger.info(
-                "Executor",
-                f"[{context.execution_id}] Executing '{task.name}'",
-            )
-
-            result = self.executor.execute(
-                task,
-                context,
-            )
-
-            # NEW
+        # ✅ Execute tasks in parallel
+        def execute_task(task):
+            result = self.executor.execute(task, context)
             context.add_result(result)
-
             self.state.add_task(task)
+            return result
+
+        start = time.time()
+        
+        # Extract all tasks first
+        all_tasks = []
+        while not self.scheduler.empty():
+            all_tasks.append(self.scheduler.next())
+        
+        # Execute in parallel with ThreadPoolExecutor
+        if all_tasks:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(execute_task, task): task for task in all_tasks}
+                
+                for future in concurrent.futures.as_completed(futures):
+                    task = futures[future]
+                    try:
+                        result = future.result(timeout=30)
+                    except Exception as e:
+                        self.logger.info("Executor", f"Task {task.name} failed: {e}")
+
+        elapsed = time.time() - start
+        self.logger.info("Executor", f"[{context.execution_id}] All agents completed in {elapsed:.2f}s")
 
         # Aggregate results
         decision = self.supervisor.summarize(context)
@@ -1027,13 +1033,6 @@ class Orchestrator:
         )
 
         self.state.add_report(report)
-
-        self.logger.info(
-            "Kernel",
-            f"[{context.execution_id}] Execution completed.",
-        )
-
-        # Persist into memory
         self.memory.remember_event(event)
         self.memory.remember_report(report)
 

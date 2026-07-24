@@ -1,8 +1,10 @@
-"""Gemini-powered dynamic configuration service."""
+"""Optimized Gemini-powered dynamic configuration service with precomputation."""
 
 import json
 import re
+import time
 from typing import Any, Dict, List, Optional
+from functools import lru_cache
 from services.llm import LLMManager
 
 
@@ -11,6 +13,8 @@ class ConfigService:
 
     _instance = None
     _cache: Dict[str, Any] = {}
+    _precomputed: Dict[str, Any] = {}
+    _precomputed_done = False
 
     def __new__(cls):
         if cls._instance is None:
@@ -19,17 +23,31 @@ class ConfigService:
 
     def __init__(self):
         self.llm = LLMManager()
+        if not ConfigService._precomputed_done:
+            self._precompute_defaults()
+            ConfigService._precomputed_done = True
 
-    def get_thresholds(self, asset_type: str, context: Optional[str] = None) -> Dict[str, float]:
-        """Generate asset-specific thresholds using Gemini."""
-        cache_key = f"thresholds_{asset_type}_{context or 'default'}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+    def _precompute_defaults(self):
+        """Precompute common configurations for all asset types."""
+        asset_types = ["Pump", "Compressor", "Tank", "Valve", "Pipeline", "Heat Exchanger", "Reactor", "Boiler", "Turbine"]
+        
+        for asset_type in asset_types:
+            cache_key = f"thresholds_{asset_type}_default"
+            if cache_key not in self._precomputed:
+                try:
+                    self._precomputed[cache_key] = self._generate_thresholds(asset_type)
+                except:
+                    self._precomputed[cache_key] = self._get_default_thresholds(asset_type)
+        
+        print(f"✅ Precomputed thresholds for {len(asset_types)} asset types")
 
+    @lru_cache(maxsize=128)
+    def _generate_thresholds(self, asset_type: str) -> Dict[str, float]:
+        """Generate thresholds with caching."""
         prompt = f"""
 You are an industrial operations configuration expert.
 
-Generate operational thresholds for a {asset_type} asset in a {context or 'standard'} industrial environment.
+Generate operational thresholds for a {asset_type} asset.
 
 Return ONLY a JSON object with these fields:
 - pressure_max: float (maximum safe pressure in PSI)
@@ -41,24 +59,19 @@ Return ONLY a JSON object with these fields:
 Use realistic values for {asset_type} equipment.
 Respond with ONLY valid JSON, no other text.
 """
-
         try:
-            response = self.llm.generate(prompt)
-            thresholds = self._parse_json(response)
-            self._cache[cache_key] = thresholds
-            return thresholds
+            response = self.llm.generate(prompt, use_cache=True)
+            return self._parse_json(response)
         except Exception as e:
             print(f"⚠️ Gemini config generation failed: {e}")
             return self._get_default_thresholds(asset_type)
 
     def _parse_json(self, response: str) -> Dict:
         """Extract JSON from Gemini response."""
-        # Find JSON-like content
         start = response.find('{')
         end = response.rfind('}') + 1
         if start >= 0 and end > start:
             json_str = response[start:end]
-            # Clean up common issues
             json_str = re.sub(r',\s*}', '}', json_str)
             json_str = re.sub(r',\s*]', ']', json_str)
             return json.loads(json_str)
@@ -73,8 +86,26 @@ Respond with ONLY valid JSON, no other text.
             "Valve": {"pressure_max": 140, "temperature_max": 85, "gas_max": 40, "vibration_max": 7, "flow_min": 15},
             "Pipeline": {"pressure_max": 130, "temperature_max": 80, "gas_max": 50, "vibration_max": 6, "flow_min": 10},
             "Heat Exchanger": {"pressure_max": 145, "temperature_max": 100, "gas_max": 30, "vibration_max": 9, "flow_min": 25},
+            "Reactor": {"pressure_max": 155, "temperature_max": 95, "gas_max": 35, "vibration_max": 8, "flow_min": 20},
+            "Boiler": {"pressure_max": 170, "temperature_max": 120, "gas_max": 25, "vibration_max": 10, "flow_min": 30},
+            "Turbine": {"pressure_max": 140, "temperature_max": 100, "gas_max": 30, "vibration_max": 12, "flow_min": 25},
         }
         return defaults.get(asset_type, defaults["Pump"])
+
+    def get_thresholds(self, asset_type: str, context: Optional[str] = None) -> Dict[str, float]:
+        """Get thresholds - uses precomputed values for speed."""
+        # ✅ Check precomputed first (super fast)
+        precomputed_key = f"thresholds_{asset_type}_default"
+        if precomputed_key in self._precomputed:
+            return self._precomputed[precomputed_key]
+        
+        cache_key = f"thresholds_{asset_type}_{context or 'default'}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        thresholds = self._generate_thresholds(asset_type)
+        self._cache[cache_key] = thresholds
+        return thresholds
 
     def get_workflow_sequence(self, incident_type: str) -> List[str]:
         """Generate agent sequence for an incident type."""
@@ -92,7 +123,7 @@ Example: ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "plannin
 """
 
         try:
-            response = self.llm.generate(prompt)
+            response = self.llm.generate(prompt, use_cache=True)
             sequence = self._parse_json(response)
             if isinstance(sequence, list):
                 self._cache[cache_key] = sequence
@@ -100,7 +131,6 @@ Example: ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "plannin
         except Exception:
             pass
 
-        # Fallback - standard sequence
         return ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"]
 
     def get_priority_level(self, incident_type: str, severity: str) -> int:
@@ -113,7 +143,7 @@ Return ONLY an integer.
 """
 
         try:
-            response = self.llm.generate(prompt)
+            response = self.llm.generate(prompt, use_cache=True)
             numbers = re.findall(r'\d+', response)
             if numbers:
                 priority = int(numbers[0])
@@ -121,7 +151,6 @@ Return ONLY an integer.
         except Exception:
             pass
 
-        # Fallback
         severity_map = {"Critical": 1, "High": 2, "Medium": 3, "Low": 4}
         return severity_map.get(severity, 3)
 
@@ -145,14 +174,13 @@ Sum of all weights should be 100.
 """
 
         try:
-            response = self.llm.generate(prompt)
+            response = self.llm.generate(prompt, use_cache=True)
             weights = self._parse_json(response)
             self._cache[cache_key] = weights
             return weights
         except Exception:
             pass
 
-        # Fallback
         return {"pressure_weight": 30, "temperature_weight": 25, "gas_weight": 35, "vibration_weight": 20, "flow_weight": 10}
 
     def clear_cache(self):

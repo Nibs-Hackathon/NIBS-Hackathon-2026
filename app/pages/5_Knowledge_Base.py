@@ -5,6 +5,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from components.global_notifications import render_global_notifications
+
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 import streamlit as st
 
@@ -13,6 +18,7 @@ from ui_helpers import page_heading, render_sidebar, setup_page
 
 
 setup_page("Knowledge Base")
+render_global_notifications()
 render_sidebar("Knowledge Base")
 page_heading(
     "RETRIEVAL INTELLIGENCE",

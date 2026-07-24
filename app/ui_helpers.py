@@ -7,6 +7,7 @@ from random import Random
 
 import streamlit as st
 
+# ✅ Import from knowledge_agent_adapter
 from frontend_services.knowledge_agent_adapter import KnowledgeAgentUnavailable, ask_knowledge_agent
 
 
@@ -23,54 +24,443 @@ COLORS = {
 def setup_page(title: str, icon: str = "◈") -> None:
     """Configure a page and apply the shared enterprise dark visual system."""
     st.set_page_config(page_title=f"{title} | NIBS Ops", page_icon=icon, layout="wide")
+    
+    # ✅ ALL CSS IN ONE PROPER BLOCK
     st.markdown(
         """
         <style>
-        .stApp { background: radial-gradient(circle at 85% -10%, #182e52 0, #0b1220 34%, #070b13 72%); color: #e8f0ff; }
-        [data-testid="stHeader"] { background: rgba(7, 11, 19, .78); backdrop-filter: blur(18px); }
-        [data-testid="stSidebar"] { background: linear-gradient(180deg, #101b30 0%, #090f1d 100%); border-right: 1px solid rgba(123, 160, 207, .14); }
-        [data-testid="stSidebar"] * { color: #dce8fa; }
-        [data-testid="stSidebarNav"] { padding-top: .7rem; }
-        [data-testid="stSidebarNav"] a { border-radius: 10px; margin: 2px 8px; padding: 8px 10px; }
-        [data-testid="stSidebarNav"] a:hover { background: rgba(85,214,255,.10); }
-        .ops-brand { font-size: .74rem; letter-spacing: .22em; color: #55d6ff; font-weight: 800; }
-        .ops-title { font-size: 1.6rem; font-weight: 750; margin: .15rem 0 .1rem; color: #f4f8ff; }
-        .ops-subtitle, .muted { color: #8fa1ba; }
-        .section-label { color: #55d6ff; font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .25rem; }
-        .metric-card { background: linear-gradient(145deg, rgba(25,42,70,.88), rgba(13,22,39,.88)); border: 1px solid rgba(129,172,226,.16); border-radius: 16px; padding: 1rem 1.1rem; min-height: 116px; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
-        .metric-card, .panel { transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease; backdrop-filter: blur(14px); }
-        .metric-card:hover, .panel:hover { transform: translateY(-2px); border-color: rgba(85,214,255,.38); box-shadow: 0 16px 36px rgba(0,0,0,.24); }
-        .metric-value { font-size: 1.65rem; font-weight: 760; color: #f5f8ff; margin: .15rem 0; }
-        .metric-label { color: #9badc5; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-        .metric-delta { font-size: .78rem; font-weight: 650; }
-        .panel { background: rgba(15,27,47,.76); border: 1px solid rgba(129,172,226,.14); border-radius: 15px; padding: 1rem 1.1rem; }
-        .status { display: inline-block; border-radius: 999px; padding: .22rem .6rem; font-size: .72rem; font-weight: 750; letter-spacing: .04em; }
-        .status-healthy, .status-running, .status-resolved { color:#6af0c2; background:rgba(79,227,178,.13); border:1px solid rgba(79,227,178,.3); }
-        .status-warning, .status-pending { color:#ffd184; background:rgba(255,191,105,.13); border:1px solid rgba(255,191,105,.28); }
-        .status-critical, .status-offline { color:#ff91a5; background:rgba(255,113,141,.13); border:1px solid rgba(255,113,141,.28); }
-        .status-info { color:#8fe6ff; background:rgba(85,214,255,.13); border:1px solid rgba(85,214,255,.28); }
-        .pulse { animation: pulse 1.8s ease-in-out infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .38; } }
-        .gauge { width: 128px; height: 128px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:.4rem auto; }
-        .gauge-inner { width:98px; height:98px; border-radius:50%; background:#0d1728; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-        .timeline-row { display:grid; grid-template-columns:70px 24px 1fr; gap:10px; align-items:start; margin:.4rem 0; }
-        .timeline-dot { width:13px; height:13px; border-radius:50%; background:#55d6ff; box-shadow:0 0 14px #55d6ff; margin-top:5px; }
-        .twin-tile { min-height:172px; position:relative; overflow:hidden; }
-        .stButton > button { border-radius: 9px; border: 1px solid rgba(85,214,255,.45); background: linear-gradient(135deg,#1686b8,#5664c9); color:#fff; font-weight:650; }
-        .stTextInput input, .stTextArea textarea, [data-baseweb="select"] > div { background:#101d31 !important; border-color:#284569 !important; color:#e8f0ff !important; }
-        [data-testid="stDataFrame"] { border: 1px solid rgba(129,172,226,.14); border-radius: 12px; overflow: hidden; }
-        .agent-card { padding:18px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); margin-bottom:15px; }
-        .stChatInput textarea { color: #e8f0ff !important; background: #101d31 !important; border: 1px solid #284569 !important; border-radius: 12px !important; }
-        .stChatInput textarea::placeholder { color: #8fa1ba !important; }
-        .stChatInput textarea:focus { border-color: #55d6ff !important; box-shadow: 0 0 20px rgba(85, 214, 255, 0.1) !important; }
-        .stChatMessage { background: rgba(15, 27, 47, 0.76) !important; border: 1px solid rgba(129, 172, 226, 0.14) !important; border-radius: 15px !important; padding: 12px 16px !important; }
-        /* Fix white backgrounds */
-        .stApp > div { background: transparent !important; }
-        .main > div { background: transparent !important; }
-        .stChatInput > div { background: rgba(15, 27, 47, 0.9) !important; border-radius: 12px !important; border: 1px solid rgba(129, 172, 226, 0.2) !important; }
-        [data-testid="stSelectbox"] > div { background: #101d31 !important; border-radius: 8px !important; }
-        /* Fix for the white background in pages */
-        .st-emotion-cache-6qob1r { background: transparent !important; }
-        .st-emotion-cache-1r6slb0 { background: transparent !important; }
+        /* ===== BASE STYLES ===== */
+        .stApp { 
+            background: radial-gradient(circle at 85% -10%, #182e52 0, #0b1220 34%, #070b13 72%); 
+            color: #e8f0ff; 
+        }
+        [data-testid="stHeader"] { 
+            background: rgba(7, 11, 19, .78); 
+            backdrop-filter: blur(18px); 
+        }
+        [data-testid="stSidebar"] { 
+            background: linear-gradient(180deg, #101b30 0%, #090f1d 100%); 
+            border-right: 1px solid rgba(123, 160, 207, .14); 
+        }
+        [data-testid="stSidebar"] * { 
+            color: #dce8fa; 
+        }
+        [data-testid="stSidebarNav"] { 
+            padding-top: .7rem; 
+        }
+        [data-testid="stSidebarNav"] a { 
+            border-radius: 10px; 
+            margin: 2px 8px; 
+            padding: 8px 10px; 
+        }
+        [data-testid="stSidebarNav"] a:hover { 
+            background: rgba(85,214,255,.10); 
+        }
+
+        /* ===== TYPOGRAPHY ===== */
+        .ops-brand { 
+            font-size: .74rem; 
+            letter-spacing: .22em; 
+            color: #55d6ff; 
+            font-weight: 800; 
+        }
+        .ops-title { 
+            font-size: 1.6rem; 
+            font-weight: 750; 
+            margin: .15rem 0 .1rem; 
+            color: #f4f8ff; 
+        }
+        .ops-subtitle, .muted { 
+            color: #8fa1ba; 
+        }
+        .section-label { 
+            color: #55d6ff; 
+            font-size: .72rem; 
+            font-weight: 800; 
+            letter-spacing: .14em; 
+            text-transform: uppercase; 
+            margin-bottom: .25rem; 
+        }
+
+        /* ===== METRIC CARDS ===== */
+        .metric-card { 
+            background: linear-gradient(145deg, rgba(25,42,70,.88), rgba(13,22,39,.88)); 
+            border: 1px solid rgba(129,172,226,.16); 
+            border-radius: 16px; 
+            padding: 1rem 1.1rem; 
+            min-height: 116px; 
+            box-shadow: 0 12px 32px rgba(0,0,0,.18); 
+            transition: all 0.3s ease; 
+            backdrop-filter: blur(14px); 
+        }
+        .metric-card:hover { 
+            transform: translateY(-2px); 
+            border-color: rgba(85,214,255,.38); 
+            box-shadow: 0 16px 36px rgba(0,0,0,.24); 
+        }
+        .metric-value { 
+            font-size: 1.65rem; 
+            font-weight: 760; 
+            color: #f5f8ff; 
+            margin: .15rem 0; 
+        }
+        .metric-label { 
+            color: #9badc5; 
+            font-size: .78rem; 
+            text-transform: uppercase; 
+            letter-spacing: .08em; 
+        }
+        .metric-delta { 
+            font-size: .78rem; 
+            font-weight: 650; 
+        }
+
+        /* ===== PANELS ===== */
+        .panel { 
+            background: rgba(15,27,47,.76); 
+            border: 1px solid rgba(129,172,226,.14); 
+            border-radius: 15px; 
+            padding: 1rem 1.1rem; 
+            transition: all 0.3s ease; 
+            backdrop-filter: blur(14px); 
+        }
+        .panel:hover { 
+            border-color: rgba(85,214,255,.38); 
+            box-shadow: 0 8px 24px rgba(0,0,0,.2); 
+        }
+
+        /* ===== STATUS CHIPS ===== */
+        .status { 
+            display: inline-block; 
+            border-radius: 999px; 
+            padding: .22rem .6rem; 
+            font-size: .72rem; 
+            font-weight: 750; 
+            letter-spacing: .04em; 
+        }
+        .status-healthy, .status-running, .status-resolved, .status-completed { 
+            color: #6af0c2; 
+            background: rgba(79,227,178,.13); 
+            border: 1px solid rgba(79,227,178,.3); 
+        }
+        .status-warning, .status-pending { 
+            color: #ffd184; 
+            background: rgba(255,191,105,.13); 
+            border: 1px solid rgba(255,191,105,.28); 
+        }
+        .status-critical, .status-offline, .status-failed { 
+            color: #ff91a5; 
+            background: rgba(255,113,141,.13); 
+            border: 1px solid rgba(255,113,141,.28); 
+        }
+        .status-info { 
+            color: #8fe6ff; 
+            background: rgba(85,214,255,.13); 
+            border: 1px solid rgba(85,214,255,.28); 
+        }
+
+        /* ===== AGENT CARDS ===== */
+        .agent-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.3s ease;
+        }
+        .agent-card:hover {
+            border-color: rgba(85, 214, 255, 0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+        .agent-title {
+            margin: 0 0 8px 0;
+            color: #55D6FF;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+        .agent-finding {
+            margin: 4px 0;
+            color: #e8f0ff;
+            line-height: 1.6;
+            font-size: 0.9rem;
+        }
+        .agent-meta {
+            display: flex;
+            gap: 16px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .agent-confidence {
+            color: #8fa1ba;
+            font-size: 0.8rem;
+        }
+        .agent-status {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        /* ===== INCIDENT CARDS ===== */
+        .incident-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+            transition: all 0.3s ease;
+        }
+        .incident-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+        .incident-title {
+            margin: 0 0 8px 0;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .incident-body {
+            color: #e8f0ff;
+            font-size: 0.9rem;
+        }
+        .incident-meta {
+            color: #8fa1ba;
+            font-size: 0.8rem;
+            margin-top: 4px;
+        }
+
+        /* ===== GAUGE ===== */
+        .gauge { 
+            width: 128px; 
+            height: 128px; 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            margin: .4rem auto; 
+        }
+        .gauge-inner { 
+            width: 98px; 
+            height: 98px; 
+            border-radius: 50%; 
+            background: #0d1728; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+        }
+
+        /* ===== TIMELINE ===== */
+        .timeline-row { 
+            display: grid; 
+            grid-template-columns: 70px 24px 1fr; 
+            gap: 10px; 
+            align-items: start; 
+            margin: .4rem 0; 
+        }
+        .timeline-dot { 
+            width: 13px; 
+            height: 13px; 
+            border-radius: 50%; 
+            background: #55d6ff; 
+            box-shadow: 0 0 14px #55d6ff; 
+            margin-top: 5px; 
+        }
+        .pulse { 
+            animation: pulse 1.8s ease-in-out infinite; 
+        }
+        @keyframes pulse { 
+            0%, 100% { opacity: 1; } 
+            50% { opacity: .38; } 
+        }
+
+        /* ===== DIGITAL TWIN ===== */
+        .twin-tile { 
+            min-height: 172px; 
+            position: relative; 
+            overflow: hidden; 
+        }
+
+        /* ===== BUTTONS ===== */
+        .stButton > button { 
+            border-radius: 9px; 
+            border: 1px solid rgba(85,214,255,.45); 
+            background: linear-gradient(135deg, #1686b8, #5664c9); 
+            color: #fff; 
+            font-weight: 650; 
+        }
+
+        /* ===== INPUTS ===== */
+        .stTextInput input, 
+        .stTextArea textarea, 
+        [data-baseweb="select"] > div { 
+            background: #101d31 !important; 
+            border-color: #284569 !important; 
+            color: #e8f0ff !important; 
+        }
+        [data-testid="stDataFrame"] { 
+            border: 1px solid rgba(129,172,226,.14); 
+            border-radius: 12px; 
+            overflow: hidden; 
+        }
+
+        /* ===== CHAT ===== */
+        .stChatInput textarea { 
+            color: #e8f0ff !important; 
+            background: #101d31 !important; 
+            border: 1px solid #284569 !important; 
+            border-radius: 12px !important; 
+        }
+        .stChatInput textarea::placeholder { 
+            color: #8fa1ba !important; 
+        }
+        .stChatInput textarea:focus { 
+            border-color: #55d6ff !important; 
+            box-shadow: 0 0 20px rgba(85, 214, 255, 0.1) !important; 
+        }
+        .stChatMessage { 
+            background: rgba(15, 27, 47, 0.76) !important; 
+            border: 1px solid rgba(129, 172, 226, 0.14) !important; 
+            border-radius: 15px !important; 
+            padding: 12px 16px !important; 
+        }
+
+        /* ===== FIXES ===== */
+        .stApp > div { 
+            background: transparent !important; 
+        }
+        .main > div { 
+            background: transparent !important; 
+        }
+        .stChatInput > div { 
+            background: rgba(15, 27, 47, 0.9) !important; 
+            border-radius: 12px !important; 
+            border: 1px solid rgba(129, 172, 226, 0.2) !important; 
+        }
+        [data-testid="stSelectbox"] > div { 
+            background: #101d31 !important; 
+            border-radius: 8px !important; 
+        }
+        .st-emotion-cache-6qob1r { 
+            background: transparent !important; 
+        }
+        .st-emotion-cache-1r6slb0 { 
+            background: transparent !important; 
+        }
+
+        /* ===== TOAST NOTIFICATIONS ===== */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+            width: 100%;
+            pointer-events: none;
+        }
+        .toast-item {
+            pointer-events: auto;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: rgba(13, 23, 40, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(85, 214, 255, 0.15);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+            animation: toastSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                       toastFadeOut 0.5s ease-in 4.5s forwards;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .toast-item:hover {
+            transform: scale(1.02);
+        }
+        .toast-item.critical { 
+            border-left: 4px solid #ff5555;
+            box-shadow: 0 8px 40px rgba(255, 85, 85, 0.2);
+        }
+        .toast-item.warning { 
+            border-left: 4px solid #ff8844;
+            box-shadow: 0 8px 40px rgba(255, 136, 68, 0.15);
+        }
+        .toast-item.success { 
+            border-left: 4px solid #4fe3b2;
+            box-shadow: 0 8px 40px rgba(79, 227, 178, 0.15);
+        }
+        .toast-item.info { 
+            border-left: 4px solid #55D6FF;
+            box-shadow: 0 8px 40px rgba(85, 214, 255, 0.15);
+        }
+        .toast-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            color: #f5f8ff;
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+        }
+        .toast-body {
+            color: #c0d0e8;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-left: 32px;
+        }
+        .toast-meta {
+            color: #8fa1ba;
+            font-size: 0.65rem;
+            margin-top: 6px;
+            margin-left: 32px;
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .toast-close {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: #8fa1ba;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0 4px;
+            transition: color 0.2s ease;
+            line-height: 1;
+        }
+        .toast-close:hover { 
+            color: #fff;
+            transform: scale(1.1);
+        }
+        .toast-revenue { color: #ff8844; font-weight: 600; }
+        .toast-maintenance { color: #4fe3b2; }
+        .toast-approval { color: #ff5555; font-weight: 600; }
+        .toast-time { color: #6a7a94; }
+
+        @keyframes toastSlideIn {
+            0% { 
+                opacity: 0; 
+                transform: translateX(80px) scale(0.95);
+            }
+            100% { 
+                opacity: 1; 
+                transform: translateX(0) scale(1);
+            }
+        }
+        @keyframes toastFadeOut {
+            0% { 
+                opacity: 1; 
+                transform: translateX(0) scale(1);
+                max-height: 200px;
+                margin-bottom: 10px;
+                padding: 14px 18px;
+            }
+            100% { 
+                opacity: 0; 
+                transform: translateX(30px) scale(0.95);
+                max-height: 0;
+                margin-bottom: 0;
+                padding: 0 18px;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -149,7 +539,7 @@ def render_copilot_widget() -> None:
         prompts = ["Summarize today's incidents", "Predict asset failures", "Explain system status", "Generate executive report", "Recommend maintenance"]
         prompt = st.selectbox("Suggested prompts", ["Select a prompt…"] + prompts, key="copilot_suggestion")
         typed = st.text_input("Ask Copilot", key="copilot_input", placeholder="Ask about operations")
-        if st.button("Send", key="copilot_send", use_container_width=True):
+        if st.button("Send", key="copilot_send"):
             question = typed if typed.strip() else (prompt if prompt != "Select a prompt…" else "Explain system status")
             append_copilot_backend_exchange(question)
             st.rerun()
@@ -365,10 +755,11 @@ def mock_maintenance_tasks() -> list[dict]:
 def executive_metrics() -> list[tuple[str, str, str, str]]:
     """Get real executive metrics from backend."""
     from app.frontend_services.backend_api_new import api
-    from services.runtime import kernel
+    from services.runtime import runtime
 
     assets = api.get_assets()
     incidents = api.get_incidents()
+    kernel = runtime.kernel
     agent_results = kernel.state.agent_results
 
     total_assets = len(assets)

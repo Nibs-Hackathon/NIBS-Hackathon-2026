@@ -10,7 +10,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.runtime import kernel
+# ✅ FIXED - Use runtime proxy
+from services.runtime import runtime
 
 
 def _reading_value(readings: list[Any], sensor_type: str) -> str:
@@ -24,6 +25,7 @@ def _reading_value(readings: list[Any], sensor_type: str) -> str:
 
 
 def _maintenance_recommendation(asset_id: str) -> str:
+    kernel = runtime.kernel
     for result in reversed(kernel.state.agent_results):
         if result.agent_name != "maintenance":
             continue
@@ -37,6 +39,7 @@ def _maintenance_recommendation(asset_id: str) -> str:
 
 def get_twin_assets() -> list[dict]:
     """Return current assets and latest observed telemetry from the runtime."""
+    kernel = runtime.kernel
     assets = []
     for asset in kernel.asset_service.all_assets():
         readings = kernel.state.get_history(asset.id)

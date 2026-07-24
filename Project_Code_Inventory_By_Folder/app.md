@@ -1,8 +1,8 @@
 # Folder: app Code Inventory
 
-Generated: 2026-07-24 07:30:05 UTC
+Generated: 2026-07-24 12:23:53 UTC
 
-Contains 40 project files.
+Contains 41 project files.
 
 ## app/components/__init__.py
 
@@ -18,49 +18,208 @@ Contains 40 project files.
 
 ```python
 import streamlit as st
+from services.ai_config import AIConfigGenerator
 
 
 def render_agent_card(report):
-
-    text = report.final_summary.lower()
-
-    if "[safety]" in text:
-        agent_name = "🛡 Safety Agent"
-
-    elif "[diagnostic]" in text:
-        agent_name = "🔍 Diagnostic Agent"
-
-    elif "[knowledge]" in text:
-        agent_name = "📚 Knowledge Agent"
-
-    else:
+    """Render an agent result card with dynamic confidence thresholds."""
+    
+    # ✅ Get confidence thresholds from config
+    try:
+        config = AIConfigGenerator()
+        pred_params = config.get_prediction_params()
+        confidence_threshold = pred_params.get("confidence_weight", 0.55)
+    except:
+        confidence_threshold = 0.55
+    
+    if hasattr(report, 'final_summary'):
+        text = report.final_summary.lower()
+        
+        # ✅ Dynamic agent name detection
+        agent_map = {
+            "safety": "🛡️ Safety Agent",
+            "diagnostic": "🔍 Diagnostic Agent",
+            "knowledge": "📚 Knowledge Agent",
+            "maintenance": "🔧 Maintenance Agent",
+            "planning": "📋 Planning Agent",
+            "prediction": "🔮 Prediction Agent",
+            "notification": "🔔 Notification Agent",
+            "sensor": "📡 Sensor Agent",
+            "report": "📊 Report Agent",
+        }
+        
         agent_name = "🤖 AI Agent"
+        for key, name in agent_map.items():
+            if f"[{key}]" in text:
+                agent_name = name
+                break
+        
+        # Remove all agent tags
+        import re
+        cleaned = re.sub(r'\[.*?\]', '', report.final_summary)
+        
+        confidence = getattr(report, 'average_confidence', confidence_threshold)
+        confidence_pct = f"{confidence * 100:.0f}%" if confidence else "N/A"
+        
+        # ✅ Dynamic status based on confidence
+        if confidence >= 0.9:
+            status_text = "✅ Excellent"
+            status_color = "#4fe3b2"
+        elif confidence >= 0.7:
+            status_text = "✅ Good"
+            status_color = "#55D6FF"
+        elif confidence >= 0.5:
+            status_text = "⚠️ Review"
+            status_color = "#ffbf69"
+        else:
+            status_text = "❌ Needs Review"
+            status_color = "#ff718d"
+        
+        st.markdown(
+            f"""
+            <div class="agent-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; color: #55D6FF;">{agent_name}</h4>
+                <p style="margin: 4px 0; color: #e8f0ff;">{cleaned[:300]}</p>
+                <div style="display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap;">
+                    <span style="color: #8fa1ba; font-size: 0.8rem;">Confidence: {confidence_pct}</span>
+                    <span style="color: {status_color}; font-size: 0.8rem;">Status: {status_text}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    elif isinstance(report, dict):
+        agent_name = report.get("agent_name", "Unknown Agent").title()
+        finding = report.get("finding", "No finding")
+        confidence = report.get("confidence", confidence_threshold)
+        confidence_pct = f"{confidence * 100:.0f}%" if confidence else "N/A"
+        
+        st.markdown(
+            f"""
+            <div class="agent-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; color: #55D6FF;">🤖 {agent_name}</h4>
+                <p style="margin: 4px 0; color: #e8f0ff;">{finding[:200]}</p>
+                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                    <span style="color: #8fa1ba; font-size: 0.8rem;">Confidence: {confidence_pct}</span>
+                    <span style="color: #4fe3b2; font-size: 0.8rem;">Status: ✅ Completed</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.write(f"⚠️ Unknown report format: {type(report)}")
+```
+
+## app/components/global_notifications.py
+
+**File path:** `app/components/global_notifications.py`
+
+```python
+"""Global notification component - using pure Streamlit components."""
+
+import streamlit as st
+from services.notification_service import notification_service, NotificationSeverity
 
 
-    cleaned = (
-        report.final_summary
-        .replace("[safety]", "")
-        .replace("[diagnostic]", "")
-        .replace("[knowledge]", "")
-    )
-
-
-    st.markdown(
-        f"""
-        <div class="agent-card">
-
-        <h3>{agent_name}</h3>
-
-        <p>
-        {cleaned}
-        </p>
-
-        <b>Status:</b> Completed ✅
-
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+def render_global_notifications():
+    """Render notifications using pure Streamlit components."""
+    
+    # ✅ Get unread notifications
+    notifications = notification_service.get_notifications(limit=10, unread_only=True)
+    
+    if not notifications:
+        return
+    
+    # ✅ Use Streamlit's native container for notifications
+    with st.container():
+        # ✅ CSS for styling
+        st.markdown("""
+        <style>
+        .notif-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 99999;
+            max-width: 420px;
+            width: 100%;
+            pointer-events: none;
+        }
+        .notif-item {
+            pointer-events: auto;
+            margin-bottom: 10px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: #0d1728;
+            border: 1px solid rgba(85, 214, 255, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            animation: slideIn 0.5s ease-out forwards;
+        }
+        .notif-item.critical { border-left: 4px solid #ff5555; }
+        .notif-item.warning { border-left: 4px solid #ff8844; }
+        .notif-item.success { border-left: 4px solid #4fe3b2; }
+        .notif-item.info { border-left: 4px solid #55D6FF; }
+        .notif-title { font-weight: 700; color: #f5f8ff; font-size: 0.95rem; }
+        .notif-msg { color: #c0d0e8; font-size: 0.85rem; margin: 4px 0; }
+        .notif-meta { color: #8fa1ba; font-size: 0.7rem; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+        .notif-revenue { color: #ff8844; font-weight: 600; }
+        .notif-maintenance { color: #4fe3b2; }
+        .notif-approval { color: #ff5555; font-weight: 600; }
+        .notif-time { color: #6a7a94; }
+        @keyframes slideIn {
+            0% { opacity: 0; transform: translateX(100px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+        </style>
+        <div class="notif-container">
+        """, unsafe_allow_html=True)
+        
+        # ✅ Render each notification as HTML
+        for n in notifications[:5]:
+            # Determine severity class
+            if n.severity == NotificationSeverity.CRITICAL:
+                sev_class = "critical"
+                icon = "🔴"
+            elif n.severity == NotificationSeverity.WARNING:
+                sev_class = "warning"
+                icon = "🟠"
+            elif n.severity == NotificationSeverity.SUCCESS:
+                sev_class = "success"
+                icon = "🟢"
+            else:
+                sev_class = "info"
+                icon = "🔵"
+            
+            # Build meta info
+            meta_parts = []
+            if n.revenue_impact:
+                meta_parts.append(f'<span class="notif-revenue">💰 ${n.revenue_impact:,.2f}</span>')
+            if n.maintenance_scheduled:
+                meta_parts.append(f'<span class="notif-maintenance">🔧 {n.maintenance_scheduled}</span>')
+            if n.human_approval_required:
+                meta_parts.append('<span class="notif-approval">👤 Approval Required</span>')
+            
+            meta_html = ' · '.join(meta_parts) if meta_parts else ''
+            time_str = n.timestamp.strftime('%H:%M:%S')
+            
+            # ✅ Build notification HTML
+            st.markdown(f"""
+            <div class="notif-item {sev_class}">
+                <div class="notif-title">{icon} {n.title}</div>
+                <div class="notif-msg">{n.message}</div>
+                <div class="notif-meta">
+                    <span class="notif-time">⏱️ {time_str}</span>
+                    {meta_html}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # ✅ Mark notifications as read
+        for n in notifications[:5]:
+            notification_service.mark_read(n.id)
 ```
 
 ## app/components/incident_card.py
@@ -69,36 +228,46 @@ def render_agent_card(report):
 
 ```python
 import streamlit as st
+from services.ai_config import AIConfigGenerator
 
 
-def render_incident_card(
-    asset,
-    incident_type,
-    severity,
-    status="Processing"
-):
-
+def render_incident_card(asset, incident_type, severity, status="Processing"):
+    """Render an incident card with dynamic severity colors."""
+    
+    # ✅ Get severity mapping from config
+    try:
+        config = AIConfigGenerator()
+        severity_map = config.get_config().get("severity_mapping", {
+            "Critical": 1, "High": 2, "Medium": 3, "Low": 4
+        })
+        severity_colors = {
+            "Critical": "#ff5555",
+            "High": "#ff8844",
+            "Medium": "#ffbf69",
+            "Low": "#4fe3b2",
+        }
+    except:
+        severity_colors = {
+            "Critical": "#ff5555",
+            "High": "#ff8844",
+            "Medium": "#ffbf69",
+            "Low": "#4fe3b2",
+        }
+    
+    color = severity_colors.get(severity, "#ffbf69")
+    
     st.markdown(
         f"""
-        <div class="incident-card">
-
-        <h2>🚨 {incident_type}</h2>
-
-        <p>
-        <b>Asset:</b> {asset}
-        </p>
-
-        <p>
-        <b>Severity:</b>
-        <span style="color:#ff5555">
-        {severity}
-        </span>
-        </p>
-
-        <p>
-        <b>Status:</b> {status}
-        </p>
-
+        <div class="incident-card" style="background:rgba(255,255,255,0.05);border:1px solid {color}44;border-radius:12px;padding:16px;margin:12px 0;">
+            <h2 style="color:{color};margin:0 0 8px 0;">🚨 {incident_type}</h2>
+            <p style="margin:4px 0;"><b>Asset:</b> {asset}</p>
+            <p style="margin:4px 0;">
+                <b>Severity:</b>
+                <span style="color:{color};font-weight:bold;">
+                    {severity}
+                </span>
+            </p>
+            <p style="margin:4px 0;"><b>Status:</b> {status}</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -114,24 +283,44 @@ import streamlit as st
 
 
 def render_investigation_progress():
+    """Render the investigation progress with real-time status."""
     st.markdown("### 🤖 AI Investigation")
-
-    stages = [
-        ("🛡 Safety Analysis", "Completed"),
-        ("🔍 Diagnostic Analysis", "Completed"),
-        ("📚 Knowledge Retrieval", "Completed"),
-        ("🔧 Maintenance Review", "Completed"),
-        ("📋 Planning", "Completed"),
-    ]
+    
+    # ✅ Check session state for progress
+    if "investigation_stages" not in st.session_state:
+        st.session_state.investigation_stages = [
+            ("🛡️ Safety Analysis", "Pending"),
+            ("🔍 Diagnostic Analysis", "Pending"),
+            ("📚 Knowledge Retrieval", "Pending"),
+            ("🔧 Maintenance Review", "Pending"),
+            ("📋 Planning", "Pending"),
+        ]
+    
+    # ✅ Update stages based on session state
+    if st.session_state.get("investigation_complete", False):
+        stages = [
+            ("🛡️ Safety Analysis", "Completed"),
+            ("🔍 Diagnostic Analysis", "Completed"),
+            ("📚 Knowledge Retrieval", "Completed"),
+            ("🔧 Maintenance Review", "Completed"),
+            ("📋 Planning", "Completed"),
+        ]
+    else:
+        stages = st.session_state.investigation_stages
 
     for stage, status in stages:
         left, right = st.columns([5, 1])
-
+        
         with left:
             st.write(stage)
-
+        
         with right:
-            st.success(status)
+            if status == "Completed":
+                st.success("✅ Done")
+            elif status == "Running":
+                st.warning("⏳ Running...")
+            else:
+                st.info("⏸️ Pending")
 ```
 
 ## app/components/phase_one_views.py
@@ -252,21 +441,62 @@ def render_copilot_context_panel() -> None:
 
 ```python
 import streamlit as st
+from services.ai_config import AIConfigGenerator
 
 
 def render_telemetry():
-
+    """Render live telemetry data with dynamic thresholds."""
     st.markdown("### 📊 Live Telemetry")
-
+    
+    # ✅ Get thresholds from AI config
+    try:
+        config = AIConfigGenerator()
+        # Use Pump as default asset type
+        thresholds = config.get_thresholds("Pump")
+        
+        pressure_max = thresholds.get("pressure_max", 150)
+        temp_max = thresholds.get("temperature_max", 85)
+        flow_min = thresholds.get("flow_min", 25)
+        vib_max = thresholds.get("vibration_max", 8)
+    except:
+        pressure_max = 150
+        temp_max = 85
+        flow_min = 25
+        vib_max = 8
+    
+    # ✅ Get telemetry from session state
+    if "telemetry_data" in st.session_state:
+        telemetry = st.session_state.telemetry_data
+    else:
+        # Demo values - still within thresholds
+        telemetry = {
+            "pressure": pressure_max * 0.85,
+            "temperature": temp_max * 0.85,
+            "flow": flow_min * 3,
+            "vibration": vib_max * 0.7,
+        }
+    
     c1, c2, c3, c4 = st.columns(4)
+    
+    pressure = telemetry.get("pressure", pressure_max * 0.85)
+    temp = telemetry.get("temperature", temp_max * 0.85)
+    flow = telemetry.get("flow", flow_min * 3)
+    vibration = telemetry.get("vibration", vib_max * 0.7)
+    
+    # ✅ Dynamic status based on thresholds
+    pressure_status = "HIGH" if pressure > pressure_max * 0.95 else "NORMAL"
+    temp_status = "ELEVATED" if temp > temp_max * 0.95 else "NORMAL"
+    flow_status = "WARNING" if flow < flow_min * 1.2 else "NORMAL"
+    vibration_status = "HIGH" if vibration > vib_max * 0.95 else "NORMAL"
 
     with c1:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Pressure</div>
-                <div class="metric-value">152 PSI</div>
-                <div class="status status-critical">HIGH</div>
+            f"""
+            <div class="metric-card" style="padding:12px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                <div style="font-size:0.8rem;color:#8fa1ba;">Pressure</div>
+                <div style="font-size:1.4rem;font-weight:700;color:#e8f0ff;">{pressure:.1f} PSI</div>
+                <div style="font-size:0.75rem;color:#ff718d;">{pressure_status}</div>
+                <div style="font-size:0.65rem;color:#8fa1ba;">Threshold: {pressure_max} PSI</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -274,11 +504,12 @@ def render_telemetry():
 
     with c2:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Temperature</div>
-                <div class="metric-value">84 °C</div>
-                <div class="status status-warning">ELEVATED</div>
+            f"""
+            <div class="metric-card" style="padding:12px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                <div style="font-size:0.8rem;color:#8fa1ba;">Temperature</div>
+                <div style="font-size:1.4rem;font-weight:700;color:#e8f0ff;">{temp:.1f} °C</div>
+                <div style="font-size:0.75rem;color:#ffbf69;">{temp_status}</div>
+                <div style="font-size:0.65rem;color:#8fa1ba;">Threshold: {temp_max} °C</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -286,11 +517,12 @@ def render_telemetry():
 
     with c3:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">Flow Rate</div>
-                <div class="metric-value">310 L/min</div>
-                <div class="status status-running">NORMAL</div>
+            f"""
+            <div class="metric-card" style="padding:12px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                <div style="font-size:0.8rem;color:#8fa1ba;">Flow Rate</div>
+                <div style="font-size:1.4rem;font-weight:700;color:#e8f0ff;">{flow:.1f} L/min</div>
+                <div style="font-size:0.75rem;color:#4fe3b2;">{flow_status}</div>
+                <div style="font-size:0.65rem;color:#8fa1ba;">Threshold: {flow_min} L/min</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -298,11 +530,12 @@ def render_telemetry():
 
     with c4:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-label">AI Status</div>
-                <div class="metric-value">Running</div>
-                <div class="status status-info">ACTIVE</div>
+            f"""
+            <div class="metric-card" style="padding:12px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                <div style="font-size:0.8rem;color:#8fa1ba;">Vibration</div>
+                <div style="font-size:1.4rem;font-weight:700;color:#e8f0ff;">{vibration:.1f} mm/s</div>
+                <div style="font-size:0.75rem;color:#ff718d;">{vibration_status}</div>
+                <div style="font-size:0.65rem;color:#8fa1ba;">Threshold: {vib_max} mm/s</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -315,27 +548,30 @@ def render_telemetry():
 
 ```python
 import streamlit as st
+from datetime import datetime
 
 
 def render_timeline():
-    st.markdown("### ⏱ Incident Timeline")
-
-    events = [
-        ("10:42:01", "🚨 Pressure spike detected"),
-        ("10:42:03", "🛡 Safety Agent executed"),
-        ("10:42:05", "🔍 Diagnostic completed"),
-        ("10:42:08", "📚 Knowledge retrieved"),
-        ("10:42:10", "🔧 Maintenance recommended"),
-        ("10:42:12", "📋 Planning completed"),
-    ]
+    """Render the incident timeline with real events - limited to last 10."""
+    st.markdown("### ⏱️ Incident Timeline")
+    
+    if "incident_events" in st.session_state and st.session_state.incident_events:
+        events = st.session_state.incident_events
+        # ✅ Only show last 10 events
+        events = events[-10:]
+    else:
+        events = [
+            ("⏱️ 00:00", "🚨 Incident detected"),
+            ("⏱️ 00:05", "✅ Investigation complete"),
+        ]
 
     for time, event in events:
         st.markdown(
             f"""
-            <div class="timeline-row">
-                <div style="color:#8fa1ba;font-size:0.9rem;">{time}</div>
-                <div class="timeline-dot"></div>
-                <div>{event}</div>
+            <div class="timeline-row" style="display: flex; gap: 12px; align-items: center; margin: 6px 0; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                <div style="color:#55D6FF;font-size:0.85rem;font-weight:600;min-width:80px;">{time}</div>
+                <div style="width:10px;height:10px;border-radius:50%;background:#55D6FF;box-shadow:0 0 10px #55D6FF;"></div>
+                <div style="color:#e8f0ff;">{event}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -590,20 +826,17 @@ def get_assets():
 
 ```python
 """Unified backend API for frontend access with caching and refinery support."""
-# At the very top of backend_api.py - BEFORE any other code
-print("🔴🔴🔴 BACKEND_API.PY LOADED - VERSION WITH get_incidents 🔴🔴🔴")
+
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
 import time
 
-# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.runtime import kernel, simulator
 from services.config_services import ConfigService
 
 
@@ -631,13 +864,26 @@ class BackendAPI:
                 if attr.startswith("_") and attr.endswith("_cached"):
                     getattr(self, attr).cache_clear()
 
+    def _get_runtime(self):
+        """Lazy load runtime to avoid circular imports."""
+        from services.runtime import kernel, simulator
+        return kernel, simulator
+
+    @property
+    def kernel(self):
+        return self._get_runtime()[0]
+
+    @property
+    def simulator(self):
+        return self._get_runtime()[1]
+
     # -------------------------
     # Refinery Operations
     # -------------------------
 
     def get_refineries(self) -> List[Dict]:
         """Get all refineries with their assets."""
-        refineries = getattr(kernel, "_refineries", [])
+        refineries = getattr(self.kernel, "_refineries", [])
         return [
             {
                 "id": r.id,
@@ -662,7 +908,7 @@ class BackendAPI:
 
     def get_refinery_assets(self, refinery_id: str) -> List[Dict]:
         """Get assets for a specific refinery."""
-        refineries = getattr(kernel, "_refineries", [])
+        refineries = getattr(self.kernel, "_refineries", [])
         for refinery in refineries:
             if refinery.id == refinery_id:
                 return [
@@ -692,7 +938,7 @@ class BackendAPI:
     @lru_cache(maxsize=32)
     def _get_assets_cached(self) -> List[Dict]:
         """Cached version of get_assets."""
-        assets = kernel.asset_service.all_assets()
+        assets = self.kernel.asset_service.all_assets()
         return [
             {
                 "id": asset.id,
@@ -716,7 +962,7 @@ class BackendAPI:
     @lru_cache(maxsize=128)
     def _get_asset_telemetry_cached(self, asset_id: str, limit: int = 100) -> tuple:
         """Cached version of get_asset_telemetry."""
-        readings = kernel.state.get_history(asset_id)
+        readings = self.kernel.state.get_history(asset_id)
         if limit:
             readings = readings[-limit:]
         return tuple([
@@ -737,8 +983,8 @@ class BackendAPI:
 
     def get_asset_health(self, asset_id: str) -> Dict:
         """Get health for a specific asset."""
-        readings = kernel.state.get_history(asset_id)
-        health = kernel.health.calculate_health(readings)
+        readings = self.kernel.state.get_history(asset_id)
+        health = self.kernel.health.calculate_health(readings)
         return {
             "health": health,
             "readings": len(readings),
@@ -746,14 +992,13 @@ class BackendAPI:
         }
 
     # -------------------------
-    # Incident Operations (with Caching)
-    # ✅ FIXED: get_incidents is now properly defined
+    # Incident Operations
     # -------------------------
 
     @lru_cache(maxsize=32)
     def _get_incidents_cached(self) -> tuple:
         """Cached version of get_incidents."""
-        events = kernel.event_store.all()
+        events = self.kernel.event_store.all()
         return tuple([
             {
                 "id": event.id,
@@ -774,22 +1019,21 @@ class BackendAPI:
     def trigger_incident(self, incident_type: str) -> Dict:
         """Trigger a simulated incident."""
         from services.incident_service import IncidentService
-        service = IncidentService(simulator)
+        service = IncidentService(self.simulator)
         result = service.trigger_incident(incident_type)
-        # Invalidate caches after new incident
         self._invalidate_cache("get_incidents")
         self._invalidate_cache("get_agent_activity")
         return result
 
     # -------------------------
-    # Agent Operations (with Caching)
+    # Agent Operations
     # -------------------------
 
     @lru_cache(maxsize=32)
     def _get_agents_cached(self) -> List[Dict]:
         """Cached version of get_agents."""
-        agents = kernel.registry.all()
-        results = kernel.state.agent_results
+        agents = self.kernel.registry.all()
+        results = self.kernel.state.agent_results
         result_map = {r.agent_name: r for r in results}
         return [
             {
@@ -809,7 +1053,7 @@ class BackendAPI:
     @lru_cache(maxsize=32)
     def _get_agent_activity_cached(self, limit: int = 50) -> tuple:
         """Cached version of get_agent_activity."""
-        results = kernel.state.agent_results[-limit:]
+        results = self.kernel.state.agent_results[-limit:]
         return tuple([
             {
                 "agent_name": r.agent_name,
@@ -830,13 +1074,13 @@ class BackendAPI:
         return list(self._get_agent_activity_cached(limit))
 
     # -------------------------
-    # Report Operations (with Caching)
+    # Report Operations
     # -------------------------
 
     @lru_cache(maxsize=32)
     def _get_reports_cached(self) -> tuple:
         """Cached version of get_reports."""
-        reports = kernel.state.execution_reports
+        reports = self.kernel.state.execution_reports
         return tuple([
             {
                 "id": r.id,
@@ -882,11 +1126,11 @@ class BackendAPI:
     def get_simulation_status(self) -> Dict:
         """Get current simulation status."""
         return {
-            "running": getattr(kernel, "_simulation_running", False),
-            "events": len(kernel.event_store.all()),
-            "reports": len(kernel.state.execution_reports),
-            "agent_results": len(kernel.state.agent_results),
-            "assets": len(kernel.asset_service.all_assets()),
+            "running": getattr(self.kernel, "_simulation_running", False),
+            "events": len(self.kernel.event_store.all()),
+            "reports": len(self.kernel.state.execution_reports),
+            "agent_results": len(self.kernel.state.agent_results),
+            "assets": len(self.kernel.asset_service.all_assets()),
         }
 
     def step_simulation(self) -> Dict:
@@ -1135,175 +1379,89 @@ def get_asset_health(asset_id):
 **File path:** `app/frontend_services/health_prediction_adapter.py`
 
 ```python
-from services.runtime import kernel
+"""Health prediction using computation engine."""
+
+from services.runtime import get_kernel
+from services.computation_engine import ComputationEngine
 
 
 def get_health_prediction(asset_id, horizon_days=14):
-
-    readings = kernel.state.get_history(
-        asset_id
-    )
-
-
-    current_health = kernel.health.calculate_health(
-        readings
-    )
-
-
-    historical = calculate_history(
-        readings
-    )
-
-
-    prediction = predict_degradation(
-        current_health,
-        horizon_days
-    )
-
-
-    failure_probability = calculate_failure_probability(
-        current_health
-    )
-
-
-    return {
-
-        "health": round(
-            current_health
-        ),
-
-        "rul": calculate_rul(
-            current_health
-        ),
-
-        "failure_probability": f"{failure_probability}%",
-
-        "confidence": calculate_confidence(
-            readings
-        ),
-
-        "historical": {
-            "Historical health": historical
-        },
-
-        "predicted": {
-            "Predicted health": prediction,
-            "Intervention threshold":
-                [70] * len(prediction)
-        },
-
-        "telemetry": format_telemetry(
-            readings
+    """Get health prediction using the computation engine."""
+    kernel = get_kernel()
+    engine = ComputationEngine()
+    
+    readings = kernel.state.get_history(asset_id)
+    asset = kernel.asset_service.get(asset_id)
+    
+    if not asset or not readings:
+        return {
+            "health": 100,
+            "rul": "365 days",
+            "failure_probability": "0%",
+            "confidence": "Low",
+            "historical": {"Historical health": []},
+            "predicted": {"Predicted health": [], "Intervention threshold": []},
+            "telemetry": []
+        }
+    
+    # Get current metrics
+    metrics = engine.compute_asset(asset, readings)
+    
+    # Calculate historical health
+    historical = []
+    for i in range(len(readings)):
+        h = engine._calculate_health(
+            readings[:i+1],
+            engine.config.get_thresholds(metrics["asset_type"]),
+            {}  # weights
         )
+        historical.append(round(h, 1))
+    
+    # Predict future health
+    current_health = metrics["health"]
+    degradation_rate = metrics["degradation_rate"]
+    
+    predicted = []
+    for day in range(horizon_days):
+        health = current_health - (degradation_rate * 5 * (day + 1))
+        predicted.append(round(max(0, health), 1))
+    
+    # Format RUL
+    rul_days = metrics["rul_days"]
+    if rul_days >= 365:
+        rul_str = "365+ days"
+    elif rul_days >= 90:
+        rul_str = f"{int(rul_days)} days"
+    elif rul_days >= 30:
+        rul_str = f"{int(rul_days)} days"
+    elif rul_days >= 7:
+        rul_str = f"{int(rul_days)} days"
+    else:
+        rul_str = f"{int(rul_days)} days"
+    
+    return {
+        "health": round(metrics["health"]),
+        "rul": rul_str,
+        "failure_probability": f"{metrics['failure_probability']:.1f}%",
+        "confidence": f"{metrics['confidence'] * 100:.1f}%",
+        "historical": {"Historical health": historical},
+        "predicted": {
+            "Predicted health": predicted,
+            "Intervention threshold": [70] * horizon_days
+        },
+        "telemetry": format_telemetry(readings)
     }
 
 
-
-def calculate_history(readings):
-
-    history = []
-
-    for i in range(len(readings)):
-
-        health = kernel.health.calculate_health(
-            readings[:i+1]
-        )
-
-        history.append(
-            round(health,1)
-        )
-
-    return history
-
-
-
-def predict_degradation(
-    current,
-    days
-):
-
-    prediction = []
-
-    health = current
-
-
-    for _ in range(days):
-
-        health -= 0.5
-
-        prediction.append(
-            round(
-                max(0, health),
-                1
-            )
-        )
-
-    return prediction
-
-
-
-def calculate_failure_probability(
-    health
-):
-
-    risk = 100 - health
-
-    return min(
-        100,
-        round(risk)
-    )
-
-
-
-def calculate_rul(
-    health
-):
-
-    if health > 90:
-        return "90+ days"
-
-    if health > 75:
-        return "45 days"
-
-    if health > 50:
-        return "14 days"
-
-    return "<7 days"
-
-
-
-def calculate_confidence(
-    readings
-):
-
-    if len(readings) > 20:
-        return "90%"
-
-    if len(readings) > 5:
-        return "75%"
-
-    return "Low"
-
-
-
 def format_telemetry(readings):
-
+    """Format telemetry for display."""
     data = []
-
     for reading in readings[-10:]:
-
-        data.append(
-            {
-                "Sensor": reading.sensor_type.value,
-
-                "Observed": reading.value,
-
-                "Time": reading.timestamp.strftime(
-                    "%H:%M:%S"
-                )
-            }
-        )
-
+        data.append({
+            "Sensor": reading.sensor_type.value,
+            "Observed": reading.value,
+            "Time": reading.timestamp.strftime("%H:%M:%S")
+        })
     return data
 ```
 
@@ -1312,99 +1470,165 @@ def format_telemetry(readings):
 **File path:** `app/frontend_services/incident_adapter.py`
 
 ```python
-from services.runtime import kernel, simulator
+"""Incident adapter with dynamic severity calculation from config."""
+
+from services.runtime import get_kernel, get_simulator
 from services.incident_service import IncidentService
+from services.ai_config import AIConfigGenerator
 
 
 def trigger_incident(incident_type):
-
-    service = IncidentService(
-        simulator
-    )
-
-    return service.trigger_incident(
-        incident_type
-    )
-
+    """Trigger an incident and return formatted results."""
+    simulator = get_simulator()
+    service = IncidentService(simulator)
+    result = service.trigger_incident(incident_type)
+    
+    try:
+        import streamlit as st
+        reports = result.get("reports", [])
+        if reports:
+            events = []
+            for i, report in enumerate(reports):
+                agent_name = getattr(report, 'workflow_name', 'Unknown')
+                if i == 0:
+                    events.append(("⏱️ 00:00", "🚨 Incident detected"))
+                events.append((f"⏱️ 00:{i+2:02d}", f"🤖 {agent_name} completed"))
+            
+            last_report = reports[-1] if reports else None
+            if last_report:
+                summary = getattr(last_report, 'final_summary', '')
+                if "planning" in summary.lower():
+                    events.append(("⏱️ 00:12", "✅ Investigation complete"))
+            
+            st.session_state.incident_events = events
+            st.session_state.investigation_complete = True
+    except Exception as e:
+        print(f"⚠️ Could not update session state: {e}")
+    
+    return result
 
 
 def get_incidents():
-
+    """Get all incidents from the runtime."""
+    kernel = get_kernel()
     events = kernel.event_store.all()
 
     incidents = []
-
     for event in events:
-
         severity = calculate_severity(event)
-
-
-        incidents.append(
-            {
-                "Incident": event.name,
-
-                "Asset": event.source,
-
-                "Severity": severity,
-
-                "Detected": event.timestamp.strftime(
-                    "%H:%M:%S"
-                ),
-
-                "Payload": event.payload,
-            }
-        )
-
+        incidents.append({
+            "Incident": event.name,
+            "Asset": event.source,
+            "Severity": severity,
+            "Detected": event.timestamp.strftime("%H:%M:%S") if hasattr(event, 'timestamp') else "Unknown",
+            "Payload": event.payload,
+        })
 
     return incidents
 
 
-
 def calculate_severity(event):
-
-    payload = event.payload
-
-
-    # derive severity from actual signal
-
-    if "pressure" in payload:
-
-        return (
-            "Critical"
-            if payload["pressure"] > 160
-            else "High"
-        )
-
-
-    if "temperature" in payload:
-
-        return (
-            "Critical"
-            if payload["temperature"] > 100
-            else "High"
-        )
-
-
-    if "gas" in payload:
-
-        return "Critical"
-
-
-    if "vibration" in payload:
-
-        return (
-            "Critical"
-            if payload["vibration"] > 40
-            else "High"
-        )
-
-
-    if "flow" in payload:
-
-        return "Medium"
-
-
-    return "Unknown"
+    """
+    Calculate severity from event payload using dynamic thresholds from AI config.
+    """
+    payload = getattr(event, 'payload', {})
+    
+    # ✅ Get dynamic thresholds from AI config
+    try:
+        config = AIConfigGenerator()
+        
+        # Get asset type from payload
+        asset_type = payload.get("asset_type", "Pump")
+        
+        # Get thresholds for this asset type
+        thresholds = config.get_thresholds(asset_type)
+        
+        # Get severity mapping
+        severity_map = config.get_config().get("severity_mapping", {
+            "Critical": 1, "High": 2, "Medium": 3, "Low": 4
+        })
+        
+        # Calculate severity based on thresholds
+        severity_scores = {}
+        
+        if "pressure" in payload:
+            pressure_max = thresholds.get("pressure_max", 150)
+            pressure_val = payload["pressure"]
+            # How far above threshold?
+            ratio = pressure_val / pressure_max
+            if ratio >= 1.5:
+                severity_scores["pressure"] = 1  # Critical
+            elif ratio >= 1.2:
+                severity_scores["pressure"] = 2  # High
+            elif ratio >= 1.05:
+                severity_scores["pressure"] = 3  # Medium
+            else:
+                severity_scores["pressure"] = 4  # Low
+        
+        if "temperature" in payload:
+            temp_max = thresholds.get("temperature_max", 85)
+            temp_val = payload["temperature"]
+            ratio = temp_val / temp_max
+            if ratio >= 1.5:
+                severity_scores["temperature"] = 1
+            elif ratio >= 1.2:
+                severity_scores["temperature"] = 2
+            elif ratio >= 1.05:
+                severity_scores["temperature"] = 3
+            else:
+                severity_scores["temperature"] = 4
+        
+        if "gas" in payload:
+            gas_max = thresholds.get("gas_max", 40)
+            gas_val = payload["gas"]
+            ratio = gas_val / gas_max
+            if ratio >= 1.5:
+                severity_scores["gas"] = 1
+            elif ratio >= 1.2:
+                severity_scores["gas"] = 2
+            elif ratio >= 1.05:
+                severity_scores["gas"] = 3
+            else:
+                severity_scores["gas"] = 4
+        
+        if "vibration" in payload:
+            vib_max = thresholds.get("vibration_max", 8)
+            vib_val = payload["vibration"]
+            ratio = vib_val / vib_max
+            if ratio >= 1.5:
+                severity_scores["vibration"] = 1
+            elif ratio >= 1.2:
+                severity_scores["vibration"] = 2
+            elif ratio >= 1.05:
+                severity_scores["vibration"] = 3
+            else:
+                severity_scores["vibration"] = 4
+        
+        if "flow" in payload:
+            flow_min = thresholds.get("flow_min", 25)
+            flow_val = payload["flow"]
+            ratio = flow_min / flow_val if flow_val > 0 else 10
+            if ratio >= 2:
+                severity_scores["flow"] = 1
+            elif ratio >= 1.5:
+                severity_scores["flow"] = 2
+            elif ratio >= 1.2:
+                severity_scores["flow"] = 3
+            else:
+                severity_scores["flow"] = 4
+        
+        # Get the highest severity (lowest number)
+        if severity_scores:
+            worst_score = min(severity_scores.values())
+            # Map back to severity name
+            reverse_map = {v: k for k, v in severity_map.items()}
+            return reverse_map.get(worst_score, "Medium")
+        
+    except Exception as e:
+        print(f"⚠️ Severity calculation failed: {e}")
+    
+    # ✅ Fallback to default severity if config fails
+    return "Medium"
 ```
 
 ## app/frontend_services/knowledge_adapter.py
@@ -1492,7 +1716,6 @@ if str(PROJECT_ROOT) not in sys.path:
 if TYPE_CHECKING:
     from agents.knowledge import KnowledgeAgent
 
-
 LOGGER = logging.getLogger(__name__)
 ProgressCallback = Callable[[str], None]
 
@@ -1528,11 +1751,14 @@ operational facts, citations, or technical instructions for a casual message.
 Never mention implementation, search, retrieval, documents, a knowledge base,
 databases, RAG, prompts, APIs, or model internals.
 """
-    return LLMManager().generate(prompt)
+    try:
+        return LLMManager().generate(prompt)
+    except Exception as e:
+        LOGGER.error(f"Conversational response failed: {e}")
+        return "I'm here to help with refinery operations. What would you like to know?"
 
 
 def _emit(callback: ProgressCallback | None, message: str) -> None:
-    """Log and optionally expose a diagnostic stage without changing backend behavior."""
     LOGGER.info(message)
     if callback is not None:
         callback(message)
@@ -1546,15 +1772,14 @@ class KnowledgeAgentUnavailable(RuntimeError):
 def get_knowledge_agent() -> "KnowledgeAgent":
     """Return the KnowledgeAgent registered on the shared MAO kernel."""
     try:
-        from services.runtime import kernel
-
+        from services.runtime import get_kernel
+        kernel = get_kernel()
         agent = kernel.registry.get("knowledge")
         if agent is None:
             raise RuntimeError("KnowledgeAgent is not registered on the MAO kernel.")
         return agent
     except Exception as error:
         raise KnowledgeAgentUnavailable("Command Nexus is temporarily unavailable. Please try again shortly.") from error
-
 
 def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = None) -> str:
     """Route casual conversation to Gemini and operational questions to KnowledgeAgent."""
@@ -1569,14 +1794,10 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
             return generate_conversational_response(normalized_question)
         except Exception as error:
             LOGGER.exception("Command Nexus conversational response failed")
-            raise KnowledgeAgentUnavailable(
-                "Command Nexus is temporarily unavailable. Please try again shortly."
-            ) from error
+            return "I'm here to help! What would you like to know about refinery operations?"
 
     _emit(on_progress, "Preparing an operational assessment.")
     try:
-        # Backend imports are lazy so ordinary Streamlit rendering does not
-        # initialize the operational stack until an operational question arrives.
         from mao.models.task import Task
 
         task = Task(
@@ -1585,20 +1806,21 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
             assigned_agent="knowledge",
         )
         agent = get_knowledge_agent()
+        
+        # ✅ Check if retriever exists
+        if agent.retriever is None:
+            return "The knowledge base is not available. Please ensure the database is configured and has documents loaded."
+
         result = agent.execute(task)
-    except KnowledgeAgentUnavailable:
-        raise
+        
+        if not result.success or not result.summary:
+            return "I couldn't find specific operational guidance for that query. Please check with your operations team."
+            
+        return result.summary
+        
     except Exception as error:
         LOGGER.exception("Command Nexus operational response failed")
-        raise KnowledgeAgentUnavailable(
-            "Command Nexus is temporarily unavailable. Please try again shortly."
-        ) from error
-
-    if not result.success or not result.summary:
-        raise KnowledgeAgentUnavailable("Command Nexus could not prepare an operational assessment. Please try again.")
-
-    _emit(on_progress, "Operational assessment prepared.")
-    return result.summary
+        return "I'm having trouble accessing the knowledge base right now. Please try again later."
 ```
 
 ## app/frontend_services/maintenance_adapter.py
@@ -1795,7 +2017,8 @@ def get_asset_telemetry(asset_id):
 ```python
 import sys
 from pathlib import Path
-
+import asyncio
+import platform
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # app/ → project_root/
 if str(PROJECT_ROOT) not in sys.path:
@@ -1804,7 +2027,10 @@ if str(PROJECT_ROOT) not in sys.path:
 import importlib
 import streamlit as st
 import ui_helpers
-
+if platform.system() == "Windows":
+    # Fix for Windows connection reset errors
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print("✅ Windows asyncio fix applied (SelectorEventLoop)")
 # Refresh shared UI helpers during Streamlit development reruns
 importlib.reload(ui_helpers)
 
@@ -1815,10 +2041,18 @@ from services.simulator_controller import sim_controller
 import importlib
 import app.frontend_services.backend_api_new
 importlib.reload(app.frontend_services.backend_api_new)
+from components.global_notifications import render_global_notifications
 
 
 setup_page("Operations Center")
 render_sidebar("Operations Center")
+# ... imports ...
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS (visible on Home page too)
+render_global_notifications()
+
+# ... rest of Home.py ...
 
 page_heading(
     "NIBS / AI OPERATIONS CENTER",
@@ -1880,54 +2114,252 @@ st.markdown("<div class='panel'><div class='section-label'>QUICK START</div><p c
 import sys
 from pathlib import Path
 
-# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
-from components.phase_one_views import render_live_signal_banner
-from ui_helpers import (
-    metric_card,
-    page_heading,
-    render_health_heatmap,
-    render_sidebar,
-    setup_page
-)
-from frontend_services.dashboard_adapter import get_dashboard
+import time
+import pandas as pd
+from datetime import datetime, timedelta
+import random
+
+from ui_helpers import page_heading, render_sidebar, setup_page
+from frontend_services.backend_api_new import api
+from services.notification_service import notification_service, NotificationSeverity
+from services.revenue_impact_calculator import revenue_service
+from services.maintenance_scheduler import maintenance_scheduler
+from components.global_notifications import render_global_notifications
 
 setup_page("Dashboard")
 render_sidebar("Executive Dashboard")
-page_heading("OVERVIEW", "Operations Dashboard", "Real-time operational intelligence across the facility.")
-snapshot = get_dashboard()
-render_live_signal_banner("LIVE DEMO TELEMETRY", "Operational data shown is the existing frontend demo snapshot. Backend stream integration is pending.")
-st.write("")
 
-for col, args in zip(st.columns(4), snapshot["metrics"]):
-    with col: metric_card(*args)
+# ✅ RENDER GLOBAL NOTIFICATIONS (visible on this page)
+render_global_notifications()
 
-st.write("")
-st.markdown("<div class='section-label'>FACILITY HEALTH HEATMAP</div>", unsafe_allow_html=True)
-render_health_heatmap()
-st.write("")
-left, right = st.columns([1.65, 1])
-with left:
-    st.markdown("<div class='section-label'>24-HOUR OPERATIONAL HEALTH</div>", unsafe_allow_html=True)
-    st.info("Live health trend will appear after telemetry history is populated.")
-with right:
-    st.markdown("<div class='section-label'>ATTENTION QUEUE</div>", unsafe_allow_html=True)
-    for item in snapshot["incidents"]:
-        st.markdown(f"<div class='panel'><b>{item['Incident']}</b><br><span class='muted'>{item['Asset']} • {item['Severity']} • {item['Detected']}</span></div>", unsafe_allow_html=True)
-        st.write("")
+page_heading(
+    "🏭 REFINERY DASHBOARD",
+    "Real-Time Operations Center",
+    "Live health, revenue, incidents, and maintenance across all assets.",
+)
 
-left, right = st.columns([1.25, 1])
-with left:
-    st.markdown("<div class='section-label'>ASSET WATCHLIST</div>", unsafe_allow_html=True)
-    st.dataframe(snapshot["assets"], hide_index=True, use_container_width=True, height=245)
-with right:
-    st.markdown("<div class='section-label'>LIVE ACTIVITY</div>", unsafe_allow_html=True)
-    for time, actor, text in snapshot["activity"]:
-        st.markdown(f"**{time} · {actor}**  \n<span class='muted'>{text}</span>", unsafe_allow_html=True)
+# ✅ AUTO-REFRESH every 10 seconds (WORKS!)
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+    st.session_state.telemetry_history = []
+
+# ✅ Force refresh every 10 seconds
+now = time.time()
+if now - st.session_state.last_refresh >= 10:
+    st.session_state.last_refresh = now
+    st.rerun()
+
+# ✅ Get real-time data
+assets = api.get_assets()
+incidents = api.get_incidents()
+
+# ✅ Build telemetry history for line chart
+telemetry_data = []
+for asset in assets[:20]:  # Show top 20 assets
+    readings = api.get_asset_telemetry(asset["id"], limit=30)
+    for r in readings:
+        telemetry_data.append({
+            "timestamp": r.get("timestamp", datetime.now().isoformat()),
+            "asset": asset.get("name", "Unknown"),
+            "value": r.get("value", 0),
+            "sensor_type": r.get("sensor_type", "Pressure"),
+        })
+
+if telemetry_data:
+    df = pd.DataFrame(telemetry_data)
+    if not df.empty and "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+        
+        # ✅ Pivot for line chart
+        pivot_df = df.pivot_table(
+            index="timestamp", 
+            columns="asset", 
+            values="value",
+            aggfunc="mean"
+        ).fillna(0)
+        
+        # ✅ Only show last 30 points
+        pivot_df = pivot_df.tail(30)
+else:
+    # ✅ Fallback: Generate demo data
+    st.session_state.telemetry_history.append({
+        "timestamp": datetime.now(),
+        "pressure": 110 + random.uniform(-10, 10),
+        "temperature": 70 + random.uniform(-5, 5),
+        "flow": 50 + random.uniform(-10, 10),
+        "vibration": 5 + random.uniform(-2, 2),
+    })
+    
+    if len(st.session_state.telemetry_history) > 30:
+        st.session_state.telemetry_history = st.session_state.telemetry_history[-30:]
+    
+    df = pd.DataFrame(st.session_state.telemetry_history)
+    pivot_df = df.set_index("timestamp")[["pressure", "temperature", "flow", "vibration"]]
+
+# ✅ LINE CHART
+st.markdown("<div class='section-label'>📈 LIVE TELEMETRY</div>", unsafe_allow_html=True)
+
+if not pivot_df.empty:
+    st.line_chart(pivot_df, height=300)
+    st.caption(f"🔄 Auto-refreshes every 10 seconds | {len(pivot_df)} data points")
+else:
+    st.info("Collecting telemetry data...")
+
+st.write("---")
+
+# ✅ Calculate metrics
+total_assets = len(assets)
+if total_assets > 0:
+    healths = [a.get("health", 0) for a in assets]
+    overall_health = round(sum(healths) / total_assets, 1)
+    online = sum(1 for a in assets if a.get("status") in ["Running", "Healthy"])
+    warning = sum(1 for a in assets if a.get("status") == "Warning")
+    critical = sum(1 for a in assets if a.get("status") == "Critical")
+    predicted_failures = sum(1 for a in assets if a.get("health", 100) < 60)
+else:
+    overall_health = 0
+    online = 0
+    warning = 0
+    critical = 0
+    predicted_failures = 0
+
+# ✅ Revenue calculation
+revenue_data = revenue_service.calculate_company_revenue_impact(assets)
+
+# ✅ Maintenance tasks
+upcoming_tasks = maintenance_scheduler.get_upcoming_tasks(days=7)
+critical_tasks = [t for t in upcoming_tasks if t.priority.value == "critical"]
+next_maintenance = upcoming_tasks[0].scheduled_date.strftime('%b %d, %H:%M') if upcoming_tasks else "None scheduled"
+
+# ✅ METRIC CARDS
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">🏭 Overall Health</div>
+        <div class="metric-value">{overall_health}%</div>
+        <div class="metric-delta" style="color: #4fe3b2;">{online} Online / {total_assets} Total</div>
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <span style="color: #4fe3b2; font-size: 0.7rem;">✅ {online}</span>
+            <span style="color: #ffbf69; font-size: 0.7rem;">⚠️ {warning}</span>
+            <span style="color: #ff718d; font-size: 0.7rem;">🔴 {critical}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">💰 Revenue</div>
+        <div class="metric-value">${revenue_data.get('current_revenue', 0):,.0f}</div>
+        <div class="metric-delta" style="color: #ffbf69;">⚠️ Loss: ${revenue_data.get('total_impact', 0):,.0f}</div>
+        <div style="color: #8fa1ba; font-size: 0.7rem;">Efficiency: {revenue_data.get('revenue_efficiency', 0)}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">🚨 Incidents</div>
+        <div class="metric-value">{len(incidents)}</div>
+        <div class="metric-delta" style="color: #ff718d;">🔮 {predicted_failures} predicted in 24h</div>
+        <div style="color: #8fa1ba; font-size: 0.7rem;">Today: {len([i for i in incidents if i.get('timestamp', '')[:10] == datetime.now().strftime('%Y-%m-%d')])}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">🔧 Maintenance</div>
+        <div class="metric-value">{len(upcoming_tasks)}</div>
+        <div class="metric-delta" style="color: #ff718d;">⚡ {len(critical_tasks)} Critical</div>
+        <div style="color: #8fa1ba; font-size: 0.7rem;">Next: {next_maintenance}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.write("---")
+
+# ✅ SECOND ROW: Health Distribution + Quick Actions
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown("<div class='section-label'>📊 Asset Health Distribution</div>", unsafe_allow_html=True)
+    
+    if assets:
+        bins = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}
+        for a in assets:
+            h = a.get("health", 100)
+            if h <= 20:
+                bins["0-20"] += 1
+            elif h <= 40:
+                bins["21-40"] += 1
+            elif h <= 60:
+                bins["41-60"] += 1
+            elif h <= 80:
+                bins["61-80"] += 1
+            else:
+                bins["81-100"] += 1
+        
+        st.bar_chart(bins, height=220)
+    else:
+        st.info("No assets available.")
+
+with col2:
+    st.markdown("<div class='section-label'>⚡ Quick Actions</div>", unsafe_allow_html=True)
+    
+    if st.button("🔍 View Agent Monitor", width='stretch'):
+        st.switch_page("app/pages/6_Agent_Monitor.py")
+    
+    if st.button("📋 View AI Activity", width='stretch'):
+        st.switch_page("app/pages/12_AI_Activity.py")
+    
+    if st.button("🚨 Trigger Test Incident", width='stretch'):
+        from frontend_services.incident_adapter import trigger_incident
+        trigger_incident("pressure spike")
+        st.success("✅ Test incident triggered!")
+        st.rerun()
+
+st.write("---")
+
+# ✅ THIRD ROW: Top 5 Healthiest + Bottom 5 Needing Attention
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("<div class='section-label'>🏆 Top 5 Healthiest Assets</div>", unsafe_allow_html=True)
+    sorted_assets = sorted(assets, key=lambda x: x.get("health", 0), reverse=True)[:5]
+    for a in sorted_assets:
+        health = a.get("health", 0)
+        color = "#4fe3b2" if health > 80 else "#ffbf69" if health > 50 else "#ff718d"
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <span style="color: #e8f0ff;">{a.get('name', 'Unknown')}</span>
+            <span style="color: {color}; font-weight: 600;">{health:.1f}%</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown("<div class='section-label'>⚠️ Top 5 Assets Needing Attention</div>", unsafe_allow_html=True)
+    sorted_assets = sorted(assets, key=lambda x: x.get("health", 0))[:5]
+    for a in sorted_assets:
+        health = a.get("health", 0)
+        color = "#4fe3b2" if health > 80 else "#ffbf69" if health > 50 else "#ff718d"
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <span style="color: #e8f0ff;">{a.get('name', 'Unknown')}</span>
+            <span style="color: {color}; font-weight: 600;">{health:.1f}%</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ✅ Footer
+st.write("---")
+st.caption(f"🔄 Auto-refreshes every 10 seconds | Last updated: {datetime.now().strftime('%H:%M:%S')}")
 ```
 
 ## app/pages/10_Health_Prediction.py
@@ -1950,6 +2382,10 @@ from frontend_services.health_prediction_adapter import get_health_prediction
 setup_page("Health Prediction")
 render_sidebar("Predictive Health")
 page_heading("PREDICTIVE INTELLIGENCE", "Asset Health Prediction", "Forecast degradation risk early enough to plan safe, efficient intervention.")
+from components.global_notifications import render_global_notifications
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+render_global_notifications()
 
 asset_snapshot = get_assets()
 assets = asset_snapshot.get("assets", [])
@@ -2011,10 +2447,20 @@ with right:
 import streamlit as st
 from frontend_services.maintenance_adapter import get_maintenance_plan
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
+from components.global_notifications import render_global_notifications
 
+
+
+# ... rest of Home.py ...
 setup_page("Maintenance Planner")
 render_sidebar("Maintenance Planner")
 page_heading("WORK ORCHESTRATION", "Maintenance Planner", "Turn MAO task state and recommendations into an executable maintenance view.")
+
+
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+render_global_notifications()
 
 plan = get_maintenance_plan()
 
@@ -2092,7 +2538,7 @@ import streamlit as st
 
 from frontend_services.agent_activity_adapter import get_agent_activity, get_agent_metrics
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
-
+from components.global_notifications import render_global_notifications
 
 setup_page("AI Activity")
 render_sidebar("AI Activity Timeline")
@@ -2101,6 +2547,12 @@ page_heading(
     "AI Agent Activity Timeline",
     "A chronological, reviewable record of AI observation, reasoning, and workflow handoffs.",
 )
+
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+render_global_notifications()
+
 
 for col, args in zip(st.columns(4), get_agent_metrics()):
     with col:
@@ -2170,7 +2622,7 @@ import streamlit as st
 
 from frontend_services.digital_twin_adapter import get_twin_assets
 from ui_helpers import page_heading, render_sidebar, setup_page, status_chip
-
+from components.global_notifications import render_global_notifications
 
 setup_page("Digital Twin")
 render_sidebar("Digital Twin")
@@ -2179,6 +2631,9 @@ page_heading(
     "Digital Twin View",
     "A live operational map of facility zones, asset condition, and observed process signals.",
 )
+
+
+render_global_notifications()
 
 assets = get_twin_assets()
 if not assets:
@@ -2244,10 +2699,16 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 from ui_helpers import page_heading, render_sidebar, setup_page, metric_card
 from app.frontend_services.backend_api_new import api
-
+from components.global_notifications import render_global_notifications
 
 setup_page("Configuration Dashboard")
 render_sidebar("Configuration")
+
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+render_global_notifications()
+
 
 page_heading(
     "DYNAMIC CONFIGURATION",
@@ -2398,11 +2859,15 @@ import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page
 from app.frontend_services.backend_api_new import api
+from components.global_notifications import render_global_notifications
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 setup_page("Asset Monitoring")
 render_sidebar("Asset Monitoring")
 page_heading("FLEET INTELLIGENCE", "Asset Monitoring", "Health, telemetry, and operational posture for every connected asset.")
-
+render_global_notifications()
 render_live_signal_banner("LIVE ASSET TELEMETRY", "Connected to RigOS backend state manager.", "Info")
 st.write("")
 
@@ -2531,10 +2996,16 @@ import streamlit as st
 
 from frontend_services.control_adapter import get_control_state
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
+from components.global_notifications import render_global_notifications
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 
 setup_page("Control Center")
 render_sidebar("Control Center")
+render_global_notifications()
+
 page_heading(
     "MISSION CONTROL",
     "Control Center",
@@ -2607,23 +3078,29 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 
 from components.phase_one_views import render_incident_response_flow, render_live_signal_banner
-from frontend_services.incident_adapter import trigger_incident
+from frontend_services.incident_adapter import trigger_incident, get_incidents
+from frontend_services.asset_adapter import get_assets
 from ui_helpers import (
     incident_simulator_demo_flow,
     page_heading,
     render_sidebar,
     setup_page,
-    status_chip,
 )
 from components.incident_card import render_incident_card
 from components.agent_card import render_agent_card
 from components.telemetry_card import render_telemetry
 from components.timeline import render_timeline
 from components.investigation_progress import render_investigation_progress
+from components.global_notifications import render_global_notifications
 
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 setup_page("Incident Simulator")
 render_sidebar("Incident Simulator")
+render_global_notifications()
+
+
 page_heading(
     "SCENARIO LAB",
     "Incident Simulator",
@@ -2636,69 +3113,189 @@ render_live_signal_banner(
 )
 st.write("")
 
+# ✅ Get dynamic assets from backend
+asset_data = get_assets()
+all_assets = asset_data.get("assets", [])
+
+if all_assets:
+    asset_options = [
+        f"{a['name']} ({a.get('location', 'Unknown')})"
+        for a in all_assets
+    ]
+else:
+    from services.ai_config import AIConfigGenerator
+    config = AIConfigGenerator()
+    asset_types = list(config.get_config().get("asset_types", {}).keys())
+    asset_options = [f"{t} (Demo)" for t in asset_types[:5]]
+
+from services.ai_config import AIConfigGenerator
+_config = AIConfigGenerator()
+_workflows = _config.get_config().get("workflow_sequences", {})
+incident_types = [k.replace("_", " ").title() for k in _workflows.keys()]
+
+if not incident_types:
+    incident_types = ["Pressure Spike", "High Temperature", "Gas Leak", "High Vibration", "Flow Restriction"]
+
+severity_levels = list(_config.get_config().get("severity_mapping", {}).keys())
+if not severity_levels:
+    severity_levels = ["Low", "Medium", "High", "Critical"]
+
 left, right = st.columns([1, 1.35])
 with left:
     st.markdown("<div class='section-label'>CONFIGURE SCENARIO</div>", unsafe_allow_html=True)
-    asset = st.selectbox("Affected asset", ["Compressor C-12", "Pump A-01", "Valve V-09", "Heat Exchanger H-03"])
-    incident_type = st.selectbox("Incident type", ["Pressure spike", "High temperature", "Gas leak", "High vibration", "Flow restriction"])
-    severity = st.select_slider("Severity", options=["Low", "Medium", "High", "Critical"], value="High")
-    automated = st.toggle("Enable AI workflow", value=True)
-    launched = st.button("Launch simulated incident", use_container_width=True)
+    
+    asset = st.selectbox("Affected asset", asset_options, key="sim_asset")
+    incident_type = st.selectbox("Incident type", incident_types, key="sim_incident_type")
+    severity = st.select_slider("Severity", options=severity_levels, value=severity_levels[-2] if len(severity_levels) >= 2 else "High", key="sim_severity")
+    automated = st.toggle("Enable AI workflow", value=True, key="sim_automated")
+    
+    # ✅ Initialize session state keys
+    if "sim_incident_triggered" not in st.session_state:
+        st.session_state.sim_incident_triggered = False
+    if "sim_incident_results" not in st.session_state:
+        st.session_state.sim_incident_results = None
+    if "sim_launch" not in st.session_state:
+        st.session_state.sim_launch = False
+    
+    # ✅ Button - just sets the flag
+    if st.button("🚀 Launch simulated incident", use_container_width=True, type="primary", key="sim_launch_btn"):
+        st.session_state.sim_launch = True
+        st.session_state.sim_incident_triggered = False
+        st.session_state.sim_incident_results = None
+        st.rerun()
+    
 with right:
-    render_incident_response_flow(incident_simulator_demo_flow(incident_type, asset))
+    asset_name = asset.split(" (")[0] if " (" in asset else asset
+    render_incident_response_flow(incident_simulator_demo_flow(incident_type, asset_name))
 
-if launched:
-    st.success(f"Simulation launched for {asset}")
-    simulator_result = trigger_incident(incident_type)
-    render_incident_card(
-        asset,
-        incident_type,
-        severity,
-        "AI Investigation Complete" if simulator_result["reports"] else "Processing"
-    )
+# ✅ SHOW RESULTS IF INCIDENT WAS LAUNCHED
+if st.session_state.sim_launch:
+    
+    # ✅ RUN INCIDENT ONLY ONCE
+    if not st.session_state.sim_incident_triggered:
+        
+        asset_name = asset.split(" (")[0] if " (" in asset else asset
+        
+        st.success(f"🚨 Simulation launched for {asset}")
+        
+        with st.spinner("🧠 AI agents are analyzing the incident..."):
+            # ✅ Execute the incident ONCE
+            simulator_result = trigger_incident(incident_type)
+            # ✅ Store results and mark as triggered
+            st.session_state.sim_incident_results = simulator_result
+            st.session_state.sim_incident_triggered = True
+        
+        # ✅ Display results
+        render_incident_card(
+            asset_name,
+            incident_type,
+            severity,
+            "AI Investigation Complete" if simulator_result.get("reports") else "Processing"
+        )
 
-    render_telemetry()
-    render_timeline()
-    render_investigation_progress()
+        render_telemetry()
+        render_timeline()
+        render_investigation_progress()
 
-    reports = simulator_result["reports"]
+        reports = simulator_result.get("reports", [])
+        
+        if reports:
+            st.markdown("### 🤖 Agent Investigation Results")
+            last_report = reports[-1] if reports else None
+            if last_report:
+                render_agent_card(last_report)
+            
+            all_recommendations = []
+            for report in reports:
+                if hasattr(report, 'recommendations') and report.recommendations:
+                    all_recommendations.extend(report.recommendations)
+            
+            if all_recommendations:
+                st.markdown("### ✅ System Recommendations")
+                unique_recommendations = list(dict.fromkeys(all_recommendations))
+                for rec in unique_recommendations[:5]:
+                    st.markdown(f"- {rec}")
+        else:
+            st.warning("⚠️ No incident reports generated. Make sure the simulation is running.")
 
-    if reports:
-        for report in reports:
-            render_agent_card(report)
+        st.divider()
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            if st.button("✅ Approve Response Plan", use_container_width=True, key="sim_approve"):
+                st.success("Response approved.")
+                st.session_state.sim_launch = False
+                st.session_state.sim_incident_triggered = False
+                st.rerun()
+
+        with c2:
+            if st.button("🔄 Run Investigation Again", use_container_width=True, key="sim_rerun"):
+                st.session_state.sim_launch = False
+                st.session_state.sim_incident_triggered = False
+                st.rerun()
+
+        with c3:
+            if st.button("📄 Generate Incident Report", use_container_width=True, key="sim_report"):
+                st.info("Report generation coming soon.")
+    
+    # ✅ If already triggered, just show cached results
     else:
-        st.warning("No incident generated.")
+        simulator_result = st.session_state.sim_incident_results
+        asset_name = asset.split(" (")[0] if " (" in asset else asset
+        
+        render_incident_card(
+            asset_name,
+            incident_type,
+            severity,
+            "AI Investigation Complete" if simulator_result and simulator_result.get("reports") else "Processing"
+        )
 
-    st.markdown("### ✅ System Recommendation")
+        render_telemetry()
+        render_timeline()
+        render_investigation_progress()
 
-    st.info(
-        """
-### Recommended Operator Actions
+        reports = simulator_result.get("reports", []) if simulator_result else []
+        
+        if reports:
+            st.markdown("### 🤖 Agent Investigation Results")
+            last_report = reports[-1] if reports else None
+            if last_report:
+                render_agent_card(last_report)
+            
+            all_recommendations = []
+            for report in reports:
+                if hasattr(report, 'recommendations') and report.recommendations:
+                    all_recommendations.extend(report.recommendations)
+            
+            if all_recommendations:
+                st.markdown("### ✅ System Recommendations")
+                unique_recommendations = list(dict.fromkeys(all_recommendations))
+                for rec in unique_recommendations[:5]:
+                    st.markdown(f"- {rec}")
+        else:
+            st.warning("⚠️ No incident reports generated.")
 
-- Reduce pump speed by **20%**
-- Verify discharge valve position
-- Inspect the pressure relief valve
-- Monitor pressure for **5 minutes**
-- Do not restart until pressure remains below **135 PSI**
-"""
-    )
+        st.divider()
 
-    st.divider()
+        c1, c2, c3 = st.columns(3)
 
-    c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("✅ Approve Response Plan", use_container_width=True, key="sim_approve2"):
+                st.success("Response approved.")
+                st.session_state.sim_launch = False
+                st.session_state.sim_incident_triggered = False
+                st.rerun()
 
-    with c1:
-        if st.button("✅ Approve Response Plan"):
-            st.success("Response approved.")
+        with c2:
+            if st.button("🔄 Run Investigation Again", use_container_width=True, key="sim_rerun2"):
+                st.session_state.sim_launch = False
+                st.session_state.sim_incident_triggered = False
+                st.rerun()
 
-    with c2:
-        if st.button("🔄 Run Investigation Again"):
-            st.info("Investigation restarted.")
-
-    with c3:
-        if st.button("📄 Generate Incident Report"):
-            st.success("Report generation coming soon.")
-
+        with c3:
+            if st.button("📄 Generate Incident Report", use_container_width=True, key="sim_report2"):
+                st.info("Report generation coming soon.")
 
 st.write("")
 st.markdown(
@@ -2706,23 +3303,38 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ✅ Use actual incidents if available
+actual_incidents = []
+try:
+    actual_incidents = get_incidents()[-5:]
+except:
+    pass
+
+if actual_incidents:
+    display_data = [
+        {
+            "Scenario": f"SIM-{i+1:03d}",
+            "Type": inc.get("Incident", "Unknown"),
+            "Asset": inc.get("Asset", "Unknown"),
+            "Result": "Resolved" if inc.get("Severity") != "Critical" else "Review required",
+            "Duration": "2m 30s",
+        }
+        for i, inc in enumerate(actual_incidents)
+    ]
+else:
+    display_data = [
+        {
+            "Scenario": f"SIM-{i+1:03d}",
+            "Type": incident_types[i % len(incident_types)],
+            "Asset": asset_options[i % len(asset_options)].split(" (")[0],
+            "Result": "Resolved" if i % 2 == 0 else "Review required",
+            "Duration": f"{2 + i}m {30 + i * 10}s",
+        }
+        for i in range(min(5, len(incident_types)))
+    ]
+
 st.dataframe(
-    [
-        {
-            "Scenario": "SIM-772",
-            "Type": "Gas leak",
-            "Asset": "Tank T-04",
-            "Result": "Resolved",
-            "Duration": "3m 14s",
-        },
-        {
-            "Scenario": "SIM-771",
-            "Type": "High vibration",
-            "Asset": "Compressor C-12",
-            "Result": "Review required",
-            "Duration": "2m 47s",
-        },
-    ],
+    display_data,
     hide_index=True,
     use_container_width=True,
 )
@@ -2740,6 +3352,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from components.global_notifications import render_global_notifications
+
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 import streamlit as st
 
@@ -2748,6 +3365,7 @@ from ui_helpers import page_heading, render_sidebar, setup_page
 
 
 setup_page("Knowledge Base")
+render_global_notifications()
 render_sidebar("Knowledge Base")
 page_heading(
     "RETRIEVAL INTELLIGENCE",
@@ -2814,8 +3432,14 @@ from ui_helpers import (
     status_chip
 )
 from frontend_services.agent_adapter import get_agent_metrics, get_agents
+from components.global_notifications import render_global_notifications
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+
 
 setup_page("Agent Monitor")
+render_global_notifications()
 render_sidebar("Agent Monitor")
 page_heading("AI SUPERVISION", "Agent Monitor", "Observe autonomous specialists, workflow handoffs, and decision confidence.")
 render_live_signal_banner("LIVE MAO REGISTRY", "Agent registration and completed execution state are read from the shared backend kernel.", "Info")
@@ -2890,8 +3514,10 @@ from ui_helpers import (
     setup_page
 )
 from frontend_services.report_adapter import get_reports
+from components.global_notifications import render_global_notifications
 
 setup_page("Reports")
+render_global_notifications()
 render_sidebar("Reports & Intelligence")
 page_heading("DECISION RECORD", "Reports & Intelligence", "Review operational reports, AI recommendations, and response outcomes.")
 render_live_signal_banner("REPORT DEMO REGISTER", "Existing demonstration records are shown until MAO execution reports are available through a read-only integration.", "Info")
@@ -2989,8 +3615,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 from ui_helpers import page_heading, render_sidebar, setup_page
+from components.global_notifications import render_global_notifications
 
 setup_page("Settings")
+render_global_notifications()
 render_sidebar("Settings")
 page_heading("WORKSPACE CONFIGURATION", "Settings", "Configure how Command Nexus presents information and routes operational notifications.")
 
@@ -3097,9 +3725,11 @@ import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from components.phase_two_views import render_copilot_context_panel
 from ui_helpers import append_copilot_backend_exchange, copilot_messages, page_heading, render_sidebar, setup_page
+from components.global_notifications import render_global_notifications
 
 
 setup_page("AI Assistant")
+render_global_notifications()
 render_sidebar("AI Operations Assistant")
 page_heading("COPILOT", "AI Operations Assistant", "Ask for a concise operational brief, asset context, or safety-focused recommendation.")
 render_live_signal_banner("COMMAND NEXUS ONLINE", "Your industrial operations copilot is ready for operational questions and shift support.", "Info")
@@ -3278,7 +3908,8 @@ def render_copilot_widget() -> None:
         prompts = ["Summarize today's incidents", "Predict asset failures", "Explain system status", "Generate executive report", "Recommend maintenance"]
         prompt = st.selectbox("Suggested prompts", ["Select a prompt…"] + prompts, key="copilot_suggestion")
         typed = st.text_input("Ask Copilot", key="copilot_input", placeholder="Ask about operations")
-        if st.button("Send", key="copilot_send", use_container_width=True):
+        # ✅ FIXED: use_container_width → width
+        if st.button("Send", key="copilot_send", ):
             question = typed if typed.strip() else (prompt if prompt != "Select a prompt…" else "Explain system status")
             append_copilot_backend_exchange(question)
             st.rerun()

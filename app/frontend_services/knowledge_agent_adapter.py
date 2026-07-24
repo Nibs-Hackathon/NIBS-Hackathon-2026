@@ -16,7 +16,6 @@ if str(PROJECT_ROOT) not in sys.path:
 if TYPE_CHECKING:
     from agents.knowledge import KnowledgeAgent
 
-
 LOGGER = logging.getLogger(__name__)
 ProgressCallback = Callable[[str], None]
 
@@ -52,11 +51,14 @@ operational facts, citations, or technical instructions for a casual message.
 Never mention implementation, search, retrieval, documents, a knowledge base,
 databases, RAG, prompts, APIs, or model internals.
 """
-    return LLMManager().generate(prompt)
+    try:
+        return LLMManager().generate(prompt)
+    except Exception as e:
+        LOGGER.error(f"Conversational response failed: {e}")
+        return "I'm here to help with refinery operations. What would you like to know?"
 
 
 def _emit(callback: ProgressCallback | None, message: str) -> None:
-    """Log and optionally expose a diagnostic stage without changing backend behavior."""
     LOGGER.info(message)
     if callback is not None:
         callback(message)
@@ -70,8 +72,8 @@ class KnowledgeAgentUnavailable(RuntimeError):
 def get_knowledge_agent() -> "KnowledgeAgent":
     """Return the KnowledgeAgent registered on the shared MAO kernel."""
     try:
-        from services.runtime import kernel
-
+        from services.runtime import runtime
+        kernel = runtime.kernel
         agent = kernel.registry.get("knowledge")
         if agent is None:
             raise RuntimeError("KnowledgeAgent is not registered on the MAO kernel.")
@@ -93,14 +95,10 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
             return generate_conversational_response(normalized_question)
         except Exception as error:
             LOGGER.exception("Command Nexus conversational response failed")
-            raise KnowledgeAgentUnavailable(
-                "Command Nexus is temporarily unavailable. Please try again shortly."
-            ) from error
+            return "I'm here to help! What would you like to know about refinery operations?"
 
     _emit(on_progress, "Preparing an operational assessment.")
     try:
-        # Backend imports are lazy so ordinary Streamlit rendering does not
-        # initialize the operational stack until an operational question arrives.
         from mao.models.task import Task
 
         task = Task(
@@ -109,17 +107,17 @@ def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = No
             assigned_agent="knowledge",
         )
         agent = get_knowledge_agent()
+        
+        if agent.retriever is None:
+            return "The knowledge base is not available. Please ensure the database is configured and has documents loaded."
+
         result = agent.execute(task)
-    except KnowledgeAgentUnavailable:
-        raise
+        
+        if not result.success or not result.summary:
+            return "I couldn't find specific operational guidance for that query. Please check with your operations team."
+            
+        return result.summary
+        
     except Exception as error:
         LOGGER.exception("Command Nexus operational response failed")
-        raise KnowledgeAgentUnavailable(
-            "Command Nexus is temporarily unavailable. Please try again shortly."
-        ) from error
-
-    if not result.success or not result.summary:
-        raise KnowledgeAgentUnavailable("Command Nexus could not prepare an operational assessment. Please try again.")
-
-    _emit(on_progress, "Operational assessment prepared.")
-    return result.summary
+        return "I'm having trouble accessing the knowledge base right now. Please try again later."

@@ -16,8 +16,14 @@ from ui_helpers import (
     status_chip
 )
 from frontend_services.agent_adapter import get_agent_metrics, get_agents
+from components.global_notifications import render_global_notifications
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
+
 
 setup_page("Agent Monitor")
+render_global_notifications()
 render_sidebar("Agent Monitor")
 page_heading("AI SUPERVISION", "Agent Monitor", "Observe autonomous specialists, workflow handoffs, and decision confidence.")
 render_live_signal_banner("LIVE MAO REGISTRY", "Agent registration and completed execution state are read from the shared backend kernel.", "Info")

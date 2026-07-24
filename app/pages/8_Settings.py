@@ -8,8 +8,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 from ui_helpers import page_heading, render_sidebar, setup_page
+from components.global_notifications import render_global_notifications
 
 setup_page("Settings")
+render_global_notifications()
 render_sidebar("Settings")
 page_heading("WORKSPACE CONFIGURATION", "Settings", "Configure how Command Nexus presents information and routes operational notifications.")
 

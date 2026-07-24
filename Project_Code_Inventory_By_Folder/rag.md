@@ -1,6 +1,6 @@
 # Folder: rag Code Inventory
 
-Generated: 2026-07-24 07:30:05 UTC
+Generated: 2026-07-24 12:23:53 UTC
 
 Contains 16 project files.
 
@@ -277,46 +277,32 @@ from uuid import uuid4
 
 
 class NeonVectorStore:
-
     def __init__(self, embeddings):
         self.embeddings = embeddings
-        self._db = None  # For compatibility with FAISS pattern
+        self._db = None
 
     def create(self, documents):
         """Create the vector store from a list of documents."""
         session = get_session()
         try:
             for doc in documents:
-                vector = (
-                    self.embeddings
-                    .embed_query(
-                        doc.page_content
-                    )
-                )
-
+                vector = self.embeddings.embed_query(doc.page_content)
                 row = KnowledgeDB(
                     id=str(uuid4()),
                     content=doc.page_content,
-                    source=doc.metadata.get(
-                        "source",
-                        "unknown"
-                    ),
+                    source=doc.metadata.get("source", "unknown"),
                     embedding=vector
                 )
-
                 session.add(row)
-
             session.commit()
-
         except Exception:
             session.rollback()
             raise
-
         finally:
             session.close()
 
     def add_documents(self, documents):
-        """Add documents to an existing vector store (incremental)."""
+        """Add documents to an existing vector store."""
         session = get_session()
         try:
             for doc in documents:
@@ -336,7 +322,7 @@ class NeonVectorStore:
             session.close()
 
     def clear(self):
-        """Remove all indexed chunks from the active knowledge database."""
+        """Remove all indexed chunks."""
         session = get_session()
         try:
             deleted = session.query(KnowledgeDB).delete()
@@ -349,7 +335,7 @@ class NeonVectorStore:
             session.close()
 
     def count(self):
-        """Return the number of searchable chunks currently stored in Neon."""
+        """Return the number of searchable chunks."""
         session = get_session()
         try:
             return session.query(KnowledgeDB).count()
@@ -357,26 +343,19 @@ class NeonVectorStore:
             session.close()
 
     def similarity_search(self, query, k=5):
-        """Search by query string (generates embedding internally)."""
+        """Search by query string."""
         session = get_session()
         try:
             vector = self.embeddings.embed_query(query)
 
             results = session.execute(
-                text(
-                    """
-                    SELECT
-                        content,
-                        source
+                text("""
+                    SELECT content, source
                     FROM knowledge
                     ORDER BY embedding <-> :vector
                     LIMIT :limit
-                    """
-                ),
-                {
-                    "vector": str(vector),
-                    "limit": k
-                }
+                """),
+                {"vector": str(vector), "limit": k}
             )
 
             documents = []
@@ -387,32 +366,22 @@ class NeonVectorStore:
                         metadata={"source": row.source},
                     )
                 )
-
             return documents
-
         finally:
             session.close()
 
-    # ✅ NEW: Search by pre-computed embedding vector
     def similarity_search_by_vector(self, embedding, k=5):
-        """Search by embedding vector (for use with pre-computed embeddings)."""
+        """Search by embedding vector."""
         session = get_session()
         try:
             results = session.execute(
-                text(
-                    """
-                    SELECT
-                        content,
-                        source
+                text("""
+                    SELECT content, source
                     FROM knowledge
                     ORDER BY embedding <-> :vector
                     LIMIT :limit
-                    """
-                ),
-                {
-                    "vector": str(embedding),
-                    "limit": k
-                }
+                """),
+                {"vector": str(embedding), "limit": k}
             )
 
             documents = []
@@ -423,18 +392,14 @@ class NeonVectorStore:
                         metadata={"source": row.source},
                     )
                 )
-
             return documents
-
         finally:
             session.close()
 
-    # ✅ NEW: Get method for Retriever compatibility
     def get(self):
-        """Return self for compatibility with Retriever."""
+        """Return self for compatibility."""
         return self
 
-    # ✅ NEW: Alias for backward compatibility with FAISS pattern
     def as_retriever(self, search_kwargs=None):
         """Return a retriever interface."""
         from rag.retriever import Retriever

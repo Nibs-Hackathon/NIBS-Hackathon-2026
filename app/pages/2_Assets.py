@@ -9,11 +9,16 @@ import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page
 from app.frontend_services.backend_api_new import api
+from components.global_notifications import render_global_notifications
+import pandas as pd
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 setup_page("Asset Monitoring")
 render_sidebar("Asset Monitoring")
 page_heading("FLEET INTELLIGENCE", "Asset Monitoring", "Health, telemetry, and operational posture for every connected asset.")
-
+render_global_notifications()
 render_live_signal_banner("LIVE ASSET TELEMETRY", "Connected to RigOS backend state manager.", "Info")
 st.write("")
 
@@ -93,16 +98,15 @@ for i, (asset_type, count) in enumerate(sorted(type_counts.items())):
 # -------------------------
 # Selected Asset Detail
 # -------------------------
+# ✅ Replace the telemetry section with this
 
 if visible:
     st.markdown("### 🔍 Asset Detail")
-
-    # Select an asset to inspect
+    
     asset_names = [a["name"] for a in visible]
     selected_name = st.selectbox("Select asset to inspect", asset_names)
     selected_asset = next(a for a in visible if a["name"] == selected_name)
 
-    # Display asset details
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Name", selected_asset["name"])
@@ -113,13 +117,23 @@ if visible:
     with col4:
         st.metric("Status", selected_asset["status"])
 
-    # Get telemetry for this asset
+    # ✅ Get telemetry for this asset
     try:
         from frontend_services.telemetry_adapter import get_asset_telemetry
         telemetry = get_asset_telemetry(selected_asset["id"])
         if telemetry and telemetry.get("history"):
-            st.line_chart(telemetry["history"], height=200)
+            # ✅ Convert to DataFrame for line chart
+            history = telemetry["history"]
+            if history:
+                df = pd.DataFrame(history)
+                if "Timestamp" in df.columns and "Value" in df.columns:
+                    df = df.set_index("Timestamp")
+                    # ✅ Show line chart
+                    st.line_chart(df["Value"], height=200)
+                    st.caption(f"Telemetry: {len(df)} readings")
+                else:
+                    st.info("Telemetry data format not supported")
         else:
             st.info("No telemetry history available for this asset. Run the simulation.")
     except Exception as e:
-        st.info("Telemetry data not available.")
+        st.info(f"Telemetry data not available: {str(e)[:50]}")

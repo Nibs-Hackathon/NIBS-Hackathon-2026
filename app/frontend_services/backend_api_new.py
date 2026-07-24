@@ -1,18 +1,16 @@
 """Unified backend API for frontend access with caching and refinery support."""
-# At the very top of backend_api.py - BEFORE any other code
-print("🔴🔴🔴 BACKEND_API.PY LOADED - VERSION WITH get_incidents 🔴🔴🔴")
+
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
 import time
+from datetime import datetime
 
-# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.runtime import kernel, simulator
 from services.config_services import ConfigService
 
 
@@ -23,6 +21,8 @@ class BackendAPI:
         self.config = ConfigService()
         self._cache_ttl = 5
         self._cache_timestamps = {}
+        self._kernel = None
+        self._simulator = None
 
     def _is_cache_valid(self, key: str) -> bool:
         if key not in self._cache_timestamps:
@@ -40,13 +40,25 @@ class BackendAPI:
                 if attr.startswith("_") and attr.endswith("_cached"):
                     getattr(self, attr).cache_clear()
 
-    # -------------------------
-    # Refinery Operations
-    # -------------------------
+    def _get_runtime(self):
+        """Lazy load runtime to avoid circular imports."""
+        if self._kernel is None or self._simulator is None:
+            from services.runtime import runtime
+            self._kernel = runtime.kernel
+            self._simulator = runtime.simulator
+        return self._kernel, self._simulator
+
+    @property
+    def kernel(self):
+        return self._get_runtime()[0]
+
+    @property
+    def simulator(self):
+        return self._get_runtime()[1]
 
     def get_refineries(self) -> List[Dict]:
         """Get all refineries with their assets."""
-        refineries = getattr(kernel, "_refineries", [])
+        refineries = getattr(self.kernel, "_refineries", [])
         return [
             {
                 "id": r.id,
@@ -71,7 +83,7 @@ class BackendAPI:
 
     def get_refinery_assets(self, refinery_id: str) -> List[Dict]:
         """Get assets for a specific refinery."""
-        refineries = getattr(kernel, "_refineries", [])
+        refineries = getattr(self.kernel, "_refineries", [])
         for refinery in refineries:
             if refinery.id == refinery_id:
                 return [
@@ -94,14 +106,10 @@ class BackendAPI:
         all_assets = self.get_refinery_assets(refinery_id)
         return [a for a in all_assets if a.get("type", "").lower() == asset_type.lower()]
 
-    # -------------------------
-    # Asset Operations (with Caching)
-    # -------------------------
-
     @lru_cache(maxsize=32)
     def _get_assets_cached(self) -> List[Dict]:
         """Cached version of get_assets."""
-        assets = kernel.asset_service.all_assets()
+        assets = self.kernel.asset_service.all_assets()
         return [
             {
                 "id": asset.id,
@@ -123,20 +131,21 @@ class BackendAPI:
         return self._get_assets_cached()
 
     @lru_cache(maxsize=128)
+    @lru_cache(maxsize=128)
     def _get_asset_telemetry_cached(self, asset_id: str, limit: int = 100) -> tuple:
         """Cached version of get_asset_telemetry."""
-        readings = kernel.state.get_history(asset_id)
+        readings = self.kernel.state.get_history(asset_id)
         if limit:
             readings = readings[-limit:]
         return tuple([
             {
-                "timestamp": r.timestamp.isoformat(),
+                "timestamp": r.timestamp.isoformat() if hasattr(r, 'timestamp') else datetime.now().isoformat(),
                 "sensor_type": r.sensor_type.value if hasattr(r.sensor_type, 'value') else str(r.sensor_type),
-                "value": r.value,
+                "value": float(r.value) if hasattr(r, 'value') else 0,
                 "unit": getattr(r, 'unit', ''),
             }
             for r in readings
-        ])
+    ])
 
     def get_asset_telemetry(self, asset_id: str, limit: int = 100, force_refresh: bool = False) -> List[Dict]:
         """Get telemetry history for an asset with caching."""
@@ -146,23 +155,18 @@ class BackendAPI:
 
     def get_asset_health(self, asset_id: str) -> Dict:
         """Get health for a specific asset."""
-        readings = kernel.state.get_history(asset_id)
-        health = kernel.health.calculate_health(readings)
+        readings = self.kernel.state.get_history(asset_id)
+        health = self.kernel.health.calculate_health(readings)
         return {
             "health": health,
             "readings": len(readings),
             "status": "Running" if health > 80 else "Warning" if health > 50 else "Critical",
         }
 
-    # -------------------------
-    # Incident Operations (with Caching)
-    # ✅ FIXED: get_incidents is now properly defined
-    # -------------------------
-
     @lru_cache(maxsize=32)
     def _get_incidents_cached(self) -> tuple:
         """Cached version of get_incidents."""
-        events = kernel.event_store.all()
+        events = self.kernel.event_store.all()
         return tuple([
             {
                 "id": event.id,
@@ -183,22 +187,17 @@ class BackendAPI:
     def trigger_incident(self, incident_type: str) -> Dict:
         """Trigger a simulated incident."""
         from services.incident_service import IncidentService
-        service = IncidentService(simulator)
+        service = IncidentService(self.simulator)
         result = service.trigger_incident(incident_type)
-        # Invalidate caches after new incident
         self._invalidate_cache("get_incidents")
         self._invalidate_cache("get_agent_activity")
         return result
 
-    # -------------------------
-    # Agent Operations (with Caching)
-    # -------------------------
-
     @lru_cache(maxsize=32)
     def _get_agents_cached(self) -> List[Dict]:
         """Cached version of get_agents."""
-        agents = kernel.registry.all()
-        results = kernel.state.agent_results
+        agents = self.kernel.registry.all()
+        results = self.kernel.state.agent_results
         result_map = {r.agent_name: r for r in results}
         return [
             {
@@ -218,7 +217,7 @@ class BackendAPI:
     @lru_cache(maxsize=32)
     def _get_agent_activity_cached(self, limit: int = 50) -> tuple:
         """Cached version of get_agent_activity."""
-        results = kernel.state.agent_results[-limit:]
+        results = self.kernel.state.agent_results[-limit:]
         return tuple([
             {
                 "agent_name": r.agent_name,
@@ -238,14 +237,10 @@ class BackendAPI:
             self._invalidate_cache("get_agent_activity")
         return list(self._get_agent_activity_cached(limit))
 
-    # -------------------------
-    # Report Operations (with Caching)
-    # -------------------------
-
     @lru_cache(maxsize=32)
     def _get_reports_cached(self) -> tuple:
         """Cached version of get_reports."""
-        reports = kernel.state.execution_reports
+        reports = self.kernel.state.execution_reports
         return tuple([
             {
                 "id": r.id,
@@ -266,10 +261,6 @@ class BackendAPI:
             self._invalidate_cache("get_reports")
         return list(self._get_reports_cached())
 
-    # -------------------------
-    # Configuration
-    # -------------------------
-
     def get_dynamic_thresholds(self, asset_type: str) -> Dict:
         """Get Gemini-generated thresholds for an asset type."""
         return self.config.get_thresholds(asset_type)
@@ -284,18 +275,14 @@ class BackendAPI:
         self._invalidate_cache()
         return {"status": "refreshed", "cache_cleared": True}
 
-    # -------------------------
-    # Simulation Control
-    # -------------------------
-
     def get_simulation_status(self) -> Dict:
         """Get current simulation status."""
         return {
-            "running": getattr(kernel, "_simulation_running", False),
-            "events": len(kernel.event_store.all()),
-            "reports": len(kernel.state.execution_reports),
-            "agent_results": len(kernel.state.agent_results),
-            "assets": len(kernel.asset_service.all_assets()),
+            "running": getattr(self.kernel, "_simulation_running", False),
+            "events": len(self.kernel.event_store.all()),
+            "reports": len(self.kernel.state.execution_reports),
+            "agent_results": len(self.kernel.state.agent_results),
+            "assets": len(self.kernel.asset_service.all_assets()),
         }
 
     def step_simulation(self) -> Dict:
@@ -309,5 +296,22 @@ class BackendAPI:
         }
 
 
-# Singleton instance
-api = BackendAPI()
+# ✅ Create the singleton instance
+_api_instance = None
+
+
+def _get_api_instance():
+    global _api_instance
+    if _api_instance is None:
+        _api_instance = BackendAPI()
+    return _api_instance
+
+
+# ✅ Export api as a property that lazy-loads
+class _ApiProxy:
+    def __getattr__(self, name):
+        return getattr(_get_api_instance(), name)
+
+
+api = _ApiProxy()
+BackendAPI = BackendAPI

@@ -21,11 +21,17 @@ class TelemetryRepository:
 
 
     def create_many(self, readings):
-
-        self.session.add_all(readings)
-
-        self.session.commit()
-
+        """Create many telemetry readings in smaller batches."""
+        if not readings:
+            return
+        
+        # ✅ Split into batches of 50 to avoid connection timeouts
+        batch_size = 50
+        for i in range(0, len(readings), batch_size):
+            batch = readings[i:i + batch_size]
+            self.session.add_all(batch)
+            self.session.commit()
+        
         return readings
 
 

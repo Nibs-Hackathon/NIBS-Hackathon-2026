@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
-
+import asyncio
+import platform
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # app/ → project_root/
 if str(PROJECT_ROOT) not in sys.path:
@@ -9,7 +10,10 @@ if str(PROJECT_ROOT) not in sys.path:
 import importlib
 import streamlit as st
 import ui_helpers
-
+if platform.system() == "Windows":
+    # Fix for Windows connection reset errors
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print("✅ Windows asyncio fix applied (SelectorEventLoop)")
 # Refresh shared UI helpers during Streamlit development reruns
 importlib.reload(ui_helpers)
 
@@ -20,10 +24,25 @@ from services.simulator_controller import sim_controller
 import importlib
 import app.frontend_services.backend_api_new
 importlib.reload(app.frontend_services.backend_api_new)
+from components.global_notifications import render_global_notifications
+import time
 
 
 setup_page("Operations Center")
 render_sidebar("Operations Center")
+# ... imports ...
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS (visible on Home page too)
+render_global_notifications()
+
+# ... rest of Home.py ...
+if "notification_cleanup" not in st.session_state:
+    st.session_state.notification_cleanup = time.time()
+
+if time.time() - st.session_state.notification_cleanup > 5:
+    st.session_state.notification_cleanup = time.time()
+    st.rerun()
 
 page_heading(
     "NIBS / AI OPERATIONS CENTER",

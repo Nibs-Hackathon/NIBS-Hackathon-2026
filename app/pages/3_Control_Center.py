@@ -10,10 +10,16 @@ import streamlit as st
 
 from frontend_services.control_adapter import get_control_state
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
+from components.global_notifications import render_global_notifications
+
+
+# ✅ RENDER GLOBAL NOTIFICATIONS
 
 
 setup_page("Control Center")
 render_sidebar("Control Center")
+render_global_notifications()
+
 page_heading(
     "MISSION CONTROL",
     "Control Center",

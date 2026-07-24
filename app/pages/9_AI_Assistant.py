@@ -11,9 +11,11 @@ import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from components.phase_two_views import render_copilot_context_panel
 from ui_helpers import append_copilot_backend_exchange, copilot_messages, page_heading, render_sidebar, setup_page
+from components.global_notifications import render_global_notifications
 
 
 setup_page("AI Assistant")
+render_global_notifications()
 render_sidebar("AI Operations Assistant")
 page_heading("COPILOT", "AI Operations Assistant", "Ask for a concise operational brief, asset context, or safety-focused recommendation.")
 render_live_signal_banner("COMMAND NEXUS ONLINE", "Your industrial operations copilot is ready for operational questions and shift support.", "Info")

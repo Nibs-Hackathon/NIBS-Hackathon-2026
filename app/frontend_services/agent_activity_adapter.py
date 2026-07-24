@@ -11,7 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from database.connection import get_session
 from database.repositories.activity_repo import ActivityRepository
-from services.runtime import kernel
+# ✅ FIXED - Use runtime proxy
+from services.runtime import runtime
 
 
 def _format_time(timestamp) -> str:
@@ -19,6 +20,7 @@ def _format_time(timestamp) -> str:
 
 
 def _runtime_activity() -> list[dict]:
+    kernel = runtime.kernel
     return [
         {
             "time": _format_time(getattr(result, "timestamp", None)),
@@ -73,6 +75,7 @@ def get_agent_activity() -> tuple[list[dict], str | None]:
 
 def get_agent_metrics() -> list[tuple[str, str, str, str]]:
     """Return summary metrics from current MAO agent results."""
+    kernel = runtime.kernel
     results = kernel.state.agent_results
 
     if not results:

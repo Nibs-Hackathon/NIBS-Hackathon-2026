@@ -1,5 +1,6 @@
-"""Centralized, failover-safe access to Gemini models with multi-key rotation."""
+"""Centralized, failover-safe access to Gemini models with multi-key rotation and caching."""
 
+import hashlib
 import logging
 import os
 import socket
@@ -18,17 +19,22 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
-# Support for up to 10 API keys
+# ✅ SUPPORTED ENV VARS - ALL POSSIBLE NAMING CONVENTIONS
 SUPPORTED_GEMINI_ENV_VARS = (
+    # Standard naming
     "GEMINI_API_KEY_1", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3",
     "GEMINI_API_KEY_4", "GEMINI_API_KEY_5", "GEMINI_API_KEY_6",
     "GEMINI_API_KEY_7", "GEMINI_API_KEY_8", "GEMINI_API_KEY_9",
     "GEMINI_API_KEY_10",
-    "GEMINI_API_KEY", "GOOGLE_API_KEY",
+    # Alternative naming
     "GOOGLE_API_KEY_1", "GOOGLE_API_KEY_2", "GOOGLE_API_KEY_3",
+    "GOOGLE_API_KEY_4", "GOOGLE_API_KEY_5", "GOOGLE_API_KEY_6",
+    "GOOGLE_API_KEY_7",
+    # Single key fallback
+    "GEMINI_API_KEY", "GOOGLE_API_KEY",
 )
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 _PROXY_ENV_VARS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
@@ -113,10 +119,11 @@ class KeyStatus:
         self.last_error = error
         self.total_requests += 1
 
-        if self.failures >= 5:
+        # ✅ More aggressive cooldown - 30 seconds instead of 60
+        if self.failures >= 3:
             self.is_active = False
-            self.cooldown_until = time.time() + 60
-            logger.warning(f"Key {self.index + 1} deactivated for 60s due to {self.failures} failures")
+            self.cooldown_until = time.time() + 30
+            logger.warning(f"Key {self.index + 1} deactivated for 30s due to {self.failures} failures")
 
     def reactivate_if_ready(self):
         if not self.is_active and self.cooldown_until:
@@ -157,8 +164,13 @@ class KeyStatus:
         }
 
 
+# Response Cache
+_response_cache: Dict[str, tuple] = {}
+_CACHE_MAX_SIZE = 100
+
+
 class LLMManager:
-    """Central Gemini router with automatic multi-key rotation."""
+    """Central Gemini router with automatic multi-key rotation and caching."""
 
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
@@ -178,18 +190,38 @@ class LLMManager:
 
         logger.info(f"LLMManager initialized with {len(self.keys)} Gemini key(s)")
 
-    @staticmethod
-    def _load_keys() -> List[str]:
-        """Load API keys from environment variables and Streamlit secrets."""
+    def _load_keys(self) -> List[str]:
+        """✅ Load API keys from ALL possible sources."""
         keys = []
         seen = set()
 
+        # 1. Check environment variables
+        print("\n🔑 Loading Gemini API Keys...")
         for var in SUPPORTED_GEMINI_ENV_VARS:
             value = os.getenv(var)
             if value and value not in seen:
                 seen.add(value)
                 keys.append(value)
+                print(f"  ✅ Loaded from {var}: {value[:8]}...{value[-4:]}")
 
+        # 2. Check .env file directly
+        try:
+            env_path = PROJECT_ROOT / ".env"
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('GEMINI_API_KEY') or line.startswith('GOOGLE_API_KEY'):
+                            if '=' in line:
+                                key = line.split('=', 1)[1].strip()
+                                if key and key not in seen:
+                                    seen.add(key)
+                                    keys.append(key)
+                                    print(f"  ✅ Loaded from .env: {key[:8]}...{key[-4:]}")
+        except Exception as e:
+            print(f"  ⚠️ Could not read .env: {e}")
+
+        # 3. Check Streamlit secrets
         try:
             import streamlit as st
             for var in SUPPORTED_GEMINI_ENV_VARS:
@@ -198,22 +230,27 @@ class LLMManager:
                     if value and value not in seen:
                         seen.add(value)
                         keys.append(value)
+                        print(f"  ✅ Loaded from secrets[{var}]: {value[:8]}...{value[-4:]}")
         except Exception:
             pass
 
+        print(f"\n✅ Total keys loaded: {len(keys)}\n")
         return keys
 
     def _get_next_available_key(self) -> Optional[str]:
-        """Get the next available API key with rotation."""
+        """✅ Get the next available API key with rotation."""
         total_keys = len(self.keys)
         attempts = 0
 
-        while attempts < total_keys * 2:
+        # Try all keys in rotation
+        while attempts < total_keys:
             idx = self.current_key_index
             key = self.keys[idx]
             self.current_key_index = (self.current_key_index + 1) % total_keys
 
             status = self.key_statuses[key]
+            
+            # Try to reactivate if cooldown expired
             if not status.is_active:
                 status.reactivate_if_ready()
 
@@ -223,7 +260,13 @@ class LLMManager:
 
             attempts += 1
 
-        # Fallback: return first key
+        # If all keys are exhausted, try to reactivate one
+        for key in self.keys:
+            status = self.key_statuses[key]
+            if status.reactivate_if_ready():
+                return key
+
+        # Last resort: use first key (even if it's failing)
         return self.keys[0]
 
     def _create_model(self, key: str):
@@ -236,11 +279,24 @@ class LLMManager:
             temperature=0.3,
         )
 
-    def generate(self, prompt: str, max_retries_per_key: int = 2) -> str:
-        """Generate Gemini response with automatic multi-key rotation."""
+    def generate(self, prompt: str, max_retries_per_key: int = 2, use_cache: bool = True) -> str:
+        """✅ Generate Gemini response with automatic multi-key rotation."""
+        
+        # Check cache first
+        if use_cache:
+            cache_key = hashlib.md5(prompt.encode()).hexdigest()
+            if cache_key in _response_cache:
+                cached_response, cached_time = _response_cache[cache_key]
+                if time.time() - cached_time < 300:
+                    logger.info(f"✅ Cache hit for prompt (key: {cache_key[:8]})")
+                    return cached_response
+                else:
+                    del _response_cache[cache_key]
+        
         last_error = None
-
-        for attempt in range(len(self.keys) * max_retries_per_key + 1):
+        
+        # ✅ Try each key in rotation
+        for attempt in range(len(self.keys) * max_retries_per_key):
             try:
                 key = self._get_next_available_key()
                 if key is None:
@@ -256,25 +312,52 @@ class LLMManager:
 
                 content = response.content
                 if isinstance(content, str):
-                    return content
-                if isinstance(content, list):
-                    return "".join(
+                    response_text = content
+                elif isinstance(content, list):
+                    response_text = "".join(
                         part if isinstance(part, str) else part.get("text", "")
                         for part in content
                         if isinstance(part, str) or isinstance(part, dict)
                     )
-                return str(content)
+                else:
+                    response_text = str(content)
+                
+                # Cache the response
+                if use_cache and response_text:
+                    cache_key = hashlib.md5(prompt.encode()).hexdigest()
+                    _response_cache[cache_key] = (response_text, time.time())
+                    
+                    if len(_response_cache) > _CACHE_MAX_SIZE:
+                        oldest_keys = sorted(_response_cache.keys(), key=lambda k: _response_cache[k][1])[:10]
+                        for key in oldest_keys:
+                            del _response_cache[key]
+                
+                return response_text
 
             except Exception as error:
                 last_error = error
-                if key and key in self.key_statuses:
-                    status = self.key_statuses[key]
-                    status.record_failure(str(error))
-                    logger.warning(f"Key {status.index + 1} failed: {str(error)[:100]}")
-                time.sleep(0.5)
+                error_str = str(error)
+                
+                # ✅ Handle rate limiting specially
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    logger.warning(f"⚠️ Key {status.index + 1} rate limited (429). Moving to next key.")
+                    # ✅ Don't deactivate on rate limit - just use next key
+                    if key and key in self.key_statuses:
+                        status = self.key_statuses[key]
+                        status.failures += 1
+                        status.last_error = error_str
+                    time.sleep(0.5)
+                else:
+                    if key and key in self.key_statuses:
+                        status = self.key_statuses[key]
+                        status.record_failure(error_str)
+                        logger.warning(f"Key {status.index + 1} failed: {error_str[:100]}")
+                    time.sleep(0.5)
+                
+                continue
 
         raise RuntimeError(
-            f"All {len(self.keys)} Gemini API keys failed. Check quota and permissions."
+            f"All {len(self.keys)} Gemini API keys failed. Last error: {last_error}"
         ) from last_error
 
     def get_key_status(self) -> Dict[str, any]:
@@ -308,3 +391,9 @@ class LLMManager:
             return True
         except (IndexError, KeyError):
             return False
+
+    def clear_cache(self):
+        """Clear the response cache."""
+        global _response_cache
+        _response_cache.clear()
+        logger.info("LLM response cache cleared")

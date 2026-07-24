@@ -1,14 +1,13 @@
-from datetime import datetime
+"""Optimized Orchestrator with parallel agent execution."""
 
+import concurrent.futures
+import time
+from datetime import datetime
 from mao.core.context import ExecutionContext
 from mao.models.execution_report import ExecutionReport
 
 
 class Orchestrator:
-    """
-    Coordinates the complete execution lifecycle for a single event.
-    """
-
     def __init__(
         self,
         *,
@@ -24,7 +23,7 @@ class Orchestrator:
         health_service=None,
     ):
         self.planner = planner
-        self.workflow_engine = workflow_engine
+        self.workflow_engine = workflow_engine        
         self.scheduler = scheduler
         self.executor = executor
         self.supervisor = supervisor
@@ -36,7 +35,6 @@ class Orchestrator:
         self.health_service = health_service
 
     def run(self, event):
-
         context = ExecutionContext(
             event=event,
             state_manager=self.state,
@@ -45,58 +43,52 @@ class Orchestrator:
             health_service=self.health_service,
         )
 
-        self.logger.info(
-            "Kernel",
-            f"[{context.execution_id}] Received event '{event.name}'",
-        )
+        self.logger.info("Kernel", f"[{context.execution_id}] Received event '{event.name}'")
 
-        # Persist incoming event
         self.state.add_event(event)
         self.event_store.save(event)
 
-        # Select workflow
         workflow_name = self.planner.choose_workflow(event)
         context.workflow = workflow_name
 
-        self.logger.info(
-            "Planner",
-            f"[{context.execution_id}] Selected workflow '{workflow_name}'",
-        )
+        self.logger.info("Planner", f"[{context.execution_id}] Selected workflow '{workflow_name}'")
 
-        # Build workflow tasks
-        tasks = self.workflow_engine.create_tasks(
-            workflow_name,
-            event,
-        )
+        tasks = self.workflow_engine.create_tasks(workflow_name, event)
 
-        self.logger.info(
-            "WorkflowEngine",
-            f"[{context.execution_id}] Generated {len(tasks)} task(s)",
-        )
+        self.logger.info("WorkflowEngine", f"[{context.execution_id}] Generated {len(tasks)} task(s)")
 
         # Schedule tasks
         for task in tasks:
             self.scheduler.submit(task)
 
-        # Execute tasks
-        while not self.scheduler.empty():
-
-            task = self.scheduler.next()
-
-            self.logger.info(
-                "Executor",
-                f"[{context.execution_id}] Executing '{task.name}'",
-            )
-
-            result = self.executor.execute(
-                task,
-                context,
-            )
-
-            # NEW
+        # ✅ Execute tasks in parallel
+        def execute_task(task):
+            result = self.executor.execute(task, context)
             context.add_result(result)
-
             self.state.add_task(task)
+            return result
+
+        start = time.time()
+        
+        # Extract all tasks first
+        all_tasks = []
+        while not self.scheduler.empty():
+            all_tasks.append(self.scheduler.next())
+        
+        # Execute in parallel with ThreadPoolExecutor
+        if all_tasks:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(execute_task, task): task for task in all_tasks}
+                
+                for future in concurrent.futures.as_completed(futures):
+                    task = futures[future]
+                    try:
+                        result = future.result(timeout=30)
+                    except Exception as e:
+                        self.logger.info("Executor", f"Task {task.name} failed: {e}")
+
+        elapsed = time.time() - start
+        self.logger.info("Executor", f"[{context.execution_id}] All agents completed in {elapsed:.2f}s")
 
         # Aggregate results
         decision = self.supervisor.summarize(context)
@@ -120,13 +112,6 @@ class Orchestrator:
         )
 
         self.state.add_report(report)
-
-        self.logger.info(
-            "Kernel",
-            f"[{context.execution_id}] Execution completed.",
-        )
-
-        # Persist into memory
         self.memory.remember_event(event)
         self.memory.remember_report(report)
 
