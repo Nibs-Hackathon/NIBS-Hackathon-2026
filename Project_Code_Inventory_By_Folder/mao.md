@@ -1,8 +1,8 @@
 # Folder: mao Code Inventory
 
-Generated: 2026-07-23 12:30:25 UTC
+Generated: 2026-07-24T03:28:50 UTC
 
-Contains 28 project files.
+Contains 30 project files.
 
 ## mao/__init__.py
 
@@ -34,6 +34,7 @@ class ExecutionContext:
         state_manager,
         memory_manager,
         logger,
+        health_service=None,
     ):
 
         # Unique execution information
@@ -48,6 +49,7 @@ class ExecutionContext:
         self.state = state_manager
         self.memory = memory_manager
         self.logger = logger
+        self.health_service = health_service
 
         # Agent execution
         self.results: List[Any] = []
@@ -339,6 +341,9 @@ class StateManager:
         # Workflow Tasks
         self.tasks = []
 
+        # Runtime Notifications
+        self.notifications = []
+
         # Memory
         self.memory = []
 
@@ -429,6 +434,24 @@ class StateManager:
     def clear_tasks(self):
 
         self.tasks.clear()
+
+
+    # -------------------------
+    # Notifications
+    # -------------------------
+
+    def add_notification(self, notification):
+
+        self.notifications.append(notification)
+
+        if len(self.notifications) > 200:
+
+            self.notifications.pop(0)
+
+
+    def get_notifications(self):
+
+        return self.notifications
 
 
 
@@ -622,6 +645,8 @@ class MAOKernel:
 
             event_store=self.event_store,
 
+            health_service=self.health,
+
         )
 
 
@@ -639,12 +664,6 @@ class MAOKernel:
 
 
     def handle_event(self, event):
-
-        # Store incoming event
-
-        self.state.add_event(event)
-
-
 
         # Run MAO pipeline
 
@@ -774,13 +793,41 @@ class ExecutionReport(BaseModel):
     metadata: dict = Field(default_factory=dict)
 ```
 
+## mao/models/notification.py
+
+**File path:** `mao/models/notification.py`
+
+```python
+"""Runtime-only notification model for MAO workflow outputs."""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from uuid import uuid4
+
+
+@dataclass
+class Notification:
+    """A structured operator notification held in StateManager memory."""
+
+    source: str
+    severity: str
+    summary: str
+    asset_id: str | None = None
+    requires_human_approval: bool = False
+    metadata: dict = field(default_factory=dict)
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: datetime = field(default_factory=datetime.now)
+```
+
 ## mao/models/result.py
 
 **File path:** `mao/models/result.py`
 
 ```python
 from dataclasses import dataclass, field
-from typing import List, Dict
+from datetime import datetime
+from typing import Dict, List
+from uuid import uuid4
 
 
 @dataclass
@@ -789,6 +836,8 @@ class AgentResult:
     agent_name: str
 
     success: bool
+
+    id: str = field(default_factory=lambda: str(uuid4()))
 
     finding: str = ""
 
@@ -805,6 +854,12 @@ class AgentResult:
     metadata: Dict = field(default_factory=dict)
 
     summary: str = ""
+
+    decision: str = ""
+
+    actions_required: List[str] = field(default_factory=list)
+
+    timestamp: datetime = field(default_factory=datetime.now)
 ```
 
 ## mao/models/task.py
@@ -842,7 +897,6 @@ class Task(BaseModel):
     input_data: dict = Field(default_factory=dict)
 
     output_data: dict = Field(default_factory=dict)
-    
 ```
 
 ## mao/orchestrator.py
@@ -873,6 +927,7 @@ class Orchestrator:
         memory_manager,
         logger,
         event_store,
+        health_service=None,
     ):
         self.planner = planner
         self.workflow_engine = workflow_engine
@@ -884,6 +939,7 @@ class Orchestrator:
         self.memory = memory_manager
         self.logger = logger
         self.event_store = event_store
+        self.health_service = health_service
 
     def run(self, event):
 
@@ -892,6 +948,7 @@ class Orchestrator:
             state_manager=self.state,
             memory_manager=self.memory,
             logger=self.logger,
+            health_service=self.health_service,
         )
 
         self.logger.info(
@@ -999,6 +1056,7 @@ class Orchestrator:
 
 ```python
 from mao.workflows.workflow import Workflow
+from mao.workflows.intelligence_tasks import intelligence_tasks
 from mao.models.task import Task
 
 
@@ -1008,42 +1066,48 @@ class FlowWorkflow(Workflow):
 
     def build(self, event):
 
+        intelligence = intelligence_tasks()
+
         return [
+
+            intelligence[0],
 
             Task(
                 name="Safety Check",
                 description="Assess risks caused by restricted flow.",
                 assigned_agent="safety",
-                priority=1,
+                priority=2,
             ),
 
             Task(
                 name="Flow Diagnosis",
                 description="Determine the cause of flow restriction.",
                 assigned_agent="diagnostic",
-                priority=2,
+                priority=3,
             ),
 
             Task(
                 name="Retrieve SOP",
                 description="Retrieve flow restriction operating procedures.",
                 assigned_agent="knowledge",
-                priority=3,
+                priority=4,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for restricted flow.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=5,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate a flow recovery procedure.",
                 assigned_agent="planning",
-                priority=5,
+                priority=6,
             ),
+
+            *intelligence[1:],
         ]
 ```
 
@@ -1053,6 +1117,7 @@ class FlowWorkflow(Workflow):
 
 ```python
 from mao.workflows.workflow import Workflow
+from mao.workflows.intelligence_tasks import intelligence_tasks
 from mao.models.task import Task
 
 
@@ -1062,43 +1127,89 @@ class GasWorkflow(Workflow):
 
     def build(self, event):
 
+        intelligence = intelligence_tasks()
+
         return [
+
+            intelligence[0],
 
             Task(
                 name="Safety Check",
                 description="Assess gas leak hazards.",
                 assigned_agent="safety",
-                priority=1,
+                priority=2,
             ),
 
             Task(
                 name="Gas Leak Diagnosis",
                 description="Identify the source of the gas leak.",
                 assigned_agent="diagnostic",
-                priority=2,
+                priority=3,
             ),
 
             Task(
                 name="Retrieve SOP",
                 description="Retrieve gas leak emergency procedures.",
                 assigned_agent="knowledge",
-                priority=3,
+                priority=4,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend repair actions for the gas leak.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=5,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate a gas leak recovery plan.",
                 assigned_agent="planning",
-                priority=5,
+                priority=6,
             ),
+
+            *intelligence[1:],
         ]
+```
+
+## mao/workflows/intelligence_tasks.py
+
+**File path:** `mao/workflows/intelligence_tasks.py`
+
+```python
+"""Reusable intelligence stages appended to established operational workflows."""
+
+from mao.models.task import Task
+
+
+def intelligence_tasks() -> tuple[Task, Task, Task, Task]:
+    """Return the common MAO intelligence stages with stable priorities."""
+    return (
+        Task(
+            name="Sensor Observation",
+            description="Record telemetry anomaly metadata without generating events.",
+            assigned_agent="sensor",
+            priority=1,
+        ),
+        Task(
+            name="Failure Risk Prediction",
+            description="Estimate deterministic health, failure probability, and RUL.",
+            assigned_agent="prediction",
+            priority=7,
+        ),
+        Task(
+            name="Operator Notification",
+            description="Create structured runtime notifications when escalation is needed.",
+            assigned_agent="notification",
+            priority=8,
+        ),
+        Task(
+            name="Report Compilation",
+            description="Compile agent outputs for the existing execution report.",
+            assigned_agent="report",
+            priority=9,
+        ),
+    )
 ```
 
 ## mao/workflows/maintenance_workflow.py
@@ -1107,6 +1218,7 @@ class GasWorkflow(Workflow):
 
 ```python
 from mao.workflows.workflow import Workflow
+from mao.workflows.intelligence_tasks import intelligence_tasks
 from mao.models.task import Task
 
 
@@ -1116,42 +1228,48 @@ class MaintenanceWorkflow(Workflow):
 
     def build(self, event):
 
+        intelligence = intelligence_tasks()
+
         return [
+
+            intelligence[0],
 
             Task(
                 name="Safety Check",
                 description="Verify equipment is safe before maintenance.",
                 assigned_agent="safety",
-                priority=1,
+                priority=2,
             ),
 
             Task(
                 name="Equipment Diagnosis",
                 description="Analyze equipment condition.",
                 assigned_agent="diagnostic",
-                priority=2,
+                priority=3,
             ),
 
             Task(
                 name="Retrieve Manual",
                 description="Retrieve maintenance manuals and procedures.",
                 assigned_agent="knowledge",
-                priority=3,
+                priority=4,
             ),
 
             Task(
                 name="Maintenance Planning",
                 description="Generate maintenance recommendations.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=5,
             ),
 
             Task(
                 name="Execution Plan",
                 description="Create the maintenance execution plan.",
                 assigned_agent="planning",
-                priority=5,
+                priority=6,
             ),
+
+            *intelligence[1:],
         ]
 ```
 
@@ -1259,6 +1377,7 @@ class Planner:
 
 ```python
 from mao.workflows.workflow import Workflow
+from mao.workflows.intelligence_tasks import intelligence_tasks
 from mao.models.task import Task
 
 
@@ -1268,42 +1387,48 @@ class PressureWorkflow(Workflow):
 
     def build(self, event):
 
+        intelligence = intelligence_tasks()
+
         return [
+
+            intelligence[0],
 
             Task(
                 name="Safety Check",
                 description="Analyze safety impact of the pressure spike.",
                 assigned_agent="safety",
-                priority=1,
+                priority=2,
             ),
 
             Task(
                 name="Root Cause Analysis",
                 description="Determine the likely cause of the pressure spike.",
                 assigned_agent="diagnostic",
-                priority=2,
+                priority=3,
             ),
 
             Task(
                 name="Retrieve SOP",
                 description="Retrieve the pressure spike operating procedure.",
                 assigned_agent="knowledge",
-                priority=3,
+                priority=4,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for the affected equipment.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=5,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate the recovery and restart plan.",
                 assigned_agent="planning",
-                priority=5,
+                priority=6,
             ),
+
+            *intelligence[1:],
         ]
 ```
 
@@ -1422,6 +1547,7 @@ class Supervisor:
 
 ```python
 from mao.workflows.workflow import Workflow
+from mao.workflows.intelligence_tasks import intelligence_tasks
 from mao.models.task import Task
 
 
@@ -1431,42 +1557,48 @@ class TemperatureWorkflow(Workflow):
 
     def build(self, event):
 
+        intelligence = intelligence_tasks()
+
         return [
+
+            intelligence[0],
 
             Task(
                 name="Safety Check",
                 description="Evaluate overheating risks.",
                 assigned_agent="safety",
-                priority=1,
+                priority=2,
             ),
 
             Task(
                 name="Temperature Diagnosis",
                 description="Determine the cause of abnormal temperature.",
                 assigned_agent="diagnostic",
-                priority=2,
+                priority=3,
             ),
 
             Task(
                 name="Retrieve SOP",
                 description="Retrieve overheating operating procedures.",
                 assigned_agent="knowledge",
-                priority=3,
+                priority=4,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for overheating equipment.",
                 assigned_agent="maintenance",
-                priority=4,
+                priority=5,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Create a safe recovery procedure.",
                 assigned_agent="planning",
-                priority=5,
+                priority=6,
             ),
+
+            *intelligence[1:],
         ]
 ```
 

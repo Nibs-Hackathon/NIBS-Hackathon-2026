@@ -1,8 +1,8 @@
 # Folder: database Code Inventory
 
-Generated: 2026-07-23 12:30:25 UTC
+Generated: 2026-07-24T03:28:50 UTC
 
-Contains 17 project files.
+Contains 19 project files.
 
 ## database/__init__.py
 
@@ -13,6 +13,39 @@ from database.base import Base
 from database.connection import engine
 
 from database import models
+```
+
+## database/__init__database.py
+
+**File path:** `database/__init__database.py`
+
+```python
+import sys
+from pathlib import Path
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+
+from database.base import Base
+from database.connection import engine
+
+# Import models so SQLAlchemy knows them
+from database import models
+
+
+print("Creating Neon tables...")
+
+
+Base.metadata.create_all(
+    bind=engine
+)
+
+
+print("Database initialization complete.")
 ```
 
 ## database/base.py
@@ -264,6 +297,43 @@ def downgrade():
     op.drop_column("incidents", "status")
 ```
 
+## database/migrations/versions/0002_add_knowledge_source.py
+
+**File path:** `database/migrations/versions/0002_add_knowledge_source.py`
+
+```python
+"""Add the source metadata required for Neon knowledge retrieval.
+
+Revision ID: 0002_add_knowledge_source
+Revises: 0001_operational_records
+"""
+
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = "0002_add_knowledge_source"
+down_revision = "0001_operational_records"
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    op.execute("ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS source TEXT")
+    op.execute(
+        "ALTER TABLE knowledge ALTER COLUMN embedding TYPE vector(3072) "
+        "USING embedding::vector(3072)"
+    )
+
+
+def downgrade():
+    op.execute(
+        "ALTER TABLE knowledge ALTER COLUMN embedding TYPE vector(384) "
+        "USING embedding::vector(384)"
+    )
+    op.drop_column("knowledge", "source")
+```
+
 ## database/models.py
 
 **File path:** `database/models.py`
@@ -351,7 +421,7 @@ class KnowledgeDB(Base):
     content = Column(Text)
     source = Column(Text)
     embedding = Column(
-        Vector(384)
+        Vector(3072)
     )
 
 class AgentExecutionDB(Base):
@@ -571,9 +641,6 @@ class AgentRepository:
         return (
             successful/len(executions)
         ) * 100
-    
-    
-        
 ```
 
 ## database/repositories/asset_repo.py

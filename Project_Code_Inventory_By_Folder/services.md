@@ -1,6 +1,6 @@
 # Folder: services Code Inventory
 
-Generated: 2026-07-23 12:30:25 UTC
+Generated: 2026-07-24T03:28:50 UTC
 
 Contains 16 project files.
 
@@ -51,8 +51,6 @@ class AssetService:
 
         if asset:
             asset.status = status
-
-    
 ```
 
 ## services/embedding.py
@@ -242,59 +240,26 @@ class IncidentService:
 """
 services/kernel_factory.py
 
-Creates and caches the global MAO kernel instance.
-
-The kernel is initialized only once and all production workflows
-are registered automatically.
+Compatibility access point for the shared MAO kernel.
 """
 
-from __future__ import annotations
-
-import logging
-from functools import lru_cache
-
 from mao import MAOKernel
-from mao.workflows.flow_workflow import FlowWorkflow
-from mao.workflows.gas_workflow import GasWorkflow
-from mao.workflows.maintenance_workflow import MaintenanceWorkflow
-from mao.workflows.pressure_workflow import PressureWorkflow
-from mao.workflows.temperature_workflow import TemperatureWorkflow
-
-logger = logging.getLogger(__name__)
+from services.runtime import kernel
 
 
-@lru_cache(maxsize=1)
 def create_kernel() -> MAOKernel:
     """
-    Create and return the singleton MAO kernel.
-
-    The kernel is cached so the entire application
-    shares a single workflow registry.
+    Return the already initialized production kernel.
     """
 
-    logger.info("Initializing MAO Kernel...")
+    return kernel
 
-    kernel = MAOKernel()
 
-    workflows = [
-        PressureWorkflow(),
-        TemperatureWorkflow(),
-        GasWorkflow(),
-        FlowWorkflow(),
-        MaintenanceWorkflow(),
-    ]
 
-    for workflow in workflows:
-        kernel.register_workflow(workflow)
-        logger.info(
-            "Registered workflow: %s",
-            workflow.__class__.__name__,
-        )
-
-    logger.info(
-        "MAO Kernel initialized with %d workflows.",
-        len(workflows),
-    )
+def get_kernel() -> MAOKernel:
+    """
+    Return the shared MAO kernel instance.
+    """
 
     return kernel
 ```
@@ -315,7 +280,9 @@ Supports:
 
 import logging
 import os
+import socket
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -342,6 +309,46 @@ SUPPORTED_GEMINI_ENV_VARS = (
 )
 
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+
+_PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _has_invalid_gemini_proxy() -> bool:
+    """Return whether this process inherited the known dead loopback proxy.
+
+    The check does not change environment variables.  It only lets the Gemini
+    client opt out of proxy inheritance when a request would otherwise be sent
+    to the non-listening local port that caused WinError 10061.
+    """
+    for name in _PROXY_ENV_VARS:
+        value = os.getenv(name)
+        if not value:
+            continue
+        try:
+            proxy = urlsplit(value)
+            if proxy.hostname not in _LOOPBACK_HOSTS or proxy.port is None:
+                continue
+            # Port 9 is the observed discarded-service proxy. For any other
+            # loopback proxy, preserve it only while it has a listener.
+            if proxy.port == 9:
+                return True
+            with socket.create_connection((proxy.hostname, proxy.port), timeout=0.15):
+                pass
+        except OSError:
+            return True
+        except ValueError:
+            # Preserve normal proxy handling for malformed values rather than
+            # making an assumption about a user-managed configuration.
+            continue
+    return False
 
 
 def get_gemini_model() -> str:
@@ -437,12 +444,14 @@ class LLMManager:
 
 
     def _create_model(self, key):
-
+        # Scope the proxy bypass to the HTTP client created by the Gemini SDK.
+        # Do not mutate os.environ: other application clients retain their
+        # existing proxy behavior.
+        client_args = {"trust_env": False} if _has_invalid_gemini_proxy() else None
         return ChatGoogleGenerativeAI(
-
             model=self.model_name,
-
             google_api_key=key,
+            client_args=client_args,
         )
 
 
@@ -656,7 +665,12 @@ from agents.knowledge import KnowledgeAgent
 from agents.maintenance import MaintenanceAgent
 from agents.diagnostic import DiagnosticAgent
 from agents.planning import PlanningAgent
-
+from agents.notification import NotificationAgent
+from agents.prediction import PredictionAgent
+from agents.report import ReportAgent
+from agents.sensor import SensorAgent
+from rag.embedder import Embedder
+from rag.neon_vector_store import NeonVectorStore
 
 kernel = MAOKernel()
 
@@ -669,13 +683,22 @@ for workflow in (
     MaintenanceWorkflow(),
 ):
     kernel.register_workflow(workflow)
+embedder = Embedder()
+
+vector_store = NeonVectorStore(
+    embedder.get_model()
+)
 
 for agent in (
     SafetyAgent(),
-    KnowledgeAgent(),
+    KnowledgeAgent(vector_store),
     MaintenanceAgent(),
     DiagnosticAgent(),
     PlanningAgent(),
+    SensorAgent(),
+    PredictionAgent(),
+    NotificationAgent(),
+    ReportAgent(),
 ):
     kernel.register_agent(agent)
 

@@ -61,6 +61,27 @@ class NeonVectorStore:
 
             session.close()
 
+    def clear(self):
+        """Remove all indexed chunks from the active knowledge database."""
+        session = get_session()
+        try:
+            deleted = session.query(KnowledgeDB).delete()
+            session.commit()
+            return deleted
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def count(self):
+        """Return the number of searchable chunks currently stored in Neon."""
+        session = get_session()
+        try:
+            return session.query(KnowledgeDB).count()
+        finally:
+            session.close()
+
 
 
     def similarity_search(

@@ -8,15 +8,15 @@ from ui_helpers import (
     status_chip
 )
 
-from frontend_services.agent_adapter import get_agents
+from frontend_services.agent_adapter import get_agent_metrics, get_agents
 
 setup_page("Agent Monitor")
 render_sidebar("Agent Monitor")
 page_heading("AI SUPERVISION", "Agent Monitor", "Observe autonomous specialists, workflow handoffs, and decision confidence.")
-render_live_signal_banner("DEMO AGENT STATE", "The current view preserves the existing demonstration data. Live registry and workflow state are pending backend integration.", "Info")
+render_live_signal_banner("LIVE MAO REGISTRY", "Agent registration and completed execution state are read from the shared backend kernel.", "Info")
 st.write("")
 
-for col, args in zip(st.columns(4), [("Agents online", "5 / 5", "All systems available", "green"), ("Workflows active", "02", "1 awaiting input", "amber"), ("Avg. confidence", "94.6%", "+1.8% today", "cyan"), ("Decisions today", "128", "Within review SLA", "violet")]):
+for col, args in zip(st.columns(4), get_agent_metrics()):
     with col: metric_card(*args)
 
 st.write("")

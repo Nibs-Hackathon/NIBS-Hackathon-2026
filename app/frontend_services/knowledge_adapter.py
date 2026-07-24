@@ -10,11 +10,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.runtime import kernel
-
-
 class KnowledgeSearchError(RuntimeError):
     """Raised when the registered knowledge retrieval path is unavailable."""
+
+
+__all__ = ["KnowledgeSearchError", "search_knowledge"]
 
 
 def search_knowledge(query: str) -> list[dict[str, str]]:
@@ -23,9 +23,18 @@ def search_knowledge(query: str) -> list[dict[str, str]]:
     if not normalized_query:
         return []
 
-    agent = kernel.registry.get("knowledge")
-    if agent is None or agent.retriever is None:
-        raise KnowledgeSearchError("The shared KnowledgeAgent is unavailable.")
+    try:
+        # Delay backend initialization until the user submits a search.  This
+        # keeps the page importable even while Neon/Gemini is unavailable.
+        from services.runtime import kernel
+
+        agent = kernel.registry.get("knowledge")
+        if agent is None or agent.retriever is None:
+            raise KnowledgeSearchError("The shared KnowledgeAgent is unavailable.")
+    except KnowledgeSearchError:
+        raise
+    except Exception as error:
+        raise KnowledgeSearchError("The shared KnowledgeAgent is unavailable.") from error
 
     try:
         documents = agent.retriever.retrieve(normalized_query)

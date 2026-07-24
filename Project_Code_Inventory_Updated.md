@@ -225,6 +225,7 @@ project/
 ```
 
 ## Complete source code
+
 ### .devcontainer/devcontainer.json
 
 **File path:** `.devcontainer/devcontainer.json`
@@ -1415,7 +1416,7 @@ def render_live_signal_banner(label: str, detail: str, status: str = "Running") 
     """Render a compact operational status banner."""
     st.markdown(
         f"<div class='panel'><span class='pulse' style='color:#4FE3B2'>●</span> "
-        f"<b>{label}</b> &nbsp; {status_chip(status)}"
+        f"<b>{label}</b>   {status_chip(status)}"
         f"<br><span class='muted'>{detail}</span></div>",
         unsafe_allow_html=True,
     )
@@ -1443,7 +1444,7 @@ def render_agent_execution_view(agents: list[dict]) -> None:
         st.markdown(
             f"<div class='timeline-row'><span class='muted'>{agent['Specialty']}</span>"
             f"<span class='timeline-dot {pulse_class}'></span><div class='panel'>"
-            f"<b>{agent['Agent']} Agent</b> &nbsp; {status_chip(state_tone)}"
+            f"<b>{agent['Agent']} Agent</b>   {status_chip(state_tone)}"
             f"<br><span class='muted'>{agent['Current task']} · Confidence {agent['Confidence']}</span>"
             f"</div></div>",
             unsafe_allow_html=True,
@@ -1468,7 +1469,7 @@ def render_asset_detail_panel(asset: dict, sensors: list[dict]) -> None:
     """Show selected asset condition and its current demo telemetry snapshot."""
     st.markdown("<div class='section-label'>SELECTED ASSET DETAIL</div>", unsafe_allow_html=True)
     st.markdown(
-        f"<div class='panel'><b>{asset['Asset']}</b> &nbsp; {status_chip(asset['Status'])}"
+        f"<div class='panel'><b>{asset['Asset']}</b>   {status_chip(asset['Status'])}"
         f"<p class='muted'>{asset['Type']} · {asset['Zone']}<br>"
         f"Health: {asset['Health']}% · Last telemetry: {asset['Last telemetry']}</p></div>",
         unsafe_allow_html=True,
@@ -1901,7 +1902,7 @@ with left:
     st.markdown("<div class='section-label'>MAINTENANCE TIMELINE</div>", unsafe_allow_html=True)
     timeline = [("Today · 14:00", "Heat Exchanger H-03", "Utilities Crew", "P1", "2.5 h"), ("Tomorrow · 09:00", "Compressor C-12", "Rotating Equipment", "P2", "4.0 h"), ("25 Jul · 11:00", "Valve V-09", "Instrumentation", "P3", "1.5 h")]
     for window, asset, engineer, priority, downtime in timeline:
-        st.markdown(f"<div class='timeline-row'><span class='muted'>{window}</span><span class='timeline-dot'></span><div class='panel'><b>{asset}</b> &nbsp; {status_chip('Critical' if priority == 'P1' else 'Warning')}<br><span class='muted'>Assigned engineer: {engineer} · Estimated downtime: {downtime}</span></div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='timeline-row'><span class='muted'>{window}</span><span class='timeline-dot'></span><div class='panel'><b>{asset}</b>   {status_chip('Critical' if priority == 'P1' else 'Warning')}<br><span class='muted'>Assigned engineer: {engineer} · Estimated downtime: {downtime}</span></div></div>", unsafe_allow_html=True)
 with right:
     st.markdown("<div class='section-label'>AI SCHEDULING RATIONALE</div><div class='panel'><b>Optimized sequence</b><p class='muted'>Prioritizes the thermal-risk work order ahead of compressor inspection, while grouping pipeline work with instrumentation availability.</p><b>Expected impact</b><p class='muted'>Reduces forecasted operational risk by 18% and avoids overlap with peak production windows.</p></div>", unsafe_allow_html=True)
 
@@ -1936,7 +1937,7 @@ with search_col:
 st.markdown("<div class='section-label'>LIVE EXECUTION FLOW</div>", unsafe_allow_html=True)
 for event in mock_agent_timeline():
     state_tone = "Running" if event["state"] == "Running" else ("Pending" if event["state"] == "Queued" else "Info")
-    st.markdown(f"<div class='timeline-row'><span class='muted'>{event['time']}</span><span class='timeline-dot {'pulse' if event['state'] == 'Running' else ''}'></span><div class='panel'><b>{event['agent']}</b> &nbsp; {status_chip(state_tone)}<br><span class='muted'>{event['action']} · Confidence {event['confidence']}</span></div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='timeline-row'><span class='muted'>{event['time']}</span><span class='timeline-dot {'pulse' if event['state'] == 'Running' else ''}'></span><div class='panel'><b>{event['agent']}</b>   {status_chip(state_tone)}<br><span class='muted'>{event['action']} · Confidence {event['confidence']}</span></div></div>", unsafe_allow_html=True)
     st.progress(event["progress"], text=f"{event['progress']}% execution progress")
 
 # TODO: Read immutable agent lifecycle events and audit metadata from the MAO backend/event store.
@@ -1972,7 +1973,7 @@ st.write("")
 left, right = st.columns([1.2, 1])
 with left:
     st.markdown("<div class='section-label'>PROCESS CONNECTIONS</div>", unsafe_allow_html=True)
-    st.markdown("<div class='panel' style='text-align:center; padding:2rem'><b>PROCESS A</b> &nbsp; ───► &nbsp; <b>PROCESS B</b> &nbsp; ───► &nbsp; <b>TERMINAL</b><br><br><span class='muted'>Utilities support all zones · Pipeline transfer monitored continuously</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='panel' style='text-align:center; padding:2rem'><b>PROCESS A</b>   ───►   <b>PROCESS B</b>   ───►   <b>TERMINAL</b><br><br><span class='muted'>Utilities support all zones · Pipeline transfer monitored continuously</span></div>", unsafe_allow_html=True)
 with right:
     st.markdown("<div class='section-label'>SELECTED ASSET DETAIL</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='panel'><b>{selected['Asset']}</b><p>{status_chip(selected['Status'])}</p><span class='muted'>Health: {selected['Health']}%<br>Temperature: {selected['Temperature']}<br>Pressure: {selected['Pressure']}<br>RPM: {selected['RPM']}<br>Failure probability: {selected['Failure']}</span><hr><b>AI recommendation</b><p class='muted'>Continue monitoring. Escalate if the live failure probability exceeds the configured threshold.</p></div>", unsafe_allow_html=True)
@@ -2782,7 +2783,7 @@ def render_health_heatmap() -> None:
     blocks = "".join(f"<div style='flex:1;min-width:100px;padding:14px 10px;border-radius:11px;background:{color}20;border:1px solid {color}66'><b>{zone}</b><br><span style='font-size:1.45rem;color:{color}'>{score}</span></div>" for zone, score, color in cells)
     st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{blocks}</div>", unsafe_allow_html=True)
 
-    
+  
 ```
 
 ### core/__init__.py
@@ -3416,9 +3417,9 @@ class AgentRepository:
         return (
             successful/len(executions)
         ) * 100
-    
-    
-        
+  
+  
+      
 ```
 
 ### database/repositories/asset_repo.py
@@ -3594,7 +3595,7 @@ class KnowledgeRepository:
                 KnowledgeDB
             ).delete()
         )
-    
+  
         self.session.commit()
 ```
 
@@ -4553,7 +4554,7 @@ class Task(BaseModel):
     input_data: dict = Field(default_factory=dict)
 
     output_data: dict = Field(default_factory=dict)
-    
+  
 ```
 
 ### mao/orchestrator.py
@@ -5301,7 +5302,7 @@ class AssetStatus(str, Enum):
     WARNING = "Warning"
     CRITICAL = "Critical"
     OFFLINE = "Offline"
-    
+  
 class IncidentSeverity(str, Enum):
     LOW = "Low"
     MEDIUM = "Medium"
@@ -6419,7 +6420,7 @@ class AssetService:
         if asset:
             asset.status = status
 
-    
+  
 ```
 
 ### services/embedding.py
@@ -7759,7 +7760,7 @@ def test_maintenance_plan(critical_context):
         ),
         critical_context,
     )
-    
+  
 
     DiagnosticAgent().run(
         Task(
@@ -7767,7 +7768,7 @@ def test_maintenance_plan(critical_context):
             description="Run diagnostics",
             assigned_agent="diagnostic",
             priority=2,
-            
+          
         ),
         critical_context,
     )
@@ -8102,4 +8103,3 @@ def test_critical_system(critical_context):
 ```python
 
 ```
-

@@ -13,6 +13,7 @@ page_heading(
 )
 
 state = get_control_state()
+summary = state.get("summary", "Live facility summary is not available yet.")
 metrics = [
     ("Facility mode", state["facility_mode"], "Live backend state", "green"),
     ("Asset availability", state["throughput"], "Calculated from assets", "cyan"),
@@ -29,7 +30,7 @@ with left:
     st.markdown(
         "<div class='panel'><div class='section-label'>FACILITY STATE</div>"
         f"<h3>{state['facility_mode'].title()}</h3>"
-        f"<p class='muted'>{state['summary']}</p>"
+        f"<p class='muted'>{summary}</p>"
         f"{status_chip(state['facility_mode'])}</div>",
         unsafe_allow_html=True,
     )

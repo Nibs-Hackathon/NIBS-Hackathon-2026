@@ -1,8 +1,65 @@
 # Repository Root Code Inventory
 
-Generated: 2026-07-23 12:30:25 UTC
+Generated: 2026-07-24T03:28:50 UTC
 
-Contains 4 project files.
+Contains 6 project files.
+
+## .env.example
+
+**File path:** `.env.example`
+
+```
+# Copy this file to .env and replace the placeholder with your Gemini API key.
+# Never commit the real .env file.
+GEMINI_API_KEY_1=YOUR_GEMINI_API_KEY_HERE
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+## .gitignore
+
+**File path:** `.gitignore`
+
+```
+.env
+*.env
+
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+.streamlit/
+```
+
+## README.md
+
+**File path:** `README.md`
+
+````markdown
+# NIBS-Hackathon-2026
+Hackathon 2026
+
+## Gemini setup
+
+The AI Assistant uses the existing RAG-backed KnowledgeAgent, which requires a
+Gemini API key. Create a local configuration file before using the assistant:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Then replace `YOUR_GEMINI_API_KEY_HERE` in `.env` with a real Gemini API key.
+The `.env` file is ignored by Git and must not be committed.
+
+The application loads the repository-root `.env` automatically and supports
+these environment variable names: `GEMINI_API_KEY_1` (preferred),
+`GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `GEMINI_KEY_1`.
+
+The default production model is `gemini-3.6-flash`. Set `GEMINI_MODEL` in
+`.env` only when you need to select another model available to your Gemini API
+project.
+````
 
 ## alembic.ini
 
@@ -46,40 +103,11 @@ formatter = generic
 format = %(levelname)-5.5s [%(name)s] %(message)s
 ```
 
-## README.md
-
-**File path:** `README.md`
-
-````markdown
-# NIBS-Hackathon-2026
-Hackathon 2026
-
-## Gemini setup
-
-The AI Assistant uses the existing RAG-backed KnowledgeAgent, which requires a
-Gemini API key. Create a local configuration file before using the assistant:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Then replace `YOUR_GEMINI_API_KEY_HERE` in `.env` with a real Gemini API key.
-The `.env` file is ignored by Git and must not be committed.
-
-The application loads the repository-root `.env` automatically and supports
-these environment variable names: `GEMINI_API_KEY_1` (preferred),
-`GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `GEMINI_KEY_1`.
-
-The default production model is `gemini-3.6-flash`. Set `GEMINI_MODEL` in
-`.env` only when you need to select another model available to your Gemini API
-project.
-````
-
 ## requirements.txt
 
 **File path:** `requirements.txt`
 
-```text
+```
 # UI
 streamlit
 # API

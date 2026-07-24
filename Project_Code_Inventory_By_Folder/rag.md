@@ -1,8 +1,8 @@
 # Folder: rag Code Inventory
 
-Generated: 2026-07-23 12:30:25 UTC
+Generated: 2026-07-24T03:28:50 UTC
 
-Contains 15 project files.
+Contains 16 project files.
 
 ## rag/__init__.py
 
@@ -39,7 +39,7 @@ rag/embedder.py
 Gemini Embedding Manager for RigOS
 
 This module replaces the previous HuggingFace embedding model with
-Google's Gemini embedding model (text-embedding-004).
+Google's Gemini embedding model (text-embedding-001).
 
 The public API intentionally remains the same:
 
@@ -57,6 +57,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+from services.llm import _has_invalid_gemini_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +125,9 @@ class Embedder:
         )
 
         Embedder._model = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             google_api_key=api_key,
+            client_args={"trust_env": False} if _has_invalid_gemini_proxy() else None,
         )
 
         logger.info("Gemini embeddings initialized successfully.")
@@ -160,7 +163,7 @@ class Embedder:
         return self.get_model().embed_query(text)
 
     def __repr__(self) -> str:
-        return "Embedder(model='models/text-embedding-004')"
+        return "Embedder(model='models/gemini-embedding-001', dimensions=3072)"
 ```
 
 ## rag/ingestion.py
@@ -168,7 +171,89 @@ class Embedder:
 **File path:** `rag/ingestion.py`
 
 ```python
+from pathlib import Path
 
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from rag.embedder import Embedder
+from rag.neon_vector_store import NeonVectorStore
+
+
+
+class KnowledgeIngestion:
+
+
+    def __init__(self):
+
+        embedder = Embedder()
+
+        self.vector_store = NeonVectorStore(
+            embedder.get_model()
+        )
+
+
+
+    def ingest_folder(self, folder):
+
+        documents = []
+
+
+        for file in Path(folder).rglob("*.pdf"):
+
+            print(
+                f"Loading: {file}"
+            )
+
+            loader = PyPDFLoader(
+                str(file)
+            )
+
+            docs = loader.load()
+
+            documents.extend(docs)
+
+
+
+        if not documents:
+
+            raise RuntimeError(
+                "No PDF documents found in docs/"
+            )
+
+
+
+        splitter = RecursiveCharacterTextSplitter(
+
+            chunk_size=800,
+
+            chunk_overlap=100
+
+        )
+
+
+        chunks = splitter.split_documents(
+            documents
+        )
+
+
+        print(
+            f"Created {len(chunks)} chunks"
+        )
+
+
+
+        self.vector_store.create(
+            chunks
+        )
+
+
+        print(
+            "Stored embeddings in Neon pgvector"
+        )
+
+
+        return len(chunks)
 ```
 
 ## rag/knowledge.py
@@ -223,6 +308,155 @@ class PDFLoader:
         documents = loader.load()
 
         return documents
+```
+
+## rag/neon_vector_store.py
+
+**File path:** `rag/neon_vector_store.py`
+
+```python
+from sqlalchemy import text
+from langchain_core.documents import Document
+
+from database.connection import get_session
+from database.models import KnowledgeDB
+from uuid import uuid4
+
+
+class NeonVectorStore:
+
+
+    def __init__(self, embeddings):
+
+        self.embeddings = embeddings
+
+
+    def create(self, documents):
+
+        session = get_session()
+
+        try:
+
+            for doc in documents:
+
+                vector = (
+                    self.embeddings
+                    .embed_query(
+                        doc.page_content
+                    )
+                )
+
+
+                row = KnowledgeDB(
+
+                    id=str(uuid4()),
+
+                    content=doc.page_content,
+
+                    source=doc.metadata.get(
+                        "source",
+                        "unknown"
+                    ),
+
+                    embedding=vector
+                )
+
+
+                session.add(row)
+
+
+            session.commit()
+
+
+        except Exception:
+
+            session.rollback()
+            raise
+
+
+        finally:
+
+            session.close()
+
+    def clear(self):
+        """Remove all indexed chunks from the active knowledge database."""
+        session = get_session()
+        try:
+            deleted = session.query(KnowledgeDB).delete()
+            session.commit()
+            return deleted
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def count(self):
+        """Return the number of searchable chunks currently stored in Neon."""
+        session = get_session()
+        try:
+            return session.query(KnowledgeDB).count()
+        finally:
+            session.close()
+
+
+
+    def similarity_search(
+        self,
+        query,
+        k=5
+    ):
+
+        session = get_session()
+
+        try:
+
+            vector = (
+                self.embeddings
+                .embed_query(query)
+            )
+
+
+            results = session.execute(
+                text(
+                    """
+                    SELECT
+                        content,
+                        source
+
+                    FROM knowledge
+
+                    ORDER BY embedding <-> :vector
+
+                    LIMIT :limit
+                    """
+                ),
+                {
+                    "vector": str(vector),
+                    "limit": k
+                }
+            )
+
+
+            documents = []
+
+
+            for row in results:
+
+                documents.append(
+                    Document(
+                        page_content=row.content,
+                        metadata={"source": row.source},
+                    )
+                )
+
+
+            return documents
+
+
+        finally:
+
+            session.close()
 ```
 
 ## rag/parser.py
@@ -299,24 +533,19 @@ class RAGPipeline:
 ```python
 class Retriever:
 
-
     def __init__(self, vector_store):
 
-        self.db = vector_store
+        self.vector_store = vector_store
 
 
+    def retrieve(self, query):
+        if hasattr(self.vector_store, "similarity_search"):
+            return self.vector_store.similarity_search(query)
 
-    def retrieve(self, query, k=3):
-
-        results = self.db.similarity_search(
-
-            query,
-
-            k=k
-
-        )
-
-        return results
+        db = self.vector_store.get()
+        if db is None:
+            return []
+        return db.similarity_search(query)
 ```
 
 ## rag/splitter.py
