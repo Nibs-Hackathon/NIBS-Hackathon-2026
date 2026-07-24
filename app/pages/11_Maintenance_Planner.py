@@ -1,21 +1,26 @@
+# Add a way to trigger maintenance planning
 import streamlit as st
-
 from frontend_services.maintenance_adapter import get_maintenance_plan
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page, status_chip
 
-
 setup_page("Maintenance Planner")
 render_sidebar("Maintenance Planner")
-page_heading(
-    "WORK ORCHESTRATION",
-    "Maintenance Planner",
-    "Turn MAO task state and recommendations into an executable maintenance view.",
-)
+page_heading("WORK ORCHESTRATION", "Maintenance Planner", "Turn MAO task state and recommendations into an executable maintenance view.")
 
 plan = get_maintenance_plan()
-for col, args in zip(st.columns(4), plan["metrics"]):
-    with col:
-        metric_card(*args)
+
+# ✅ If no tasks, show a way to generate them
+if not plan.get("tasks"):
+    st.info("No maintenance tasks have been generated yet. Trigger an incident to generate tasks.")
+    
+    # ✅ Add a button to trigger a maintenance incident
+    if st.button("🚨 Generate Maintenance Task", use_container_width=True):
+        from frontend_services.incident_adapter import trigger_incident
+        result = trigger_incident("maintenance")
+        st.success("Maintenance incident triggered! Refresh the page to see tasks.")
+        st.rerun()
+
+# ... rest of the page
 
 left, right = st.columns([1.7, 1])
 with left:
@@ -42,7 +47,7 @@ with left:
                 f"<div class='timeline-row'><span class='muted'>{task['Priority']}</span>"
                 f"<span class='timeline-dot'></span><div class='panel'><b>{task['Work order']}</b> "
                 f"&nbsp; {status_chip(tone)}<br><span class='muted'>Asset: {task['Asset']} "
-                f"Â· Owner: {task['Owner']} Â· State: {task['State']}</span></div></div>",
+                f"· Owner: {task['Owner']} · State: {task['State']}</span></div></div>",
                 unsafe_allow_html=True,
             )
     else:

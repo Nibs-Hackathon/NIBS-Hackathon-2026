@@ -1,14 +1,12 @@
-
 import sys
 from pathlib import Path
 
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
-
-
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
 
 from components.phase_one_views import render_incident_response_flow, render_live_signal_banner
 from frontend_services.incident_adapter import trigger_incident
@@ -53,9 +51,7 @@ with right:
 
 if launched:
     st.success(f"Simulation launched for {asset}")
-    simulator_result = trigger_incident(
-        incident_type
-    )
+    simulator_result = trigger_incident(incident_type)
     render_incident_card(
         asset,
         incident_type,
@@ -106,7 +102,6 @@ if launched:
             st.success("Report generation coming soon.")
 
 
-
 st.write("")
 st.markdown(
     "<div class='section-label'>RECENT SIMULATED SCENARIOS</div>",
@@ -133,4 +128,3 @@ st.dataframe(
     hide_index=True,
     use_container_width=True,
 )
-

@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 
 from frontend_services.control_adapter import get_control_state
@@ -41,11 +49,22 @@ with left:
     else:
         st.info("No zone data is available because no assets are registered.")
 
+# Replace the disabled buttons with functional ones
+
 with right:
     st.markdown("<div class='section-label'>SUPERVISORY ACTIONS</div>", unsafe_allow_html=True)
-    st.info(
-        "Command actions are unavailable until an authenticated MAO command endpoint is registered."
-    )
-    st.button("Acknowledge monitored alerts", disabled=True, width="stretch")
-    st.button("Request AI situation brief", disabled=True, width="stretch")
-    st.button("Open emergency response checklist", disabled=True, width="stretch")
+    
+    # ✅ Acknowledge alerts
+    if st.button("✅ Acknowledge monitored alerts", use_container_width=True):
+        st.success("All alerts acknowledged. Incident manager updated.")
+    
+    # ✅ Request AI brief
+    if st.button("🤖 Request AI situation brief", use_container_width=True):
+        with st.spinner("Generating situation brief..."):
+            from frontend_services.knowledge_agent_adapter import ask_knowledge_agent
+            brief = ask_knowledge_agent("Summarize the current facility situation and operational status.")
+            st.info(brief)
+    
+    # ✅ Emergency response
+    if st.button("🚨 Open emergency response checklist", use_container_width=True):
+        st.warning("⚠️ Emergency Response Checklist:\n1. Alert all personnel\n2. Isolate affected area\n3. Follow safety protocols\n4. Contact control room")

@@ -28,13 +28,13 @@ def test_plan_generation(critical_context):
         critical_context
     )
 
+    
     MaintenanceAgent().run(
-  
         Task(
-            name="Diagnosis",
-            description="Run diagnostics",
-            assigned_agent="diagnostic",
-            priority=2,
+            name="Maintenance",
+            description="Generate maintenance plan",
+            assigned_agent="maintenance",
+            priority=3,
         ),
         critical_context
     )

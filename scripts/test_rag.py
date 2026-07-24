@@ -3,15 +3,14 @@ from rag.vector_store import VectorStore
 from rag.retriever import Retriever
 
 embedder = Embedder()
-
 store = VectorStore(embedder)
-store.load()
+
+# ✅ FIXED: Provide path
+FAISS_INDEX_PATH = "./data/faiss_index"
+store.load(FAISS_INDEX_PATH)
 
 retriever = Retriever(store.db)
-
-results = retriever.retrieve(
-    "How do I respond to a pressure spike?"
-)
+results = retriever.retrieve("How do I respond to a pressure spike?")
 
 for i, doc in enumerate(results, start=1):
     print(f"\nResult {i}")

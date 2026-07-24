@@ -22,13 +22,18 @@ def render_asset_detail_panel(asset: dict, sensors: list[dict]) -> None:
 
 def render_report_detail_panel(report: dict) -> None:
     """Render the current report preview in a reusable glass panel."""
+    # ✅ Add default values to prevent KeyError
+    report_id = report.get('Report', 'N/A')
+    title = report.get('Title', 'Untitled')
+    summary = report.get('Summary', 'No summary available.')
+    recommendation = report.get('Recommendation', 'No recommendation available.')
+    
     st.markdown(
-        f"<div class='panel'><b>{report['Report']} · {report['Title']}</b>"
-        f"<p class='muted'>{report['Summary']}</p>"
-        f"<p><b>Recommendation:</b> {report['Recommendation']}</p></div>",
+        f"<div class='panel'><b>{report_id} · {title}</b>"
+        f"<p class='muted'>{summary}</p>"
+        f"<p><b>Recommendation:</b> {recommendation}</p></div>",
         unsafe_allow_html=True,
     )
-
 
 def render_copilot_context_panel() -> None:
     """Shared visual context for the full-page Copilot workspace."""

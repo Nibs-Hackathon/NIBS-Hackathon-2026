@@ -16,16 +16,18 @@ from agents.knowledge import KnowledgeAgent
 from agents.maintenance import MaintenanceAgent
 from agents.diagnostic import DiagnosticAgent
 from agents.planning import PlanningAgent
+# ✅ ADDED: Import all agents
 from agents.notification import NotificationAgent
 from agents.prediction import PredictionAgent
 from agents.report import ReportAgent
 from agents.sensor import SensorAgent
+
 from rag.embedder import Embedder
 from rag.neon_vector_store import NeonVectorStore
 
 kernel = MAOKernel()
 
-# Configure the shared MAO instance used by Streamlit before it receives events.
+# Register workflows
 for workflow in (
     PressureWorkflow(),
     TemperatureWorkflow(),
@@ -34,12 +36,11 @@ for workflow in (
     MaintenanceWorkflow(),
 ):
     kernel.register_workflow(workflow)
+
 embedder = Embedder()
+vector_store = NeonVectorStore(embedder.get_model())
 
-vector_store = NeonVectorStore(
-    embedder.get_model()
-)
-
+# ✅ FIXED: Register all 9 agents
 for agent in (
     SafetyAgent(),
     KnowledgeAgent(vector_store),
@@ -53,17 +54,13 @@ for agent in (
 ):
     kernel.register_agent(agent)
 
-
 assets = [
-
     Asset(
         name="Pump A-01",
         asset_type=AssetType.PUMP,
         location="Zone A"
     ),
-
 ]
-
 
 facility = Facility(
     id="rigos-alpha",
@@ -71,18 +68,10 @@ facility = Facility(
     assets=assets
 )
 
-
 for asset in assets:
-
     kernel.asset_service.register(asset)
 
-
-
-simulated_facility = SimulatedFacility(
-    facility
-)
-
-
+simulated_facility = SimulatedFacility(facility)
 simulator = Simulator(
     facility=simulated_facility,
     kernel=kernel

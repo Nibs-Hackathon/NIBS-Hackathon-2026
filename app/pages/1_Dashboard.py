@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from ui_helpers import (
@@ -7,7 +15,6 @@ from ui_helpers import (
     render_sidebar,
     setup_page
 )
-
 from frontend_services.dashboard_adapter import get_dashboard
 
 setup_page("Dashboard")
@@ -27,9 +34,7 @@ st.write("")
 left, right = st.columns([1.65, 1])
 with left:
     st.markdown("<div class='section-label'>24-HOUR OPERATIONAL HEALTH</div>", unsafe_allow_html=True)
-    st.info(
-        "Live health trend will appear after telemetry history is populated."
-    )
+    st.info("Live health trend will appear after telemetry history is populated.")
 with right:
     st.markdown("<div class='section-label'>ATTENTION QUEUE</div>", unsafe_allow_html=True)
     for item in snapshot["incidents"]:
