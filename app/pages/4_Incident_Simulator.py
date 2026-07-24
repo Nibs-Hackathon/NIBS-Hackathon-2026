@@ -99,22 +99,36 @@ with left:
     )
     
     # ✅ Scenario presets
+    # ✅ FIXED: Use session_state directly without conflicting with widget keys
     st.markdown("<div class='section-label'>📋 SCENARIO PRESETS</div>", unsafe_allow_html=True)
     preset_col1, preset_col2 = st.columns(2)
+
     with preset_col1:
-        if st.button("🔥 Critical Gas Leak", use_container_width=True):
-            st.session_state.sim_asset = asset_options[0] if asset_options else ""
-            st.session_state.sim_incident_type = "Gas Leak"
-            st.session_state.sim_severity = "Critical"
+        if st.button("🔥 Critical Gas Leak", use_container_width=True, key="preset_gas"):
+            # ✅ Use a different approach - set values and rerun
+            st.session_state.preset_asset = asset_options[0] if asset_options else ""
+            st.session_state.preset_incident_type = "Gas Leak"
+            st.session_state.preset_severity = "Critical"
             st.rerun()
+
     with preset_col2:
-        if st.button("⚡ Pressure Spike", use_container_width=True):
-            st.session_state.sim_asset = asset_options[0] if asset_options else ""
-            st.session_state.sim_incident_type = "Pressure Spike"
-            st.session_state.sim_severity = "High"
+        if st.button("⚡ Pressure Spike", use_container_width=True, key="preset_pressure"):
+            st.session_state.preset_asset = asset_options[0] if asset_options else ""
+            st.session_state.preset_incident_type = "Pressure Spike"
+            st.session_state.preset_severity = "High"
             st.rerun()
-    
-    automated = st.toggle("🤖 Enable AI workflow", value=True, key="sim_automated")
+
+    # ✅ Apply presets if they exist
+    if "preset_asset" in st.session_state and st.session_state.preset_asset:
+        # Update the widget values through session state
+        st.session_state.sim_asset = st.session_state.preset_asset
+        st.session_state.sim_incident_type = st.session_state.preset_incident_type
+        st.session_state.sim_severity = st.session_state.preset_severity
+        # Clear presets after applying
+        del st.session_state.preset_asset
+        del st.session_state.preset_incident_type
+        del st.session_state.preset_severity
+        st.rerun()
     
     # ✅ Initialize session state keys
     if "sim_incident_triggered" not in st.session_state:
@@ -127,7 +141,7 @@ with left:
         st.session_state.sim_history = []
     
     # ✅ Launch button with animation
-    if st.button("🚀 Launch simulated incident", use_container_width=True, type="primary", key="sim_launch_btn"):
+    if st.button("🚀 Launch simulated incident", width='stretch', type="primary", key="sim_launch_btn"):        
         st.session_state.sim_launch = True
         st.session_state.sim_incident_triggered = False
         st.session_state.sim_incident_results = None
