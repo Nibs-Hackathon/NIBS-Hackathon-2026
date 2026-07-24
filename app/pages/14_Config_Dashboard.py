@@ -8,7 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 from ui_helpers import page_heading, render_sidebar, setup_page, metric_card
-from frontend_services.backend_api import api
+from app.frontend_services.backend_api_new import api
 
 
 setup_page("Configuration Dashboard")

@@ -1,5 +1,6 @@
-"""Unified backend API for frontend access with lazy loading and caching."""
-
+"""Unified backend API for frontend access with caching and refinery support."""
+# At the very top of backend_api.py - BEFORE any other code
+print("🔴🔴🔴 BACKEND_API.PY LOADED - VERSION WITH get_incidents 🔴🔴🔴")
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,28 +21,78 @@ class BackendAPI:
 
     def __init__(self):
         self.config = ConfigService()
-        self._cache_ttl = 5  # seconds
+        self._cache_ttl = 5
         self._cache_timestamps = {}
 
     def _is_cache_valid(self, key: str) -> bool:
-        """Check if cache entry is still valid."""
         if key not in self._cache_timestamps:
             return False
         return (time.time() - self._cache_timestamps[key]) < self._cache_ttl
 
     def _invalidate_cache(self, key: str = None):
-        """Invalidate cache for a specific key or all keys."""
         if key:
             self._cache_timestamps.pop(key, None)
-            # Also clear lru_cache for this method
             if hasattr(self, f"_{key}_cached"):
                 getattr(self, f"_{key}_cached").cache_clear()
         else:
             self._cache_timestamps.clear()
-            # Clear all lru_caches
             for attr in dir(self):
                 if attr.startswith("_") and attr.endswith("_cached"):
                     getattr(self, attr).cache_clear()
+
+    # -------------------------
+    # Refinery Operations
+    # -------------------------
+
+    def get_refineries(self) -> List[Dict]:
+        """Get all refineries with their assets."""
+        refineries = getattr(kernel, "_refineries", [])
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "location": r.location,
+                "status": r.status,
+                "asset_count": len(r.assets),
+                "assets": [
+                    {
+                        "id": a.id,
+                        "name": a.name,
+                        "type": a.asset_type.value if hasattr(a.asset_type, 'value') else str(a.asset_type),
+                        "health": a.health,
+                        "status": a.status,
+                        "zone": getattr(a, "zone", "Unassigned"),
+                    }
+                    for a in r.assets
+                ]
+            }
+            for r in refineries
+        ]
+
+    def get_refinery_assets(self, refinery_id: str) -> List[Dict]:
+        """Get assets for a specific refinery."""
+        refineries = getattr(kernel, "_refineries", [])
+        for refinery in refineries:
+            if refinery.id == refinery_id:
+                return [
+                    {
+                        "id": a.id,
+                        "name": a.name,
+                        "type": a.asset_type.value if hasattr(a.asset_type, 'value') else str(a.asset_type),
+                        "health": a.health,
+                        "status": a.status,
+                        "zone": getattr(a, "zone", "Unassigned"),
+                        "refinery_id": refinery.id,
+                        "refinery_name": refinery.name,
+                    }
+                    for a in refinery.assets
+                ]
+        return []
+
+    def get_assets_by_type(self, refinery_id: str, asset_type: str) -> List[Dict]:
+        """Get assets of a specific type in a refinery."""
+        all_assets = self.get_refinery_assets(refinery_id)
+        return [a for a in all_assets if a.get("type", "").lower() == asset_type.lower()]
 
     # -------------------------
     # Asset Operations (with Caching)
@@ -57,14 +108,16 @@ class BackendAPI:
                 "name": asset.name,
                 "type": asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type),
                 "location": asset.location,
+                "zone": getattr(asset, "zone", "Unassigned"),
                 "health": asset.health,
                 "status": asset.status,
+                "refinery_id": getattr(asset, "refinery_id", None),
             }
             for asset in assets
         ]
 
     def get_assets(self, force_refresh: bool = False) -> List[Dict]:
-        """Get all assets from the runtime with caching."""
+        """Get all assets from all refineries with caching."""
         if force_refresh:
             self._invalidate_cache("get_assets")
         return self._get_assets_cached()
@@ -103,6 +156,7 @@ class BackendAPI:
 
     # -------------------------
     # Incident Operations (with Caching)
+    # ✅ FIXED: get_incidents is now properly defined
     # -------------------------
 
     @lru_cache(maxsize=32)
@@ -227,7 +281,7 @@ class BackendAPI:
     def refresh_config(self) -> Dict:
         """Refresh all configurations and clear caches."""
         self.config.refresh()
-        self._invalidate_cache()  # Clear all caches
+        self._invalidate_cache()
         return {"status": "refreshed", "cache_cleared": True}
 
     # -------------------------
@@ -248,7 +302,6 @@ class BackendAPI:
         """Advance simulation by one tick."""
         from services.simulator_controller import sim_controller
         telemetry, reports = sim_controller.step()
-        # Invalidate caches after simulation step
         self._invalidate_cache()
         return {
             "telemetry_count": len(telemetry),

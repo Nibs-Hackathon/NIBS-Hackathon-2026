@@ -1,3 +1,6 @@
+# Current file has indentation error - the schedule() calls are outside methods
+
+# FIXED VERSION:
 from models.facility import Facility
 from simulator.asset import SimulatedAsset
 from simulator.fault_injector import FaultInjector
@@ -5,47 +8,32 @@ from models.sensor import SensorType
 
 
 class SimulatedFacility:
-
     def __init__(self, facility: Facility):
-
         self.assets = [
             SimulatedAsset(asset)
             for asset in facility.assets
         ]
-
         self.injector = FaultInjector()
-
+        
+        # Schedule faults
         self.injector.schedule(
             tick=10,
             asset_index=0,
             sensor=SensorType.PRESSURE,
             value=155,
         )
-
         self.injector.schedule(
             tick=20,
             asset_index=1,
             sensor=SensorType.TEMPERATURE,
             value=95,
         )
-
         self.injector.schedule(
             tick=30,
             asset_index=2,
             sensor=SensorType.GAS,
             value=35,
         )
-
-        def tick(self, tick_number, fault=None):
-            telemetry = []
-            for index, asset in enumerate(self.assets):
-                # ✅ FIXED: Proper fault assignment
-                if fault is not None:
-                    current_fault = fault
-                else:
-                    current_fault = self.injector.get_fault(tick_number, index)
-                telemetry.extend(asset.tick(fault=current_fault))
-            return telemetry
         self.injector.schedule(
             tick=50,
             asset_index=1,
@@ -54,23 +42,14 @@ class SimulatedFacility:
         )
 
     def tick(self, tick_number, fault=None):
-
         telemetry = []
-
         for index, asset in enumerate(self.assets):
-
-            if fault and index == 0:
-                fault=  fault
+            # Get fault for this specific asset
+            if fault is not None and index == 0:
+                current_fault = fault
             else:
-                fault = self.injector.get_fault(
-                    tick_number,
-                    index
-                )
-
-            telemetry.extend(
-                asset.tick(
-                    fault=fault
-                )
-            )
-
+                current_fault = self.injector.get_fault(tick_number, index)
+            
+            telemetry.extend(asset.tick(fault=current_fault))
+        
         return telemetry

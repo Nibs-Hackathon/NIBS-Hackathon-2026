@@ -1,6 +1,6 @@
 # Folder: simulator Code Inventory
 
-Generated: 2026-07-24T03:28:50 UTC
+Generated: 2026-07-24 07:30:05 UTC
 
 Contains 6 project files.
 
@@ -203,13 +203,16 @@ class SimulatedFacility:
             value=35,
         )
 
-        self.injector.schedule(
-            tick=40,
-            asset_index=0,
-            sensor=SensorType.VIBRATION,
-            value=40,
-        )
-
+        def tick(self, tick_number, fault=None):
+            telemetry = []
+            for index, asset in enumerate(self.assets):
+                # ✅ FIXED: Proper fault assignment
+                if fault is not None:
+                    current_fault = fault
+                else:
+                    current_fault = self.injector.get_fault(tick_number, index)
+                telemetry.extend(asset.tick(fault=current_fault))
+            return telemetry
         self.injector.schedule(
             tick=50,
             asset_index=1,

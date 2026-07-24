@@ -1,6 +1,6 @@
 """Dashboard adapter using BackendAPI."""
 
-from app.frontend_services.backend_api import api
+from app.frontend_services.backend_api_new import api
 from services.runtime import kernel
 
 

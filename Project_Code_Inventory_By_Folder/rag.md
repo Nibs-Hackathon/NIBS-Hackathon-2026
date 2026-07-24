@@ -1,6 +1,6 @@
 # Folder: rag Code Inventory
 
-Generated: 2026-07-24T03:28:50 UTC
+Generated: 2026-07-24 07:30:05 UTC
 
 Contains 16 project files.
 
@@ -33,21 +33,7 @@ Contains 16 project files.
 **File path:** `rag/embedder.py`
 
 ```python
-"""
-rag/embedder.py
-
-Gemini Embedding Manager for RigOS
-
-This module replaces the previous HuggingFace embedding model with
-Google's Gemini embedding model (text-embedding-001).
-
-The public API intentionally remains the same:
-
-    embedder = Embedder()
-    model = embedder.get_model()
-
-so existing code such as VectorStore and Retriever continues to work.
-"""
+"""Gemini Embedding Manager for RigOS."""
 
 from __future__ import annotations
 
@@ -58,6 +44,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+# ✅ Correct import
 from services.llm import _has_invalid_gemini_proxy
 
 logger = logging.getLogger(__name__)
@@ -66,30 +53,19 @@ load_dotenv()
 
 
 class Embedder:
-    """
-    Singleton wrapper around Google's Gemini embedding model.
-
-    Compatible with:
-        - FAISS
-        - LangChain VectorStore
-        - Retriever
-        - Existing RigOS code
-
-    Example
-    -------
-        embedder = Embedder()
-        embeddings = embedder.get_model()
-    """
+    """Singleton wrapper around Google's Gemini embedding model."""
 
     _model: Optional[GoogleGenerativeAIEmbeddings] = None
 
+    # ✅ Fixed: Removed duplicates, supports up to 7 keys
     API_KEY_ENVIRONMENTS = (
-        "GOOGLE_API_KEY_1",
-        "GOOGLE_API_KEY_2",
-        "GOOGLE_API_KEY",
-        "GEMINI_API_KEY_1",
-        "GEMINI_API_KEY_2",
-        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY_1", "GOOGLE_API_KEY_2", "GOOGLE_API_KEY_3",
+        "GOOGLE_API_KEY_4", "GOOGLE_API_KEY_5", "GOOGLE_API_KEY_6",
+        "GOOGLE_API_KEY_7",
+        "GEMINI_API_KEY_1", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3",
+        "GEMINI_API_KEY_4", "GEMINI_API_KEY_5", "GEMINI_API_KEY_6",
+        "GEMINI_API_KEY_7",
+        "GOOGLE_API_KEY", "GEMINI_API_KEY",
     )
 
     def __init__(self):
@@ -97,16 +73,12 @@ class Embedder:
             self._initialize()
 
     def _initialize(self) -> None:
-        """
-        Initialize Gemini embeddings once.
-        """
-
+        """Initialize Gemini embeddings once."""
         api_key = None
         selected_variable = None
 
         for variable in self.API_KEY_ENVIRONMENTS:
             value = os.getenv(variable)
-
             if value:
                 api_key = value
                 selected_variable = variable
@@ -119,10 +91,7 @@ class Embedder:
                 + "\n".join(f" - {v}" for v in self.API_KEY_ENVIRONMENTS)
             )
 
-        logger.info(
-            "Initializing Gemini embeddings using %s",
-            selected_variable,
-        )
+        logger.info("Initializing Gemini embeddings using %s", selected_variable)
 
         Embedder._model = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-001",
@@ -133,33 +102,17 @@ class Embedder:
         logger.info("Gemini embeddings initialized successfully.")
 
     def get_model(self) -> GoogleGenerativeAIEmbeddings:
-        """
-        Returns the embedding model.
-
-        This preserves compatibility with the previous implementation.
-
-        Returns
-        -------
-        GoogleGenerativeAIEmbeddings
-        """
-
+        """Return the embedding model."""
         if Embedder._model is None:
             self._initialize()
-
         return Embedder._model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """
-        Embed multiple documents.
-        """
-
+        """Embed multiple documents."""
         return self.get_model().embed_documents(texts)
 
     def embed_query(self, text: str) -> list[float]:
-        """
-        Embed a single query.
-        """
-
+        """Embed a single query."""
         return self.get_model().embed_query(text)
 
     def __repr__(self) -> str:
@@ -325,20 +278,15 @@ from uuid import uuid4
 
 class NeonVectorStore:
 
-
     def __init__(self, embeddings):
-
         self.embeddings = embeddings
-
+        self._db = None  # For compatibility with FAISS pattern
 
     def create(self, documents):
-
+        """Create the vector store from a list of documents."""
         session = get_session()
-
         try:
-
             for doc in documents:
-
                 vector = (
                     self.embeddings
                     .embed_query(
@@ -346,36 +294,45 @@ class NeonVectorStore:
                     )
                 )
 
-
                 row = KnowledgeDB(
-
                     id=str(uuid4()),
-
                     content=doc.page_content,
-
                     source=doc.metadata.get(
                         "source",
                         "unknown"
                     ),
-
                     embedding=vector
                 )
 
-
                 session.add(row)
-
 
             session.commit()
 
-
         except Exception:
-
             session.rollback()
             raise
 
-
         finally:
+            session.close()
 
+    def add_documents(self, documents):
+        """Add documents to an existing vector store (incremental)."""
+        session = get_session()
+        try:
+            for doc in documents:
+                vector = self.embeddings.embed_query(doc.page_content)
+                row = KnowledgeDB(
+                    id=str(uuid4()),
+                    content=doc.page_content,
+                    source=doc.metadata.get("source", "unknown"),
+                    embedding=vector
+                )
+                session.add(row)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
             session.close()
 
     def clear(self):
@@ -399,23 +356,11 @@ class NeonVectorStore:
         finally:
             session.close()
 
-
-
-    def similarity_search(
-        self,
-        query,
-        k=5
-    ):
-
+    def similarity_search(self, query, k=5):
+        """Search by query string (generates embedding internally)."""
         session = get_session()
-
         try:
-
-            vector = (
-                self.embeddings
-                .embed_query(query)
-            )
-
+            vector = self.embeddings.embed_query(query)
 
             results = session.execute(
                 text(
@@ -423,11 +368,8 @@ class NeonVectorStore:
                     SELECT
                         content,
                         source
-
                     FROM knowledge
-
                     ORDER BY embedding <-> :vector
-
                     LIMIT :limit
                     """
                 ),
@@ -437,12 +379,8 @@ class NeonVectorStore:
                 }
             )
 
-
             documents = []
-
-
             for row in results:
-
                 documents.append(
                     Document(
                         page_content=row.content,
@@ -450,13 +388,57 @@ class NeonVectorStore:
                     )
                 )
 
+            return documents
+
+        finally:
+            session.close()
+
+    # ✅ NEW: Search by pre-computed embedding vector
+    def similarity_search_by_vector(self, embedding, k=5):
+        """Search by embedding vector (for use with pre-computed embeddings)."""
+        session = get_session()
+        try:
+            results = session.execute(
+                text(
+                    """
+                    SELECT
+                        content,
+                        source
+                    FROM knowledge
+                    ORDER BY embedding <-> :vector
+                    LIMIT :limit
+                    """
+                ),
+                {
+                    "vector": str(embedding),
+                    "limit": k
+                }
+            )
+
+            documents = []
+            for row in results:
+                documents.append(
+                    Document(
+                        page_content=row.content,
+                        metadata={"source": row.source},
+                    )
+                )
 
             return documents
 
-
         finally:
-
             session.close()
+
+    # ✅ NEW: Get method for Retriever compatibility
+    def get(self):
+        """Return self for compatibility with Retriever."""
+        return self
+
+    # ✅ NEW: Alias for backward compatibility with FAISS pattern
+    def as_retriever(self, search_kwargs=None):
+        """Return a retriever interface."""
+        from rag.retriever import Retriever
+        return Retriever(self)
 ```
 
 ## rag/parser.py
@@ -487,33 +469,36 @@ from rag.embedder import Embedder
 from rag.vector_store import VectorStore
 
 
+from pathlib import Path
+from rag.loader import DocumentLoader
+from rag.splitter import DocumentSplitter
+from rag.embedder import Embedder
+from rag.vector_store import VectorStore
+
+# Default path for FAISS index
+DEFAULT_INDEX_PATH = "./data/faiss_index"
+
+
 class RAGPipeline:
 
-    def build(self, pdfs):
-
+    def build(self, pdfs, index_path=DEFAULT_INDEX_PATH):
+        """Build a FAISS vector store from PDF files."""
         loader = DocumentLoader()
-
         splitter = DocumentSplitter()
-
         embedder = Embedder()
 
         docs = []
-
         for pdf in pdfs:
-
-            docs.extend(
-
-                loader.load(pdf)
-
-            )
+            docs.extend(loader.load(pdf))
 
         chunks = splitter.split(docs)
-
+        
+        # ✅ FIXED: Use create() instead of build()
         store = VectorStore(embedder)
-
-        store.build(chunks)
-
-        store.save()
+        store.create(chunks)
+        
+        # ✅ FIXED: Pass path to save()
+        store.save(index_path)
 
         return store
 ```

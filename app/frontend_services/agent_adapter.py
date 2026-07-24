@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.frontend_services.backend_api import api
+from app.frontend_services.backend_api_new import api
 
 
 def get_agents() -> list[dict[str, str]]:

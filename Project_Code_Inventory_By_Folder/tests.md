@@ -1,8 +1,8 @@
 # Folder: tests Code Inventory
 
-Generated: 2026-07-24T03:28:50 UTC
+Generated: 2026-07-24 07:30:05 UTC
 
-Contains 8 project files.
+Contains 9 project files.
 
 ## tests/conftest.py
 
@@ -63,6 +63,39 @@ def critical_context():
         memory_manager=None,
         logger=None,
     )
+```
+
+## tests/mock_workflow.py
+
+**File path:** `tests/mock_workflow.py`
+
+```python
+"""Mock workflow for testing purposes."""
+
+from mao.workflows.workflow import Workflow
+from mao.models.task import Task
+
+
+class MockWorkflow(Workflow):
+    """A simple mock workflow for testing the MAO system."""
+
+    name = "mock_workflow"
+
+    def build(self, event):
+        """Create a single task for testing."""
+        return [
+            Task(
+                name="Mock Task",
+                description="Mock task for testing",
+                assigned_agent="safety",
+                priority=1,
+                input_data={
+                    "event_id": event.id,
+                    "event_name": event.name,
+                    "source": event.source,
+                }
+            )
+        ]
 ```
 
 ## tests/test_agent_pipeline.py
@@ -360,13 +393,13 @@ def test_plan_generation(critical_context):
         critical_context
     )
 
+    
     MaintenanceAgent().run(
-  
         Task(
-            name="Diagnosis",
-            description="Run diagnostics",
-            assigned_agent="diagnostic",
-            priority=2,
+            name="Maintenance",
+            description="Generate maintenance plan",
+            assigned_agent="maintenance",
+            priority=3,
         ),
         critical_context
     )

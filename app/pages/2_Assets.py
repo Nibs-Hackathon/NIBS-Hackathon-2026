@@ -8,9 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 from components.phase_one_views import render_live_signal_banner
 from ui_helpers import metric_card, page_heading, render_sidebar, setup_page
-from frontend_services.asset_adapter import get_assets
-from frontend_services.telemetry_adapter import get_asset_telemetry
-from frontend_services.health_adapter import get_asset_health
+from app.frontend_services.backend_api_new import api
 
 setup_page("Asset Monitoring")
 render_sidebar("Asset Monitoring")
@@ -19,67 +17,109 @@ page_heading("FLEET INTELLIGENCE", "Asset Monitoring", "Health, telemetry, and o
 render_live_signal_banner("LIVE ASSET TELEMETRY", "Connected to RigOS backend state manager.", "Info")
 st.write("")
 
-snapshot = get_assets()
-assets = snapshot.get("assets", [])
+# -------------------------
+# Refinery Selector
+# -------------------------
 
-if not assets:
-    st.warning("No assets available. Start the simulation to see assets.")
+refineries = api.get_refineries()
+
+if not refineries:
+    st.warning("No refineries available. Start the simulation to see assets.")
     st.stop()
 
+# Refinery selection
+refinery_names = [r["name"] for r in refineries]
+selected_refinery_name = st.selectbox("🏭 Select Refinery", refinery_names)
+selected_refinery = next(r for r in refineries if r["name"] == selected_refinery_name)
+
+# Get assets for this refinery
+all_assets = selected_refinery["assets"]
+refinery_id = selected_refinery["id"]
+
+st.markdown(f"**{selected_refinery_name}** - {selected_refinery['location']} | **{len(all_assets)}** assets")
+
+# -------------------------
 # Filters
-filters = st.columns(3)
+# -------------------------
+
+filters = st.columns(4)
+
 with filters[0]:
-    zones = ["All zones"] + list(set(a.get("location", "Unknown") for a in assets))
-    zone = st.selectbox("Zone", zones)
+    asset_types = ["All Types"] + sorted(set(a["type"] for a in all_assets))
+    selected_type = st.selectbox("Asset Type", asset_types)
 
 with filters[1]:
-    statuses = ["All statuses"] + list(set(a.get("status", "Unknown") for a in assets))
-    status = st.selectbox("Status", statuses)
+    zones = ["All Zones"] + sorted(set(a.get("zone", "Unassigned") for a in all_assets))
+    selected_zone = st.selectbox("Zone", zones)
 
 with filters[2]:
-    selected = st.selectbox("Focus asset", [a.get("name", "Unknown") for a in assets])
+    statuses = ["All Statuses"] + sorted(set(a["status"] for a in all_assets))
+    selected_status = st.selectbox("Status", statuses)
 
-# Filtered assets
+with filters[3]:
+    # Health range filter
+    health_min = st.slider("Min Health %", 0, 100, 0)
+
+# Filter assets
 visible = [
-    a for a in assets
-    if (zone == "All zones" or a.get("location") == zone)
-    and (status == "All statuses" or a.get("status") == status)
+    a for a in all_assets
+    if (selected_type == "All Types" or a["type"] == selected_type)
+    and (selected_zone == "All Zones" or a.get("zone", "Unassigned") == selected_zone)
+    and (selected_status == "All Statuses" or a["status"] == selected_status)
+    and (a["health"] >= health_min)
 ]
 
-st.dataframe(visible, hide_index=True, use_container_width=True, height=260)
+st.dataframe(visible, hide_index=True, use_container_width=True, height=300)
+st.caption(f"Showing {len(visible)} of {len(all_assets)} assets")
 
-# Selected asset
-selected_asset = next((a for a in assets if a.get("name") == selected), assets[0])
-asset_id = selected_asset.get("id")
+# -------------------------
+# Asset Type Distribution
+# -------------------------
 
-if asset_id:
-    health_data = get_asset_health(asset_id)
-    telemetry_data = get_asset_telemetry(asset_id)
-    
-    health = health_data.get("health", 0)
-    latest = telemetry_data.get("latest", {})
-    
-    metrics = [
-        ("Selected asset", selected, "Telemetry connected", "cyan"),
-        ("Current health", f"{health:.1f}%", "Healthy" if health >= 80 else "Warning", "green"),
-        ("Sensor coverage", "4", "channels reporting", "green"),
-        ("Last update", str(latest.get("timestamp", "No data")), "Backend state", "green"),
-    ]
-    
-    for col, args in zip(st.columns(4), metrics):
-        with col:
-            metric_card(*args)
-    
-    left, right = st.columns([1.55, 1])
-    with left:
-        st.markdown("<div class='section-label'>HEALTH & SAFETY TREND</div>", unsafe_allow_html=True)
-        history = telemetry_data.get("history", [])
-        if history:
-            st.line_chart(history, height=260)
+st.markdown("### 📊 Asset Distribution")
+
+# Count by type
+type_counts = {}
+for a in all_assets:
+    t = a["type"]
+    type_counts[t] = type_counts.get(t, 0) + 1
+
+# Display as metrics
+cols = st.columns(min(len(type_counts), 8))
+for i, (asset_type, count) in enumerate(sorted(type_counts.items())):
+    with cols[i % len(cols)]:
+        st.metric(asset_type, count)
+
+# -------------------------
+# Selected Asset Detail
+# -------------------------
+
+if visible:
+    st.markdown("### 🔍 Asset Detail")
+
+    # Select an asset to inspect
+    asset_names = [a["name"] for a in visible]
+    selected_name = st.selectbox("Select asset to inspect", asset_names)
+    selected_asset = next(a for a in visible if a["name"] == selected_name)
+
+    # Display asset details
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Name", selected_asset["name"])
+    with col2:
+        st.metric("Type", selected_asset["type"])
+    with col3:
+        st.metric("Health", f"{selected_asset['health']:.1f}%")
+    with col4:
+        st.metric("Status", selected_asset["status"])
+
+    # Get telemetry for this asset
+    try:
+        from frontend_services.telemetry_adapter import get_asset_telemetry
+        telemetry = get_asset_telemetry(selected_asset["id"])
+        if telemetry and telemetry.get("history"):
+            st.line_chart(telemetry["history"], height=200)
         else:
-            st.info("No telemetry history available yet.")
-    
-    with right:
-        from components.phase_two_views import render_asset_detail_panel
-        sensors = snapshot.get("sensors", [])
-        render_asset_detail_panel(selected_asset, sensors)
+            st.info("No telemetry history available for this asset. Run the simulation.")
+    except Exception as e:
+        st.info("Telemetry data not available.")

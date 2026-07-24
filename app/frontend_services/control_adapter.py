@@ -1,6 +1,6 @@
 """Control adapter using BackendAPI."""
 
-from app.frontend_services.backend_api import api
+from app.frontend_services.backend_api_new import api
 
 
 def get_control_state() -> dict:

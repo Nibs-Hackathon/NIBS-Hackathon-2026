@@ -58,7 +58,7 @@ with right:
     
     # ✅ PDF Briefing
     if st.button("📄 Prepare PDF briefing", use_container_width=True):
-        from app.frontend_services.backend_api import api
+        from app.frontend_services.backend_api_new import api
         reports = api.get_reports()
         
         # Create a summary
@@ -84,7 +84,7 @@ with right:
     
     # ✅ Export Report Register
     if st.button("📊 Export report register", use_container_width=True):
-        from app.frontend_services.backend_api import api
+        from app.frontend_services.backend_api_new import api
         reports = api.get_reports()
         
         # Create CSV

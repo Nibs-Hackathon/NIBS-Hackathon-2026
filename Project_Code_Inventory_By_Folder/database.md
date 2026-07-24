@@ -1,6 +1,6 @@
 # Folder: database Code Inventory
 
-Generated: 2026-07-24T03:28:50 UTC
+Generated: 2026-07-24 07:30:05 UTC
 
 Contains 19 project files.
 
@@ -641,6 +641,9 @@ class AgentRepository:
         return (
             successful/len(executions)
         ) * 100
+    
+    
+        
 ```
 
 ## database/repositories/asset_repo.py
@@ -764,60 +767,42 @@ class KnowledgeRepository:
     def __init__(self, session):
         self.session = session
 
-    def create(
-            self,
-            knowledge
-    ):
-        self.session.add(
-            knowledge
-        )
+    def create(self, knowledge):
+        self.session.add(knowledge)
         self.session.commit()
-
-        self.session.refresh(
-            knowledge
-        )
+        self.session.refresh(knowledge)
         return knowledge
 
-    def create_many(
-            self,
-            documents
-    ):
-        self.session.add_all(
-            documents
-        )
+    def create_many(self, documents):
+        self.session.add_all(documents)
         self.session.commit()
         return documents
 
-    def similarity_search(
-            self,
-            embedding,
-            limit = 5
-    ):
-
+    def similarity_search(self, embedding, limit=5):
         results = (
             self.session
             .query(KnowledgeDB)
-
             .order_by(
-                KnowledgeDB.embedding.cosine_distance(
-                    embedding
-                )
+                KnowledgeDB.embedding.cosine_distance(embedding)
             )
             .limit(limit)
             .all()
         )
-
         return results
 
     def get_all(self):
-        return (
-            self.session
-            .query(
-                KnowledgeDB
-            ).delete()
-        )
-    
-        self.session.commit()
+        """Return all knowledge chunks from the database."""
+        return self.session.query(KnowledgeDB).all()
+
+    def delete_all(self):
+        """Delete all knowledge chunks from the database."""
+        try:
+            deleted = self.session.query(KnowledgeDB).delete()
+            self.session.commit()
+            return deleted
+        except Exception:
+            self.session.rollback()
+            raise
 ```
 
 ## database/repositories/report_repo.py

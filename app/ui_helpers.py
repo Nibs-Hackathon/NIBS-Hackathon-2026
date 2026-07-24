@@ -364,7 +364,7 @@ def mock_maintenance_tasks() -> list[dict]:
 
 def executive_metrics() -> list[tuple[str, str, str, str]]:
     """Get real executive metrics from backend."""
-    from app.frontend_services.backend_api import api
+    from app.frontend_services.backend_api_new import api
     from services.runtime import kernel
 
     assets = api.get_assets()
@@ -446,7 +446,7 @@ def gauge_card(label: str, value: int, detail: str, color: str = "#55D6FF") -> N
 
 def render_health_heatmap() -> None:
     """Render health heatmap from actual asset data."""
-    from app.frontend_services.backend_api import api
+    from app.frontend_services.backend_api_new import api
 
     assets = api.get_assets()
 

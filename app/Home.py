@@ -14,8 +14,12 @@ import ui_helpers
 importlib.reload(ui_helpers)
 
 from ui_helpers import executive_metrics, metric_card, page_heading, render_sidebar, setup_page, status_chip
-from frontend_services.backend_api import api
+from app.frontend_services.backend_api_new import api
 from services.simulator_controller import sim_controller
+# In app/Home.py - add this after other imports
+import importlib
+import app.frontend_services.backend_api_new
+importlib.reload(app.frontend_services.backend_api_new)
 
 
 setup_page("Operations Center")

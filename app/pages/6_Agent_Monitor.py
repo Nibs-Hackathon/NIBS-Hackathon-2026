@@ -38,7 +38,7 @@ with left:
     st.markdown("<div class='section-label'>WORKFLOW PROGRESS</div>", unsafe_allow_html=True)
     
     # ✅ Get real workflow progress from reports
-    from frontend_services.backend_api import api
+    from app.frontend_services.backend_api_new import api
     reports = api.get_reports()
     
     if reports:

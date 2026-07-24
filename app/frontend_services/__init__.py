@@ -1,6 +1,6 @@
 """Frontend-facing adapters for existing RigOS backend modules."""
 
-from app.frontend_services.backend_api import api, BackendAPI
+from app.frontend_services.backend_api_new import api, BackendAPI
 
 # Import all adapters directly
 from app.frontend_services.dashboard_adapter import get_dashboard
