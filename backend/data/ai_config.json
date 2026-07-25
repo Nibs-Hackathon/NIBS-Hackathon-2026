@@ -2,219 +2,219 @@
   "asset_types": {
     "Pump": {
       "thresholds": {
-        "pressure_max": 150,
-        "temperature_max": 85,
-        "gas_max": 40,
-        "vibration_max": 8,
-        "flow_min": 25
+        "pressure_max": 150.0,
+        "temperature_max": 85.0,
+        "gas_max": 40.0,
+        "vibration_max": 8.0,
+        "flow_min": 25.0
       },
       "weight": {
-        "pressure_weight": 30,
-        "temperature_weight": 25,
-        "gas_weight": 35,
-        "vibration_weight": 20,
-        "flow_weight": 10
+        "pressure_weight": 30.0,
+        "temperature_weight": 25.0,
+        "gas_weight": 35.0,
+        "vibration_weight": 20.0,
+        "flow_weight": 10.0
       },
       "degradation_rate": 0.5,
-      "critical_health": 50
+      "critical_health": 50.0
     },
     "Compressor": {
       "thresholds": {
-        "pressure_max": 160,
-        "temperature_max": 90,
-        "gas_max": 35,
-        "vibration_max": 10,
-        "flow_min": 30
+        "pressure_max": 220.0,
+        "temperature_max": 110.0,
+        "gas_max": 50.0,
+        "vibration_max": 12.0,
+        "flow_min": 50.0
       },
       "weight": {
-        "pressure_weight": 35,
-        "temperature_weight": 20,
-        "gas_weight": 25,
-        "vibration_weight": 30,
-        "flow_weight": 10
+        "pressure_weight": 35.0,
+        "temperature_weight": 25.0,
+        "gas_weight": 20.0,
+        "vibration_weight": 30.0,
+        "flow_weight": 10.0
       },
-      "degradation_rate": 0.6,
-      "critical_health": 50
+      "degradation_rate": 0.7,
+      "critical_health": 45.0
     },
     "Tank": {
       "thresholds": {
-        "pressure_max": 50,
-        "temperature_max": 60,
-        "gas_max": 50,
-        "vibration_max": 3,
-        "flow_min": 5
+        "pressure_max": 50.0,
+        "temperature_max": 60.0,
+        "gas_max": 75.0,
+        "vibration_max": 3.0,
+        "flow_min": 5.0
       },
       "weight": {
-        "pressure_weight": 25,
-        "temperature_weight": 15,
-        "gas_weight": 50,
-        "vibration_weight": 5,
-        "flow_weight": 5
+        "pressure_weight": 25.0,
+        "temperature_weight": 15.0,
+        "gas_weight": 50.0,
+        "vibration_weight": 5.0,
+        "flow_weight": 5.0
       },
       "degradation_rate": 0.2,
-      "critical_health": 50
+      "critical_health": 40.0
     },
     "Valve": {
       "thresholds": {
-        "pressure_max": 200,
-        "temperature_max": 120,
-        "gas_max": 20,
-        "vibration_max": 6,
-        "flow_min": 10
+        "pressure_max": 200.0,
+        "temperature_max": 120.0,
+        "gas_max": 30.0,
+        "vibration_max": 6.0,
+        "flow_min": 10.0
       },
       "weight": {
-        "pressure_weight": 40,
-        "temperature_weight": 20,
-        "gas_weight": 20,
-        "vibration_weight": 10,
-        "flow_weight": 10
+        "pressure_weight": 40.0,
+        "temperature_weight": 20.0,
+        "gas_weight": 20.0,
+        "vibration_weight": 10.0,
+        "flow_weight": 20.0
       },
       "degradation_rate": 0.4,
-      "critical_health": 50
+      "critical_health": 50.0
     },
     "Pipeline": {
       "thresholds": {
-        "pressure_max": 180,
-        "temperature_max": 100,
-        "gas_max": 30,
-        "vibration_max": 5,
-        "flow_min": 40
+        "pressure_max": 180.0,
+        "temperature_max": 95.0,
+        "gas_max": 45.0,
+        "vibration_max": 5.0,
+        "flow_min": 40.0
       },
       "weight": {
-        "pressure_weight": 45,
-        "temperature_weight": 20,
-        "gas_weight": 20,
-        "vibration_weight": 5,
-        "flow_weight": 10
+        "pressure_weight": 45.0,
+        "temperature_weight": 20.0,
+        "gas_weight": 25.0,
+        "vibration_weight": 15.0,
+        "flow_weight": 15.0
       },
       "degradation_rate": 0.3,
-      "critical_health": 50
+      "critical_health": 45.0
     },
     "Heat Exchanger": {
       "thresholds": {
-        "pressure_max": 120,
-        "temperature_max": 250,
-        "gas_max": 25,
-        "vibration_max": 4,
-        "flow_min": 35
+        "pressure_max": 140.0,
+        "temperature_max": 250.0,
+        "gas_max": 20.0,
+        "vibration_max": 4.0,
+        "flow_min": 35.0
       },
       "weight": {
-        "pressure_weight": 20,
-        "temperature_weight": 50,
-        "gas_weight": 15,
-        "vibration_weight": 5,
-        "flow_weight": 10
+        "pressure_weight": 25.0,
+        "temperature_weight": 50.0,
+        "gas_weight": 10.0,
+        "vibration_weight": 10.0,
+        "flow_weight": 25.0
       },
       "degradation_rate": 0.4,
-      "critical_health": 50
+      "critical_health": 50.0
     },
     "Reactor": {
       "thresholds": {
-        "pressure_max": 250,
-        "temperature_max": 350,
-        "gas_max": 60,
-        "vibration_max": 7,
-        "flow_min": 50
+        "pressure_max": 300.0,
+        "temperature_max": 450.0,
+        "gas_max": 100.0,
+        "vibration_max": 8.0,
+        "flow_min": 60.0
       },
       "weight": {
-        "pressure_weight": 30,
-        "temperature_weight": 35,
-        "gas_weight": 20,
-        "vibration_weight": 5,
-        "flow_weight": 10
+        "pressure_weight": 35.0,
+        "temperature_weight": 40.0,
+        "gas_weight": 30.0,
+        "vibration_weight": 15.0,
+        "flow_weight": 20.0
       },
       "degradation_rate": 0.8,
-      "critical_health": 50
+      "critical_health": 60.0
     },
     "Boiler": {
       "thresholds": {
-        "pressure_max": 220,
-        "temperature_max": 400,
-        "gas_max": 45,
-        "vibration_max": 6,
-        "flow_min": 45
+        "pressure_max": 250.0,
+        "temperature_max": 500.0,
+        "gas_max": 60.0,
+        "vibration_max": 7.0,
+        "flow_min": 50.0
       },
       "weight": {
-        "pressure_weight": 35,
-        "temperature_weight": 40,
-        "gas_weight": 10,
-        "vibration_weight": 5,
-        "flow_weight": 10
+        "pressure_weight": 40.0,
+        "temperature_weight": 45.0,
+        "gas_weight": 20.0,
+        "vibration_weight": 10.0,
+        "flow_weight": 15.0
       },
-      "degradation_rate": 0.7,
-      "critical_health": 50
+      "degradation_rate": 0.6,
+      "critical_health": 55.0
     },
     "Turbine": {
       "thresholds": {
-        "pressure_max": 180,
-        "temperature_max": 450,
-        "gas_max": 20,
-        "vibration_max": 12,
-        "flow_min": 60
+        "pressure_max": 200.0,
+        "temperature_max": 550.0,
+        "gas_max": 30.0,
+        "vibration_max": 15.0,
+        "flow_min": 80.0
       },
       "weight": {
-        "pressure_weight": 20,
-        "temperature_weight": 30,
-        "gas_weight": 10,
-        "vibration_weight": 35,
-        "flow_weight": 5
+        "pressure_weight": 25.0,
+        "temperature_weight": 35.0,
+        "gas_weight": 10.0,
+        "vibration_weight": 40.0,
+        "flow_weight": 15.0
       },
-      "degradation_rate": 0.9,
-      "critical_health": 50
+      "degradation_rate": 0.7,
+      "critical_health": 50.0
     },
     "Motor": {
       "thresholds": {
-        "pressure_max": 40,
-        "temperature_max": 95,
-        "gas_max": 10,
-        "vibration_max": 9,
-        "flow_min": 10
+        "pressure_max": 20.0,
+        "temperature_max": 100.0,
+        "gas_max": 10.0,
+        "vibration_max": 9.0,
+        "flow_min": 0.0
       },
       "weight": {
-        "pressure_weight": 5,
-        "temperature_weight": 40,
-        "gas_weight": 5,
-        "vibration_weight": 40,
-        "flow_weight": 10
+        "pressure_weight": 5.0,
+        "temperature_weight": 40.0,
+        "gas_weight": 5.0,
+        "vibration_weight": 45.0,
+        "flow_weight": 0.0
       },
       "degradation_rate": 0.4,
-      "critical_health": 50
+      "critical_health": 45.0
     },
     "Generator": {
       "thresholds": {
-        "pressure_max": 50,
-        "temperature_max": 105,
-        "gas_max": 15,
-        "vibration_max": 8,
-        "flow_min": 20
+        "pressure_max": 25.0,
+        "temperature_max": 120.0,
+        "gas_max": 15.0,
+        "vibration_max": 10.0,
+        "flow_min": 0.0
       },
       "weight": {
-        "pressure_weight": 10,
-        "temperature_weight": 40,
-        "gas_weight": 10,
-        "vibration_weight": 30,
-        "flow_weight": 10
+        "pressure_weight": 5.0,
+        "temperature_weight": 40.0,
+        "gas_weight": 10.0,
+        "vibration_weight": 40.0,
+        "flow_weight": 0.0
       },
       "degradation_rate": 0.5,
-      "critical_health": 50
+      "critical_health": 45.0
     },
     "Distillation Column": {
       "thresholds": {
-        "pressure_max": 90,
-        "temperature_max": 280,
-        "gas_max": 50,
-        "vibration_max": 5,
-        "flow_min": 70
+        "pressure_max": 120.0,
+        "temperature_max": 350.0,
+        "gas_max": 50.0,
+        "vibration_max": 6.0,
+        "flow_min": 45.0
       },
       "weight": {
-        "pressure_weight": 30,
-        "temperature_weight": 35,
-        "gas_weight": 20,
-        "vibration_weight": 5,
-        "flow_weight": 10
+        "pressure_weight": 30.0,
+        "temperature_weight": 35.0,
+        "gas_weight": 25.0,
+        "vibration_weight": 10.0,
+        "flow_weight": 20.0
       },
       "degradation_rate": 0.5,
-      "critical_health": 50
+      "critical_health": 50.0
     }
   },
   "workflow_sequences": {
@@ -281,9 +281,9 @@
     "Low": 4
   },
   "health_status_mapping": {
-    "healthy": 80,
-    "warning": 50,
-    "critical": 30
+    "healthy": 80.0,
+    "warning": 50.0,
+    "critical": 30.0
   },
   "prediction": {
     "confidence_weight": 0.55,
@@ -293,8 +293,8 @@
     "rul_min_days": 1
   },
   "notification": {
-    "critical_failure_threshold": 70,
-    "warning_failure_threshold": 40,
-    "info_failure_threshold": 0
+    "critical_failure_threshold": 70.0,
+    "warning_failure_threshold": 40.0,
+    "info_failure_threshold": 0.0
   }
 }

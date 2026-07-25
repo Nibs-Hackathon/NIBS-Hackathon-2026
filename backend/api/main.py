@@ -10,6 +10,9 @@ import asyncio
 from datetime import datetime
 from uuid import uuid4
 import time
+import os
+from dotenv import load_dotenv
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Add parent directory to path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
