@@ -60,6 +60,16 @@ class Orchestrator:
 
         # Schedule tasks
         for task in tasks:
+            # Preserve operational context on every task.  Agent output and
+            # maintenance planning can then be traced to the exact asset and
+            # incident instead of being rendered as anonymous workflow cards.
+            task.input_data = {
+                **(task.input_data or {}),
+                "incident_id": event.id,
+                "asset_id": event.source,
+                "incident_type": event.name,
+                "event_payload": event.payload or {},
+            }
             # State is registered before execution so the Operations Center can
             # represent pending and running MAO stages without a second engine.
             self.state.add_task(task)

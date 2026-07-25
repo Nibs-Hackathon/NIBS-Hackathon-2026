@@ -9,7 +9,7 @@ const emptySnapshot = {
   dashboard: {}, assets: [], refineries: [], telemetry_by_refinery: [], critical_incidents: [], audit_logs: [],
   investigation: { status: 'waiting', stages: [] }, ai_activity: [],
   maintenance: { tasks: [] }, predicted_failures: [], notifications: [], reports: [],
-  telemetry: { readings: [] },
+  telemetry: { readings: [] }, critical_asset_telemetry: [],
 };
 
 export function OperationsProvider({ children }) {

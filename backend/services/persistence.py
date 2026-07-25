@@ -106,6 +106,45 @@ class PersistenceService:
         """Save execution to database synchronously."""
         # Run in a separate thread to not block
         Thread(target=self._record_execution_sync, args=(event, report, severity), daemon=True).start()
+
+    def resolve_incident(self, incident_id, health_after=None):
+        """Persist physical incident resolution independently of MAO completion.
+
+        A successful investigation is evidence that the agents finished their
+        work; it is not evidence that field conditions have normalized.
+        """
+        Thread(
+            target=self._resolve_incident_sync,
+            args=(incident_id, health_after),
+            daemon=True,
+        ).start()
+
+    def _resolve_incident_sync(self, incident_id, health_after):
+        session = None
+        try:
+            session = get_session()
+            if session is None:
+                return
+            incident = session.query(IncidentDB).filter(IncidentDB.id == incident_id).first()
+            if incident is None:
+                return
+            resolved_at = datetime.utcnow()
+            incident.status = "resolved"
+            incident.resolved_at = resolved_at
+            if health_after is not None:
+                incident.health_after = float(health_after)
+            if incident.created_at:
+                incident.resolution_seconds = round(
+                    max(0.0, (resolved_at - incident.created_at).total_seconds()), 2
+                )
+            session.commit()
+        except Exception as error:
+            if session:
+                session.rollback()
+            logger.exception("Failed to persist incident resolution: %s", error)
+        finally:
+            if session:
+                session.close()
     
     def _record_execution_sync(self, event, report, severity):
         """Sync version for execution."""
@@ -121,12 +160,15 @@ class PersistenceService:
                 asset_id=getattr(event, 'source', 'unknown'),
                 event=getattr(event, 'name', 'unknown'),
                 severity=severity,
-                status="completed" if getattr(report, 'success', False) else "requires_review",
+                # This records the physical-operational lifecycle, not merely
+                # the MAO workflow lifecycle. Resolution is recorded later by
+                # the simulator after readings normalize.
+                status="under_investigation" if getattr(report, 'success', False) else "requires_review",
                 report=getattr(report, 'final_summary', ''),
                 health_before=(getattr(event, "payload", {}) or {}).get("health_before"),
-                health_after=getattr(getattr(event, "payload", {}), "get", lambda *_: None)("health_after"),
-                resolution_seconds=max(0.0, (getattr(report, "completed_at", datetime.now()) - getattr(report, "started_at", datetime.now())).total_seconds()),
-                resolved_at=getattr(report, "completed_at", datetime.now()),
+                health_after=None,
+                resolution_seconds=None,
+                resolved_at=None,
                 created_at=getattr(event, 'timestamp', datetime.now()),
             )
             asset = None

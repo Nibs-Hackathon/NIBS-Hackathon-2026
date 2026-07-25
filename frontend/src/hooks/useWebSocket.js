@@ -1,54 +1,80 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+const RECONNECT_MIN_DELAY = 1500;
+const RECONNECT_MAX_DELAY = 15000;
 
+/**
+ * Keeps the most recently verified snapshot on screen while the connection
+ * recovers. A dropped socket is a transport issue, never evidence that the
+ * facility suddenly has no assets, incidents, or audit history.
+ */
 export function useWebSocket() {
   const [connected, setConnected] = useState(false);
   const [data, setData] = useState(null);
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const disposedRef = useRef(false);
+  const attemptsRef = useRef(0);
 
   useEffect(() => {
+    disposedRef.current = false;
+
+    const scheduleReconnect = () => {
+      if (disposedRef.current) return;
+      const delay = Math.min(
+        RECONNECT_MIN_DELAY * (2 ** attemptsRef.current),
+        RECONNECT_MAX_DELAY,
+      );
+      attemptsRef.current += 1;
+      reconnectTimeoutRef.current = window.setTimeout(connect, delay);
+    };
+
     const connect = () => {
-      socketRef.current = new WebSocket(WS_URL);
+      if (disposedRef.current || socketRef.current?.readyState === WebSocket.OPEN) return;
 
-      socketRef.current.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setConnected(true);
-        toast.success('Connected to RigOS', { duration: 2000 });
-      };
+      try {
+        const socket = new WebSocket(WS_URL);
+        socketRef.current = socket;
 
-      socketRef.current.onclose = () => {
-        console.log('❌ WebSocket disconnected');
-        setConnected(false);
-        // Fall back to the REST snapshot while the replacement socket opens.
-        setData(null);
-        // Attempt reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(connect, 3000);
-      };
+        socket.onopen = () => {
+          if (disposedRef.current) return;
+          const wasReconnecting = attemptsRef.current > 0;
+          attemptsRef.current = 0;
+          setConnected(true);
+          if (wasReconnecting) toast.success('Live operations connection restored', { duration: 2200 });
+        };
 
-      socketRef.current.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === 'update') {
-            setData(payload.data);
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'update' && payload.data) setData(payload.data);
+          } catch (error) {
+            console.error('WebSocket payload parse error:', error);
           }
-        } catch (e) {
-          console.error('WebSocket parse error:', e);
-        }
-      };
+        };
+
+        socket.onerror = () => socket.close();
+        socket.onclose = () => {
+          if (socketRef.current === socket) socketRef.current = null;
+          if (disposedRef.current) return;
+          setConnected(false);
+          scheduleReconnect();
+        };
+      } catch (error) {
+        console.error('WebSocket setup error:', error);
+        setConnected(false);
+        scheduleReconnect();
+      }
     };
 
     connect();
-
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
+      disposedRef.current = true;
+      if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current);
+      socketRef.current?.close();
+      socketRef.current = null;
     };
   }, []);
 

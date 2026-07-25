@@ -219,6 +219,7 @@ class Simulator:
     def _resolve_incident(self, asset_id, tick_number, asset_name):
         """Resolve an active incident."""
         if asset_id in self.active_incidents:
+            active_incident = self.active_incidents[asset_id]
             self.incident_resolution_count += 1
             
             notification_service = self._get_notification_service()
@@ -238,6 +239,18 @@ class Simulator:
                     asset_name=asset_name,
                 )
             )
+
+            # Persist the actual field-condition resolution.  This deliberately
+            # happens here—not when the AI report completes—so audit history
+            # can accurately show open incidents and resolution time.
+            try:
+                asset = self.kernel.asset_service.get(asset_id)
+                self._get_persistence().resolve_incident(
+                    getattr(active_incident.get("event"), "id", None),
+                    getattr(asset, "health", None),
+                )
+            except Exception as error:
+                print(f"Incident resolution persistence failed: {error}")
             
             # ✅ Remove from active incidents
             del self.active_incidents[asset_id]

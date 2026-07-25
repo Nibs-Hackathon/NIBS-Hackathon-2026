@@ -15,10 +15,13 @@ def get_health_prediction(asset_id, horizon_days=14):
     
     if not asset or not readings:
         return {
-            "health": 100,
-            "rul": "365 days",
-            "failure_probability": "0%",
-            "confidence": "Low",
+            "asset_id": asset_id,
+            "data_available": False,
+            "health": None,
+            "rul": None,
+            "failure_probability": None,
+            "confidence": None,
+            "forecast_method": "unavailable: insufficient telemetry history",
             "historical": {"Historical health": []},
             "predicted": {"Predicted health": [], "Intervention threshold": []},
             "telemetry": []
@@ -60,10 +63,13 @@ def get_health_prediction(asset_id, horizon_days=14):
         rul_str = f"{int(rul_days)} days"
     
     return {
+        "asset_id": asset_id,
+        "data_available": True,
         "health": round(metrics["health"]),
         "rul": rul_str,
         "failure_probability": f"{metrics['failure_probability']:.1f}%",
         "confidence": f"{metrics['confidence'] * 100:.1f}%",
+        "forecast_method": "health trend extrapolation from verified simulator telemetry",
         "historical": {"Historical health": historical},
         "predicted": {
             "Predicted health": predicted,

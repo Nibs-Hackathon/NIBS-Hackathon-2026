@@ -146,6 +146,7 @@ def _start_auto_simulation(kernel):
 def _auto_simulation_loop(kernel):
     """Background thread that keeps telemetry live and injects a demo incident every 1-4 minutes."""
     import random
+    global _simulator
     
     from simulator.simulator import Simulator
     from simulator.facility import SimulatedFacility
@@ -166,6 +167,8 @@ def _auto_simulation_loop(kernel):
         facility=simulated_facility,
         kernel=kernel
     )
+    # Timer-driven and API-triggered incidents must share one lifecycle.
+    _simulator = simulator
     
     tick = 0
     incident_counter = 0
@@ -176,8 +179,6 @@ def _auto_simulation_loop(kernel):
         for _ in range(30):
             tick += 1
             telemetry, reports = simulator.tick(tick)
-            for reading in telemetry:
-                kernel.state.add_telemetry([reading])
             for asset in simulated_facility.assets:
                 history = kernel.state.get_history(asset.asset.id)
                 if history:
@@ -187,7 +188,7 @@ def _auto_simulation_loop(kernel):
     except Exception as e:
         print(f"⚠️ Warm-up error: {e}")
     
-    print("✅ Simulation running. Incidents every 15-45 seconds.")
+    print("Simulation running. Incidents every 60-240 seconds.")
     
     # ✅ Run with timer-based incidents
     while _simulation_running:
@@ -212,9 +213,6 @@ def _auto_simulation_loop(kernel):
                         raise
                 
                 # ✅ Update state
-                for reading in telemetry:
-                    kernel.state.add_telemetry([reading])
-                
                 for asset in simulated_facility.assets:
                     history = kernel.state.get_history(asset.asset.id)
                     if history:
@@ -265,9 +263,6 @@ def _auto_simulation_loop(kernel):
                         raise
                 
                 # ✅ Process incident
-                for reading in telemetry:
-                    kernel.state.add_telemetry([reading])
-                
                 for asset_obj in simulated_facility.assets:
                     history = kernel.state.get_history(asset_obj.asset.id)
                     if history:
@@ -356,6 +351,11 @@ class _RuntimeProxy:
     @property
     def simulator(self):
         return get_simulator()
+
+    @property
+    def active_simulator(self):
+        """Return the timer-driven simulator without creating a second one."""
+        return _simulator
 
 
 # ✅ Export runtime - the single entry point

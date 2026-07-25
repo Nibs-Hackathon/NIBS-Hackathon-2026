@@ -20,3 +20,7 @@
 /* The investigation is an evidence flow. A generic sensor chart obscures that
    flow and can be unrelated to the incident under review. */
 .reasoning-panel>.mini-graph{display:none}
+
+/* Compact shell alignment: the mark and system state remain intentional when
+   the navigation is collapsed. */
+.product-nav:not(:hover) .product-logo{justify-content:center}.product-nav:not(:hover) .product-logo>div{margin:0!important}.product-nav:not(:hover) .product-settings{width:46px!important;min-width:46px!important;padding:0!important;justify-content:center!important}.product-nav:not(:hover) .product-settings .MuiButton-startIcon{margin:0!important}.product-top .product-live{height:32px;display:flex;align-items:center;justify-content:center;white-space:nowrap}.product-top .product-live i{flex:none}

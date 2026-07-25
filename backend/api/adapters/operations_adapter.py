@@ -177,7 +177,7 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "kind": "report",
                     "agent": "report",
                     "title": "Execution report",
-                    "status": "resolved" if report.success else "requires_review",
+                    "status": "completed" if report.success else "requires_review",
                     "timestamp": _iso(report.completed_at),
                     "reasoning": report.summary,
                     "evidence": [],
@@ -209,8 +209,8 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "success": report.success,
                     "recommendations": report.recommendations or [],
                 } if report else None,
-                "resolution_seconds": incident.resolution_seconds or (_seconds_between(report.started_at, report.completed_at) if report else None),
-                "resolved_at": _iso(incident.resolved_at) if incident.resolved_at else (_iso(report.completed_at) if report else None),
+                "resolution_seconds": incident.resolution_seconds,
+                "resolved_at": _iso(incident.resolved_at),
                 "timeline": timeline,
             })
         return audits
@@ -228,6 +228,10 @@ def get_incident_audit_detail(incident_id: str) -> dict[str, Any] | None:
 def get_live_investigation() -> dict[str, Any]:
     """Expose only the latest workflow's own evidence and agent sequence."""
     kernel = runtime.kernel
+    simulator = runtime.active_simulator
+    active_incidents = list(getattr(simulator, "active_incidents", {}).values()) if simulator else []
+    active_incident = active_incidents[-1] if active_incidents else None
+    active_event = active_incident.get("event") if active_incident else None
     latest_report = kernel.state.execution_reports[-1] if kernel.state.execution_reports else None
     report_results = list(getattr(latest_report, "agent_results", []) or [])
     stages = [
@@ -249,13 +253,21 @@ def get_live_investigation() -> dict[str, Any]:
     evidence_count = sum(len(stage["evidence"]) for stage in stages)
     started_at = next((stage["timestamp"] for stage in stages if stage["timestamp"]), None)
     return {
-        "status": "completed" if latest_report else "waiting",
+        "status": "investigating" if active_incident else ("completed" if latest_report else "waiting"),
         "workflow": getattr(latest_report, "workflow_name", None),
         "current_reasoning": getattr(latest_report, "final_summary", "Waiting for an incident investigation."),
         "confidence": getattr(latest_report, "average_confidence", None),
         "current_recommendation": latest_report.recommendations[0] if latest_report and latest_report.recommendations else None,
         "approval_required": bool(getattr(latest_report, "approval_required", False)),
         "progress": 100 if latest_report else 0,
+        "incident": {
+            "id": getattr(active_event, "id", None),
+            "asset_id": getattr(active_event, "source", None),
+            "asset_name": active_incident.get("asset_name") if active_incident else None,
+            "incident_type": getattr(active_event, "name", None),
+            "detected_at": _iso(active_incident.get("start_time")) if active_incident else None,
+            "physical_state": "active" if active_incident else "no_active_incident",
+        },
         "metadata": {
             "workflow_version": "mao-supervisor-v1",
             "started_at": started_at,
@@ -265,6 +277,7 @@ def get_live_investigation() -> dict[str, Any]:
             "evidence_count": evidence_count,
             "data_freshness": "latest_completed_workflow" if stages else "waiting_for_event",
             "recommendation_basis": "agent evidence, safety constraints, prediction, and operational knowledge",
+            "operational_state": "field condition remains active" if active_incident else "no active field incident",
         },
         "stages": stages,
     }
@@ -293,7 +306,7 @@ def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
     session = None
     try:
         from database.connection import get_session
-        from database.models import ExecutionReportDB
+        from database.models import ActionDB, AgentExecutionDB, ExecutionReportDB, IncidentDB
 
         session = get_session()
         records = (
@@ -303,20 +316,34 @@ def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
             .all()
         )
         if records:
-            return [
-                {
+            reports = []
+            for report in records:
+                incident = session.query(IncidentDB).filter(IncidentDB.id == report.incident_id).first()
+                executions = session.query(AgentExecutionDB).filter(AgentExecutionDB.incident_id == report.incident_id).all()
+                actions = session.query(ActionDB).filter(ActionDB.incident_id == report.incident_id).all()
+                asset = runtime.kernel.asset_service.get(incident.asset_id) if incident else None
+                reports.append({
                     "id": report.id,
+                    "incident_id": report.incident_id,
                     "workflow": report.workflow,
                     "success": report.success,
+                    "status": "completed" if report.success else "requires_review",
                     "summary": report.summary,
                     "recommendations": report.recommendations or [],
                     "started_at": _iso(report.started_at),
                     "completed_at": _iso(report.completed_at),
-                    "agent_results": 0,
+                    "duration_seconds": _seconds_between(report.started_at, report.completed_at),
+                    "asset_id": incident.asset_id if incident else None,
+                    "asset_name": getattr(asset, "name", incident.asset_id) if incident else None,
+                    "incident_type": incident.event if incident else None,
+                    "incident_status": incident.status if incident else "unlinked",
+                    "agent_results": len(executions),
+                    "agents": [execution.agent_name for execution in executions],
+                    "failed_agents": [execution.agent_name for execution in executions if not execution.success],
+                    "operator_actions": len(actions),
                     "source": "persistent_audit",
-                }
-                for report in records
-            ]
+                })
+            return reports
     except Exception:
         pass
     finally:
@@ -337,7 +364,27 @@ def get_operations_live() -> dict[str, Any]:
     reports = get_execution_reports(limit=100)
     from api.adapters.maintenance_adapter import get_maintenance_plan
     maintenance = get_maintenance_plan()
-    critical_assets = sorted(assets, key=lambda asset: asset.get("health", 100))[:5]
+    critical_assets = sorted(assets, key=lambda asset: float(asset.get("health", 100)))[:8]
+    critical_asset_telemetry = []
+    for asset in critical_assets:
+        asset_history = runtime.kernel.state.get_history(asset.get("id"))[-60:]
+        sensor = getattr(asset_history[-1], "sensor_type", None) if asset_history else None
+        sensor_value = getattr(sensor, "value", sensor)
+        readings = [
+            {"timestamp": _iso(reading.timestamp), "value": float(reading.value), "sensor_type": getattr(getattr(reading, "sensor_type", None), "value", str(getattr(reading, "sensor_type", ""))), "unit": getattr(reading, "unit", "")}
+            for reading in asset_history
+            if getattr(getattr(reading, "sensor_type", None), "value", getattr(reading, "sensor_type", None)) == sensor_value
+        ]
+        health_history = []
+        if len(asset_history) >= 4:
+            stride = max(1, len(asset_history) // 10)
+            for index in range(stride, len(asset_history) + 1, stride):
+                health_history.append(round(runtime.kernel.health.calculate_health(asset_history[:index]), 1))
+        raw_health = asset.get("health")
+        current_health = float(raw_health) if raw_health is not None else (health_history[-1] if health_history else None)
+        observed_slope = (health_history[-1] - health_history[0]) / max(len(health_history) - 1, 1) if len(health_history) > 1 else 0
+        projected_health = [round(max(0, min(100, current_health + observed_slope * period)), 1) for period in range(1, 8)] if current_health is not None and len(health_history) > 1 else []
+        critical_asset_telemetry.append({"asset_id": asset.get("id"), "asset_name": asset.get("name"), "sensor_type": sensor_value, "unit": readings[-1].get("unit", "") if readings else "", "readings": readings, "health_history": health_history, "data_available": bool(readings or health_history), "forecast": {"method": "recent telemetry health slope" if projected_health else "unavailable: insufficient health history", "projected_health": projected_health, "slope_per_window": round(observed_slope, 2) if len(health_history) > 1 else None}})
     asset_by_id = {asset.get("id"): asset for asset in assets}
     refinery_groups: dict[str, list[dict[str, Any]]] = {}
     for asset in assets:
@@ -405,6 +452,19 @@ def get_operations_live() -> dict[str, Any]:
         }
         for index in range(8)
     ]
+    telemetry_by_asset = {item["asset_id"]: item for item in critical_asset_telemetry}
+    predicted_failures = []
+    for asset in critical_assets:
+        stream = telemetry_by_asset.get(asset.get("id"), {})
+        health = asset.get("health")
+        projected = stream.get("forecast", {}).get("projected_health", [])
+        predicted_failures.append({
+            **asset,
+            "forecast_available": bool(projected),
+            "forecast_method": stream.get("forecast", {}).get("method"),
+            "projected_health": projected,
+            "risk_score": round(max(0, min(100, 100 - float(health))) if health is not None else 0, 1),
+        })
     return {
         "generated_at": datetime.now().isoformat(),
         "dashboard": {
@@ -423,12 +483,13 @@ def get_operations_live() -> dict[str, Any]:
             "unit": telemetry_stream[-1].get("unit", "") if telemetry_stream else "",
             "readings": telemetry_stream,
         },
+        "critical_asset_telemetry": critical_asset_telemetry,
         "critical_incidents": [audit for audit in audits if audit["severity"] in ("Critical", "High")][:5],
         "audit_logs": audits,
         "investigation": get_live_investigation(),
         "ai_activity": activity,
         "maintenance": maintenance,
-        "predicted_failures": critical_assets,
+        "predicted_failures": predicted_failures,
         "notifications": _notifications(),
         "reports": reports[-10:],
         "revenue_projection": {

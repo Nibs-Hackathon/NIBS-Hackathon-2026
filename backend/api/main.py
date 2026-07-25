@@ -9,11 +9,7 @@ from pathlib import Path
 import asyncio
 from datetime import datetime
 from uuid import uuid4
-import time
 import os
-import os
-from dotenv import load_dotenv
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Add parent directory to path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -109,6 +105,18 @@ class NotificationReadRequest(BaseModel):
     notification_ids: list[str] = Field(default_factory=list)
     mark_all: bool = False
 
+
+def require_operational_services() -> None:
+    """Avoid presenting unavailable services as healthy operational data."""
+    if not REAL_SERVICES_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "RUNTIME_UNAVAILABLE",
+                "message": "RigOS operational services did not start. Check deployment logs and database configuration.",
+            },
+        )
+
 # CORS: local development plus Vercel production and preview deployments.
 # Set CORS_ORIGINS to a comma-separated allow-list for a custom frontend domain.
 _configured_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
@@ -122,32 +130,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # ============================================
-# CORS CONFIGURATION
-# ============================================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",           # Local Vite dev
-        "http://localhost:5174",           # Local Vite dev (alternate)
-        "http://localhost:3000",           # Local dev
-        "https://rigos-frontend.vercel.app", # Your production frontend
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Allows all Vercel preview deployments
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# ============================================
 # API ENDPOINTS
 # ============================================
 
 @app.get("/api/health")
 async def health_check():
     return {
-        "status": "ok",
+        "status": "ok" if REAL_SERVICES_AVAILABLE else "degraded",
         "message": "RigOS API is running",
         "real_services": REAL_SERVICES_AVAILABLE,
-        "assets_count": len(backend_api.get_assets()) if hasattr(backend_api, 'get_assets') else 0
+        "assets_count": len(backend_api.get_assets()) if REAL_SERVICES_AVAILABLE else 0,
+        "operational_data_available": REAL_SERVICES_AVAILABLE,
     }
 
 
@@ -231,7 +224,9 @@ async def record_operator_action(payload: OperatorActionRequest):
 
 @app.get("/api/assets")
 async def get_assets():
+    require_operational_services()
     try:
+        require_operational_services()
         return backend_api.get_assets()
     except Exception as e:
         print(f"⚠️ Error fetching assets: {e}")
@@ -239,7 +234,9 @@ async def get_assets():
 
 @app.get("/api/incidents")
 async def get_incidents():
+    require_operational_services()
     try:
+        require_operational_services()
         return backend_api.get_incidents()
     except Exception as e:
         print(f"⚠️ Error fetching incidents: {e}")
@@ -247,7 +244,9 @@ async def get_incidents():
 
 @app.post("/api/incidents/{incident_type}")
 async def trigger_incident(incident_type: str):
+    require_operational_services()
     try:
+        require_operational_services()
         result = backend_api.trigger_incident(incident_type)
         return result
     except Exception as e:
@@ -256,7 +255,9 @@ async def trigger_incident(incident_type: str):
 
 @app.get("/api/telemetry/{asset_id}")
 async def get_telemetry(asset_id: str, limit: int = 30):
+    require_operational_services()
     try:
+        require_operational_services()
         return backend_api.get_asset_telemetry(asset_id, limit)
     except Exception as e:
         print(f"⚠️ Error fetching telemetry: {e}")
@@ -268,36 +269,54 @@ async def get_telemetry(asset_id: str, limit: int = 30):
                 "value": 70 + random.randint(-10, 10),
                 "sensor_type": "Pressure"
             })
-        return data
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "TELEMETRY_UNAVAILABLE", "message": "No verified telemetry is available for this asset."},
+        ) from e
 
 @app.get("/api/predictions/{asset_id}")
 async def get_prediction(asset_id: str, horizon: int = 14):
+    require_operational_services()
     try:
+        require_operational_services()
         from api.adapters.health_prediction_adapter import get_health_prediction
         return get_health_prediction(asset_id, horizon)
     except Exception as e:
         print(f"⚠️ Error fetching prediction: {e}")
-        return {"health": 85, "rul": "365 days", "failure_probability": "15%", "confidence": "92%"}
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "PREDICTION_UNAVAILABLE", "message": "A verified health forecast could not be calculated."},
+        ) from e
 
 @app.get("/api/dashboard")
 async def get_dashboard():
+    require_operational_services()
     try:
+        require_operational_services()
         from api.adapters.dashboard_adapter import get_dashboard
         return get_dashboard()
     except Exception as e:
         print(f"⚠️ Error fetching dashboard: {e}")
-        return {"total_assets": 0, "healthy_count": 0, "incident_count": 0, "avg_health": 0}
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DASHBOARD_UNAVAILABLE", "message": "The current operational summary could not be calculated."},
+        ) from e
 
 
 @app.get("/api/operations/live")
 async def get_operations_live():
     """Aggregated Operations Center snapshot; existing page APIs remain unchanged."""
+    require_operational_services()
     try:
+        require_operational_services()
         from api.adapters.operations_adapter import get_operations_live as operations_live
         return operations_live()
     except Exception as e:
         print(f"⚠️ Error fetching operations snapshot: {e}")
-        return {"generated_at": datetime.now().isoformat(), "dashboard": {}, "assets": []}
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "OPERATIONS_SNAPSHOT_UNAVAILABLE", "message": "RigOS could not assemble a verified live operations snapshot."},
+        ) from e
 
 
 @app.post("/api/notifications/read")
