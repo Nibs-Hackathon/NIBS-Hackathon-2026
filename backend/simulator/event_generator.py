@@ -8,12 +8,13 @@ class EventGenerator:
     def __init__(self):
         self._faults = []  # Store injected faults
 
-    def add_fault(self, fault, asset_id, asset_type):
+    def add_fault(self, fault, asset_id, asset_type, health_before=None):
         """Add a fault that will generate an event."""
         self._faults.append({
             "fault": fault,
             "asset_id": asset_id,
-            "asset_type": asset_type
+            "asset_type": asset_type,
+            "health_before": health_before,
         })
 
     def generate(self, telemetry):
@@ -49,7 +50,7 @@ class EventGenerator:
             event = Event(
                 name=event_name,
                 source=asset_id,
-                payload={sensor: value, "asset_type": asset_type}
+                payload={sensor: value, "asset_type": asset_type, "health_before": fault_data.get("health_before")}
             )
             events.append(event)
         

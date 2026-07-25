@@ -11,6 +11,7 @@ from datetime import datetime
 from uuid import uuid4
 import time
 import os
+import os
 from dotenv import load_dotenv
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -103,15 +104,39 @@ class OperatorActionRequest(BaseModel):
     risk_level: str = Field(default="MEDIUM", max_length=30)
     note: str | None = Field(default=None, max_length=2000)
 
-# CORS
+
+class NotificationReadRequest(BaseModel):
+    notification_ids: list[str] = Field(default_factory=list)
+    mark_all: bool = False
+
+# CORS: local development plus Vercel production and preview deployments.
+# Set CORS_ORIGINS to a comma-separated allow-list for a custom frontend domain.
+_configured_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+_default_origins = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=[*_default_origins, *_configured_origins],
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https://([a-z0-9-]+\.)?vercel\.app"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# ============================================
+# CORS CONFIGURATION
+# ============================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",           # Local Vite dev
+        "http://localhost:5174",           # Local Vite dev (alternate)
+        "http://localhost:3000",           # Local dev
+        "https://rigos-frontend.vercel.app", # Your production frontend
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allows all Vercel preview deployments
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ============================================
 # API ENDPOINTS
 # ============================================
@@ -275,6 +300,17 @@ async def get_operations_live():
         return {"generated_at": datetime.now().isoformat(), "dashboard": {}, "assets": []}
 
 
+@app.post("/api/notifications/read")
+async def mark_notifications_read(request: NotificationReadRequest):
+    """Persist operator inbox read state for the current runtime."""
+    if request.mark_all:
+        notification_service.mark_all_read()
+    else:
+        for notification_id in request.notification_ids:
+            notification_service.mark_read(notification_id)
+    return {"unread_count": notification_service.get_unread_count()}
+
+
 @app.get("/api/incidents/audit")
 async def get_incident_audit(limit: int = 100):
     try:
@@ -397,6 +433,21 @@ async def startup_event():
             print(f"✅ Assets loaded: {len(assets)}")
         except Exception as e:
             print(f"⚠️ Could not load assets: {e}")
+    # Safe additive upgrade for existing Railway PostgreSQL deployments.
+    try:
+        from sqlalchemy import text
+        from database.connection import engine
+        with engine.begin() as connection:
+            for statement in (
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS health_before DOUBLE PRECISION",
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS health_after DOUBLE PRECISION",
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolution_seconds DOUBLE PRECISION",
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
+            ):
+                connection.execute(text(statement))
+        print("Incident outcome snapshot columns are ready")
+    except Exception as e:
+        print(f"Incident outcome schema check skipped: {e}")
     print("=" * 50)
 
 # ============================================
@@ -471,4 +522,4 @@ async def get_twin_assets():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

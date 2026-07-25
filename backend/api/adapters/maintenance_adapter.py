@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 from typing import Any
@@ -42,19 +43,59 @@ def _priority_label(priority: int) -> str:
     return f"P{max(1, min(int(priority), 3))}"
 
 
+def _service_provider(asset_type: str) -> str:
+    providers = {
+        "Pump": "Apex Rotating Services",
+        "Compressor": "Apex Rotating Services",
+        "Turbine": "Apex Rotating Services",
+        "Motor": "VoltWorks Industrial",
+        "Generator": "VoltWorks Industrial",
+        "Valve": "Precision Instrumentation",
+        "Pipeline": "Meridian Pipeline Integrity",
+        "Tank": "VesselSafe Engineering",
+        "Heat Exchanger": "ThermaCore Services",
+        "Reactor": "ProcessWorks Engineering",
+    }
+    return providers.get(asset_type, "RigOS Certified Maintenance")
+
+
+def _scheduled_date(priority: str) -> str:
+    offsets = {"P1": 1, "P2": 3, "P3": 7}
+    return (datetime.now() + timedelta(days=offsets.get(priority, 7))).date().isoformat()
+
+
 def get_maintenance_plan() -> dict:
     """Format state-manager tasks and agent output for the planner UI."""
     kernel = runtime.kernel
     results = _result_index()
     rows = []
+    seen_work = set()
     for task in kernel.state.get_tasks():
+        # Sensor, safety, and knowledge tasks are evidence collection—not work
+        # orders. The maintenance board should show only planned field work.
+        if task.assigned_agent not in {"maintenance", "planning"}:
+            continue
         result = results.get((task.name, task.assigned_agent))
+        asset_name = _task_asset_name(task, result)
+        asset = next(
+            (item for item in kernel.asset_service.all_assets() if item.name == asset_name),
+            None,
+        )
+        priority = _priority_label(task.priority)
+        key = (asset_name, task.description)
+        if key in seen_work:
+            continue
+        seen_work.add(key)
         rows.append(
             {
-                "Priority": _priority_label(task.priority),
-                "Asset": _task_asset_name(task, result),
+                "Priority": priority,
+                "Asset": asset_name,
+                "Refinery": getattr(asset, "location", "Unassigned"),
                 "Work order": task.description,
                 "Owner": task.assigned_agent.replace("_", " ").title(),
+                "Service provider": _service_provider(getattr(getattr(asset, "asset_type", None), "value", "")),
+                "Scheduled date": _scheduled_date(priority),
+                "Estimated downtime": {"P1": "6 hours", "P2": "3 hours", "P3": "1 hour"}.get(priority, "To be assessed"),
                 "State": "Completed" if result and result.success else task.status.value.title(),
                 "Confidence": (
                     f"{round(result.confidence * 100)}%" if result else "Not available"

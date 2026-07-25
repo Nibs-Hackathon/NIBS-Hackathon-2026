@@ -15,7 +15,7 @@ export function AssistantPanel({ onClose }) {
     try { const response = await askAssistant(text); setMessages((items) => [...items, { role: 'assistant', text: response.data.answer || 'No response was returned.' }]); }
     catch (error) {
       const unavailable = !error.response;
-      setMessages((items) => [...items, { role: 'assistant', text: unavailable ? 'RigOS cannot reach the local AI service. Start the FastAPI backend on port 8000, then try again.' : (error.response?.data?.detail || 'The AI service could not complete that request. Please try again.') }]);
+      setMessages((items) => [...items, { role: 'assistant', text: unavailable ? 'RigOS cannot reach the AI service. Check the deployed backend connection, then try again.' : (error.response?.data?.detail || 'The AI service could not complete that request. Please try again.') }]);
     }
     finally { setBusy(false); }
   };

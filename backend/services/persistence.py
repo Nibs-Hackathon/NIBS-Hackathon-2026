@@ -123,8 +123,19 @@ class PersistenceService:
                 severity=severity,
                 status="completed" if getattr(report, 'success', False) else "requires_review",
                 report=getattr(report, 'final_summary', ''),
+                health_before=(getattr(event, "payload", {}) or {}).get("health_before"),
+                health_after=getattr(getattr(event, "payload", {}), "get", lambda *_: None)("health_after"),
+                resolution_seconds=max(0.0, (getattr(report, "completed_at", datetime.now()) - getattr(report, "started_at", datetime.now())).total_seconds()),
+                resolved_at=getattr(report, "completed_at", datetime.now()),
                 created_at=getattr(event, 'timestamp', datetime.now()),
             )
+            asset = None
+            try:
+                from services.runtime import runtime
+                asset = runtime.kernel.asset_service.get(getattr(event, "source", ""))
+            except Exception:
+                pass
+            incident.health_after = getattr(asset, "health", None)
             IncidentRepository(session).create(incident)
 
             # Create execution report

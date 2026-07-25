@@ -198,9 +198,9 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 "status": incident.status,
                 # Historic before/after health was not captured by the original
                 # schema. Never infer it as an audit fact.
-                "health_before": None,
-                "health_after": getattr(asset, "health", None),
-                "health_capture_status": "before not captured; after is current asset health",
+                "health_before": incident.health_before,
+                "health_after": incident.health_after,
+                "health_capture_status": "captured at incident detection and workflow completion" if incident.health_before is not None else "historic record predates outcome snapshots",
                 "operator_actions": [_action_step(action) for action in actions],
                 "ai_recommendation": (report.recommendations[0] if report and report.recommendations else None),
                 "execution_report": {
@@ -209,7 +209,8 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "success": report.success,
                     "recommendations": report.recommendations or [],
                 } if report else None,
-                "resolution_seconds": _seconds_between(report.started_at, report.completed_at) if report else None,
+                "resolution_seconds": incident.resolution_seconds or (_seconds_between(report.started_at, report.completed_at) if report else None),
+                "resolved_at": _iso(incident.resolved_at) if incident.resolved_at else (_iso(report.completed_at) if report else None),
                 "timeline": timeline,
             })
         return audits
@@ -225,29 +226,24 @@ def get_incident_audit_detail(incident_id: str) -> dict[str, Any] | None:
 
 
 def get_live_investigation() -> dict[str, Any]:
-    """Expose current MAO work without inventing in-progress agent state."""
+    """Expose only the latest workflow's own evidence and agent sequence."""
     kernel = runtime.kernel
-    tasks = kernel.state.get_tasks()
-    results = kernel.state.agent_results
-    result_by_task = {
-        result.metadata.get("task_name"): result
-        for result in results
-        if result.metadata
-    }
-    stages = []
-    for task in tasks[-20:]:
-        result = result_by_task.get(task.name)
-        stages.append({
-            "task": task.name,
-            "agent": task.assigned_agent,
-            "state": "completed" if result and result.success else "failed" if result else task.status.value.lower(),
-            "reasoning": result.summary if result else task.description,
-            "evidence": result.evidence if result else [],
-            "confidence": result.confidence if result else None,
-            "recommendation": (result.recommendations[0] if result and result.recommendations else None),
-            "timestamp": _iso(result.timestamp) if result else None,
-        })
     latest_report = kernel.state.execution_reports[-1] if kernel.state.execution_reports else None
+    report_results = list(getattr(latest_report, "agent_results", []) or [])
+    stages = [
+        {
+            "task": (result.metadata or {}).get("task_name", result.agent_name),
+            "agent": result.agent_name,
+            "state": "completed" if result.success else "failed",
+            "reasoning": result.summary or result.output or result.task,
+            "evidence": result.evidence or [],
+            "confidence": result.confidence,
+            "recommendation": result.recommendations[0] if result.recommendations else None,
+            "timestamp": _iso(result.timestamp),
+            "duration_seconds": (result.metadata or {}).get("execution_time"),
+        }
+        for result in report_results
+    ]
     completed = sum(stage["state"] == "completed" for stage in stages)
     failed = sum(stage["state"] == "failed" for stage in stages)
     evidence_count = sum(len(stage["evidence"]) for stage in stages)
@@ -257,10 +253,7 @@ def get_live_investigation() -> dict[str, Any]:
         "workflow": getattr(latest_report, "workflow_name", None),
         "current_reasoning": getattr(latest_report, "final_summary", "Waiting for an incident investigation."),
         "confidence": getattr(latest_report, "average_confidence", None),
-        "current_recommendation": (
-            latest_report.recommendations[0]
-            if latest_report and latest_report.recommendations else None
-        ),
+        "current_recommendation": latest_report.recommendations[0] if latest_report and latest_report.recommendations else None,
         "approval_required": bool(getattr(latest_report, "approval_required", False)),
         "progress": 100 if latest_report else 0,
         "metadata": {
@@ -270,7 +263,7 @@ def get_live_investigation() -> dict[str, Any]:
             "completed_agents": completed,
             "failed_agents": failed,
             "evidence_count": evidence_count,
-            "data_freshness": "live_runtime" if stages else "waiting_for_event",
+            "data_freshness": "latest_completed_workflow" if stages else "waiting_for_event",
             "recommendation_basis": "agent evidence, safety constraints, prediction, and operational knowledge",
         },
         "stages": stages,
@@ -286,7 +279,11 @@ def _notifications() -> list[dict[str, Any]]:
         "severity": notification.severity.value if hasattr(notification.severity, "value") else str(notification.severity),
         "timestamp": _iso(notification.timestamp),
         "asset_id": notification.asset_id,
+        "asset_name": notification.asset_name,
         "incident_type": notification.incident_type,
+        "revenue_impact": notification.revenue_impact,
+        "metadata": notification.metadata,
+        "read": notification.read,
         "human_approval_required": notification.human_approval_required,
     } for notification in notification_service.get_notifications(limit=10)]
 

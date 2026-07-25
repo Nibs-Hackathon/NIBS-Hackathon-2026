@@ -65,6 +65,10 @@ class IncidentDB(Base):
     severity = Column(String)
     status = Column(String, default="detected")
     report = Column(Text)
+    health_before = Column(Float)
+    health_after = Column(Float)
+    resolution_seconds = Column(Float)
+    resolved_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class KnowledgeDB(Base):

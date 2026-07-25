@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -79,6 +79,7 @@ export const askAssistant = (question) => api.post('/assistant/query', { questio
 // Persistent operator supervision; this records a decision but does not command equipment.
 export const recordOperatorAction = (payload) => api.post('/operator-actions', payload);
 export const getPlatformMetadata = () => api.get('/metadata');
+export const markNotificationsRead = (payload) => api.post('/notifications/read', payload);
 
 // ============================================
 // REPORTS

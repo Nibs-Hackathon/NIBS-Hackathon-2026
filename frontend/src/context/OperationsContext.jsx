@@ -45,6 +45,13 @@ export function OperationsProvider({ children }) {
     return () => { active = false; };
   }, []);
 
+  // The REST snapshot is an independent safety net for the live socket. It
+  // keeps pages populated during deploys, sleep/wake, or a temporary WS drop.
+  useEffect(() => {
+    const interval = setInterval(() => { refresh(); }, 10000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
   useEffect(() => {
     if (!socketSnapshot) return;
     (socketSnapshot.notifications || []).forEach((notification) => {
@@ -58,7 +65,7 @@ export function OperationsProvider({ children }) {
   }, [socketSnapshot]);
 
   const value = useMemo(() => {
-    const operations = socketSnapshot ? { ...emptySnapshot, ...socketSnapshot } : initialOperations;
+    const operations = socketSnapshot ? { ...emptySnapshot, ...initialOperations, ...socketSnapshot } : initialOperations;
     return { operations, connected, loading: socketSnapshot ? false : loading, error: socketSnapshot ? null : error, refresh };
   }, [initialOperations, connected, loading, error, socketSnapshot, refresh]);
   return <OperationsContext.Provider value={value}>{children}</OperationsContext.Provider>;

@@ -56,6 +56,10 @@ class Simulator:
 
     def tick(self, tick_number, fault=None, target_asset_id=None):
         """Run one simulation tick."""
+        health_before_fault = None
+        if fault and target_asset_id:
+            target_asset = self.kernel.asset_service.get(target_asset_id)
+            health_before_fault = getattr(target_asset, "health", None) if target_asset else None
         
         # Generate telemetry
         telemetry = self.facility.tick(tick_number, fault, target_asset_id)
@@ -90,7 +94,7 @@ class Simulator:
         if fault and target_asset_id:
             asset = self.kernel.asset_service.get(target_asset_id)
             asset_type = asset.asset_type.value if asset and hasattr(asset.asset_type, 'value') else "Pump"
-            self._get_generator().add_fault(fault, target_asset_id, asset_type)
+            self._get_generator().add_fault(fault, target_asset_id, asset_type, health_before=health_before_fault)
 
         # ✅ Process events - ONLY from injected faults
         reports = []
