@@ -13,6 +13,7 @@ from database.repositories.agent_repo import AgentRepository
 from database.repositories.incident_repo import IncidentRepository
 from database.repositories.report_repo import ReportRepository
 from database.repositories.telemetry_repo import TelemetryRepository
+from services.local_mode import local_demo_mode
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,13 @@ class PersistenceService:
     """Handles database persistence with buffer and sync saving."""
     
     def __init__(self):
+        self.enabled = not local_demo_mode()
         self._buffer = deque(maxlen=5000)  # Buffer up to 5000 readings
         self._lock = Lock()
-        self._running = True
+        self._running = self.enabled
         self._flush_thread = None
-        self._start_flush_thread()
+        if self.enabled:
+            self._start_flush_thread()
     
     def _start_flush_thread(self):
         """Start background thread to flush buffer."""
@@ -59,7 +62,7 @@ class PersistenceService:
     
     def record_telemetry(self, readings):
         """Add telemetry to buffer (non-blocking)."""
-        if not readings:
+        if not self.enabled or not readings:
             return
         
         with self._lock:
@@ -107,6 +110,8 @@ class PersistenceService:
     
     def record_execution(self, event, report, severity="high"):
         """Save execution to database synchronously."""
+        if not self.enabled:
+            return
         # Run in a separate thread to not block
         Thread(target=self._record_execution_sync, args=(event, report, severity), daemon=True).start()
 
@@ -116,6 +121,8 @@ class PersistenceService:
         A successful investigation is evidence that the agents finished their
         work; it is not evidence that field conditions have normalized.
         """
+        if not self.enabled:
+            return
         Thread(
             target=self._resolve_incident_sync,
             args=(incident_id, health_after),

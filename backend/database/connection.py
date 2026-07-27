@@ -16,6 +16,12 @@ load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+LOCAL_DEMO_MODE = os.getenv("LOCAL_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+# Keep database imports valid in isolated demo mode without contacting a real
+# provider. Persistence and database-backed reads are disabled elsewhere.
+if LOCAL_DEMO_MODE:
+    DATABASE_URL = "postgresql+psycopg2://demo:demo@127.0.0.1:1/rigos_demo"
 
 # Some hosted PostgreSQL providers still publish the legacy postgres:// scheme.
 # SQLAlchemy 2 requires the explicit psycopg2 dialect for those URLs.

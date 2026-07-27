@@ -23,6 +23,15 @@ from agents.sensor import SensorAgent
 from rag.embedder import Embedder
 from rag.neon_vector_store import NeonVectorStore
 from services.refinery_generator import RefineryGenerator
+from services.local_mode import local_demo_mode
+
+
+class _LocalVectorStore:
+    """Empty retrieval store used by the isolated demo runtime."""
+
+    @staticmethod
+    def similarity_search(_query):
+        return []
 
 # Global instances
 _kernel = None
@@ -92,8 +101,12 @@ def _initialize_kernel():
     # Initialize vector store
     global _vector_store
     try:
-        embedder = Embedder()
-        _vector_store = NeonVectorStore(embedder.get_model())
+        embedder = None if local_demo_mode() else Embedder()
+        _vector_store = (
+            _LocalVectorStore()
+            if local_demo_mode()
+            else NeonVectorStore(embedder.get_model())
+        )
         print("✅ Vector store initialized")
     except Exception as e:
         print(f"⚠️ Vector store failed: {e}")
@@ -295,6 +308,10 @@ def _auto_simulation_loop(kernel):
 
 def _persist_assets_to_database(kernel):
     """Persist all assets and refineries to database."""
+    if local_demo_mode():
+        print("Local demo mode: database persistence disabled")
+        return
+
     try:
         from database.connection import get_session
         from database.models import AssetDB

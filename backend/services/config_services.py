@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
 from services.llm import LLMManager
+from services.local_mode import local_demo_mode
 
 
 class ConfigService:
@@ -22,7 +23,7 @@ class ConfigService:
         return cls._instance
 
     def __init__(self):
-        self.llm = LLMManager()
+        self.llm = None if local_demo_mode() else LLMManager()
         if not ConfigService._precomputed_done:
             self._precompute_defaults()
             ConfigService._precomputed_done = True
@@ -34,10 +35,13 @@ class ConfigService:
         for asset_type in asset_types:
             cache_key = f"thresholds_{asset_type}_default"
             if cache_key not in self._precomputed:
-                try:
-                    self._precomputed[cache_key] = self._generate_thresholds(asset_type)
-                except:
+                if local_demo_mode():
                     self._precomputed[cache_key] = self._get_default_thresholds(asset_type)
+                else:
+                    try:
+                        self._precomputed[cache_key] = self._generate_thresholds(asset_type)
+                    except Exception:
+                        self._precomputed[cache_key] = self._get_default_thresholds(asset_type)
         
         print(f"✅ Precomputed thresholds for {len(asset_types)} asset types")
 
@@ -109,6 +113,10 @@ Respond with ONLY valid JSON, no other text.
 
     def get_workflow_sequence(self, incident_type: str) -> List[str]:
         """Generate agent sequence for an incident type."""
+        fallback = ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"]
+        if local_demo_mode():
+            return fallback
+
         cache_key = f"workflow_{incident_type}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -131,10 +139,14 @@ Example: ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "plannin
         except Exception:
             pass
 
-        return ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"]
+        return fallback
 
     def get_priority_level(self, incident_type: str, severity: str) -> int:
         """Generate priority level for an incident."""
+        severity_map = {"critical": 1, "high": 2, "medium": 3, "low": 4}
+        if local_demo_mode():
+            return severity_map.get(severity.lower(), 3)
+
         prompt = f"""
 For an industrial {incident_type} incident with {severity} severity, assign a priority level.
 
@@ -151,11 +163,14 @@ Return ONLY an integer.
         except Exception:
             pass
 
-        severity_map = {"Critical": 1, "High": 2, "Medium": 3, "Low": 4}
-        return severity_map.get(severity, 3)
+        return severity_map.get(severity.lower(), 3)
 
     def get_risk_weights(self, incident_type: str) -> Dict[str, int]:
         """Generate risk weights for different sensors."""
+        fallback = {"pressure_weight": 30, "temperature_weight": 20, "gas_weight": 25, "vibration_weight": 15, "flow_weight": 10}
+        if local_demo_mode():
+            return fallback
+
         cache_key = f"risk_weights_{incident_type}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -181,7 +196,7 @@ Sum of all weights should be 100.
         except Exception:
             pass
 
-        return {"pressure_weight": 30, "temperature_weight": 25, "gas_weight": 35, "vibration_weight": 20, "flow_weight": 10}
+        return fallback
 
     def clear_cache(self):
         """Clear the configuration cache."""

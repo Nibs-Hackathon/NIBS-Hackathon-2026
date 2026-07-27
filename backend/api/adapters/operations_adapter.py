@@ -12,6 +12,7 @@ from typing import Any
 
 from api.adapters.backend_api_new import api
 from services.runtime import runtime
+from services.local_mode import local_demo_mode
 
 # A database outage must not serially delay every HTTP poll and WebSocket tick.
 # After one failed durable-store attempt, serve the runtime audit fallback briefly
@@ -129,6 +130,8 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
     outage without presenting it as durable audit history.
     """
     global _PERSISTENCE_RETRY_AFTER
+    if local_demo_mode():
+        return _runtime_incidents(limit)
     if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
         return _runtime_incidents(limit)
     session = None
@@ -316,6 +319,8 @@ def _notifications() -> list[dict[str, Any]]:
 def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
     """Prefer persisted reports; live MAO state remains an outage fallback."""
     global _PERSISTENCE_RETRY_AFTER
+    if local_demo_mode():
+        return api.get_reports()[-limit:]
     if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
         return api.get_reports()[-limit:]
     session = None
