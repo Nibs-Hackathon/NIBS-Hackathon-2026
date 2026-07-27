@@ -1,6 +1,5 @@
-"""Optimized Orchestrator with parallel agent execution."""
+"""Orchestrator with deterministic, dependency-safe agent execution."""
 
-import concurrent.futures
 import time
 from datetime import datetime
 from mao.core.context import ExecutionContext
@@ -75,7 +74,7 @@ class Orchestrator:
             self.state.add_task(task)
             self.scheduler.submit(task)
 
-        # ✅ Execute tasks in parallel
+        # Execute one task at a time because agents exchange context metadata.
         def execute_task(task):
             task.status = TaskStatus.RUNNING
             result = self.executor.execute(task, context)
@@ -84,23 +83,12 @@ class Orchestrator:
             return result
 
         start = time.time()
-        
-        # Extract all tasks first
-        all_tasks = []
+
+        # Agents share metadata, results, and metrics through the execution
+        # context. Process them by scheduler priority so downstream agents see
+        # the outputs produced by their dependencies.
         while not self.scheduler.empty():
-            all_tasks.append(self.scheduler.next())
-        
-        # Execute in parallel with ThreadPoolExecutor
-        if all_tasks:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                futures = {executor.submit(execute_task, task): task for task in all_tasks}
-                
-                for future in concurrent.futures.as_completed(futures):
-                    task = futures[future]
-                    try:
-                        result = future.result(timeout=30)
-                    except Exception as e:
-                        self.logger.info("Executor", f"Task {task.name} failed: {e}")
+            execute_task(self.scheduler.next())
 
         elapsed = time.time() - start
         self.logger.info("Executor", f"[{context.execution_id}] All agents completed in {elapsed:.2f}s")

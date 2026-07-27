@@ -33,21 +33,21 @@ class MaintenanceWorkflow(Workflow):
                 name="Retrieve Manual",
                 description="Retrieve maintenance manuals and procedures.",
                 assigned_agent="knowledge",
-                priority=4,
+                priority=6,
             ),
 
             Task(
                 name="Maintenance Planning",
                 description="Generate maintenance recommendations.",
                 assigned_agent="maintenance",
-                priority=5,
+                priority=4,
             ),
 
             Task(
                 name="Execution Plan",
                 description="Create the maintenance execution plan.",
                 assigned_agent="planning",
-                priority=6,
+                priority=5,
             ),
 
             *intelligence[1:],

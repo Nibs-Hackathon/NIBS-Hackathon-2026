@@ -33,21 +33,21 @@ class PressureWorkflow(Workflow):
                 name="Retrieve SOP",
                 description="Retrieve the pressure spike operating procedure.",
                 assigned_agent="knowledge",
-                priority=4,
+                priority=6,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for the affected equipment.",
                 assigned_agent="maintenance",
-                priority=5,
+                priority=4,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate the recovery and restart plan.",
                 assigned_agent="planning",
-                priority=6,
+                priority=5,
             ),
 
             *intelligence[1:],

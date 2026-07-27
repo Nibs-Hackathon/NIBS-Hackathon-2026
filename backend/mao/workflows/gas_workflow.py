@@ -33,21 +33,21 @@ class GasWorkflow(Workflow):
                 name="Retrieve SOP",
                 description="Retrieve gas leak emergency procedures.",
                 assigned_agent="knowledge",
-                priority=4,
+                priority=6,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend repair actions for the gas leak.",
                 assigned_agent="maintenance",
-                priority=5,
+                priority=4,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Generate a gas leak recovery plan.",
                 assigned_agent="planning",
-                priority=6,
+                priority=5,
             ),
 
             *intelligence[1:],

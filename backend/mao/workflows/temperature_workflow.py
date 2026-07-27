@@ -33,21 +33,21 @@ class TemperatureWorkflow(Workflow):
                 name="Retrieve SOP",
                 description="Retrieve overheating operating procedures.",
                 assigned_agent="knowledge",
-                priority=4,
+                priority=6,
             ),
 
             Task(
                 name="Maintenance Recommendation",
                 description="Recommend maintenance for overheating equipment.",
                 assigned_agent="maintenance",
-                priority=5,
+                priority=4,
             ),
 
             Task(
                 name="Recovery Plan",
                 description="Create a safe recovery procedure.",
                 assigned_agent="planning",
-                priority=6,
+                priority=5,
             ),
 
             *intelligence[1:],
