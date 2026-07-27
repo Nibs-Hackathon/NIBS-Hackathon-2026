@@ -39,9 +39,13 @@ export function normalizeTraceStages(stages = [], investigation = {}) {
       state: stage.state || 'queued',
       reasoning: stage.reasoning || stage.finding || stage.summary || null,
       inputs: stage.inputs || stage.evidence || (stage.input ? JSON.stringify(stage.input) : `telemetry + case context · step ${index + 1}`),
-      outputs: stage.outputs || stage.output || stage.recommendation || (confidence != null ? `${Math.round(confidence)}% confidence finding` : null),
+      outputs: stage.outputs || stage.output || stage.recommendation || (confidence != null ? `${confidence.toFixed(2)}% confidence finding` : null),
       modelId: stage.model_id || stage.modelId || investigation.model_id || 'gemini-flash · MAO',
-      duration: stage.duration_seconds != null ? `${stage.duration_seconds}s` : stage.duration || null,
+      duration: stage.duration_seconds != null
+        ? (Number(stage.duration_seconds) < 1
+          ? `${Math.max(0.01, Number(stage.duration_seconds) * 1000).toFixed(2)} ms`
+          : `${Number(stage.duration_seconds).toFixed(2)} s`)
+        : stage.duration || null,
       confidence,
     };
   });
@@ -87,7 +91,7 @@ export function buildEvidenceFacts({ incident, stages = [], investigation } = {}
   });
   if (investigation?.confidence != null) {
     const conf = Number(investigation.confidence) <= 1 ? Number(investigation.confidence) * 100 : Number(investigation.confidence);
-    facts.push({ id: 'conf', type: 'model', label: `${Math.round(conf)}% confidence`, detail: 'investigation aggregate' });
+    facts.push({ id: 'conf', type: 'model', label: `${conf.toFixed(2)}% confidence`, detail: 'investigation aggregate' });
   }
   return facts;
 }

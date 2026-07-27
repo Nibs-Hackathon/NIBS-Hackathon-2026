@@ -15,10 +15,11 @@ import { useColorMode } from '../context/ColorModeContext';
 import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
 import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
-import { resolveBreadcrumbs } from '../context/breadcrumbs';
 import { markNotificationsRead } from '../api/client';
 import { facilityOptionsFromRefineries } from '../api/resourceAdapters';
 import { AssistantPanel } from './AssistantPanel';
+import './sync-control.css';
+import './topbar-fixes.css';
 import {
   AuditSpine, exportAuditLog, useOperatorAudit,
 } from './accountability';
@@ -89,30 +90,6 @@ export function ProductShell({ children }) {
       : activeIncidents
         ? 'AI review queued'
         : 'AI monitoring';
-
-  const selectedAsset = (operations.assets || []).find((a) => a.id === objectApi.selection.assetId);
-  const assetName = selectedAsset?.name;
-  const unitLabel = (() => {
-    const location = selectedAsset?.location || selectedAsset?.zone || objectApi.scope?.unit;
-    if (!location) return null;
-    const parts = String(location).split(/[›>\/|]/).map((part) => part.trim()).filter(Boolean);
-    return parts[1] || parts[0] || null;
-  })();
-  const incident = (operations.audit_logs || []).find((i) => i.id === objectApi.selection.incidentId)
-    || (operations.critical_incidents || []).find((i) => i.id === objectApi.selection.incidentId);
-  const crumbs = useMemo(() => resolveBreadcrumbs({
-    facility,
-    workspace: workspaceKey,
-    selection: objectApi.selection,
-    labels: {
-      assetName,
-      unitLabel: workspaceKey === 'assets' ? unitLabel : null,
-      incidentLabel: incident ? label(incident.incident_type || incident.id) : null,
-      workOrderTitle: objectApi.draft?.workOrder?.title || objectApi.selection.workOrderId,
-      reportTitle: (operations.reports || []).find((r) => r.id === objectApi.selection.reportId)?.title,
-      stageLabel: objectApi.selection.agentStageId,
-    },
-  }), [facility, workspaceKey, objectApi.selection, objectApi.draft, assetName, unitLabel, incident, operations.reports]);
 
   const auditEvents = useOperatorAudit(objectApi, operations);
 
@@ -459,16 +436,16 @@ export function ProductShell({ children }) {
       <Box className="os-stage">
         <a className="e6-skip-link" href="#main-content">Skip to main content</a>
         <header className="os-topbar" role="banner">
-          <Stack direction="row" alignItems="center" spacing={1.25}>
+          <Stack className="os-topbar-primary" direction="row" alignItems="center" spacing={1.25}>
             <Button className="os-command-trigger" onClick={() => setCommandOpen(true)} startIcon={<SearchOutlined />} endIcon={<kbd>⌘ K</kbd>} aria-label="Open command palette">
-              Search assets, incidents, work orders…
+              <span className="os-command-label">Search assets, incidents, work orders…</span>
             </Button>
             <Box className="os-top-context">
               <Typography>{WORKSPACE_LABELS[workspaceKey] || current[0]}</Typography>
               <Typography>{facility}</Typography>
             </Box>
           </Stack>
-          <Stack direction="row" alignItems="center" spacing={0.5}>
+          <Stack className="os-topbar-actions" direction="row" alignItems="center" spacing={0.5}>
             <Box className="os-ambient">
               <Typography>{clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Typography>
               <Typography>
@@ -511,21 +488,6 @@ export function ProductShell({ children }) {
           </Stack>
         </header>
         <main id="main-content" tabIndex={-1}>
-          <Box className="os-crumb" component="nav" aria-label="Breadcrumb">
-            {crumbs.map((crumb, index) => (
-              <Box key={`${crumb.label}-${index}`} component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
-                {index > 0 && <Typography component="span" sx={{ opacity: 0.45 }} aria-hidden>›</Typography>}
-                <Button
-                  size="small"
-                  onClick={() => crumb.workspace && navigateTo(objectApi, navigate, crumb.workspace, crumb.preserve || {})}
-                  sx={{ minWidth: 0, textTransform: 'none', fontWeight: index === crumbs.length - 1 ? 800 : 600 }}
-                  aria-current={index === crumbs.length - 1 ? 'page' : undefined}
-                >
-                  {crumb.label}
-                </Button>
-              </Box>
-            ))}
-          </Box>
           {children}
         </main>
         <Box

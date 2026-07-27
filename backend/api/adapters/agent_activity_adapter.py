@@ -13,6 +13,7 @@ from database.connection import get_session
 from database.repositories.activity_repo import ActivityRepository
 # ✅ FIXED - Use runtime proxy
 from services.runtime import runtime
+from services.local_mode import local_demo_mode
 
 
 def _format_time(timestamp) -> str:
@@ -37,6 +38,8 @@ def _runtime_activity() -> list[dict]:
 
 def _persisted_activity() -> tuple[list[dict], str | None]:
     """Load immutable activity records without blocking live state rendering."""
+    if local_demo_mode():
+        return [], None
     session = None
     try:
         session = get_session()

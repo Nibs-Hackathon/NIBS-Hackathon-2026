@@ -1,0 +1,29 @@
+.os-sync {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+}
+
+.os-sync .MuiButton-startIcon {
+  display: grid !important;
+  place-items: center !important;
+  width: 18px;
+  height: 18px;
+  margin: 0 !important;
+  line-height: 0;
+}
+
+.os-sync .MuiButton-startIcon > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  transform-origin: center;
+}
+
+.os-sync .MuiButton-startIcon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}

@@ -5,6 +5,7 @@ import re
 import time
 from typing import Dict, List, Any
 from services.llm import LLMManager
+from services.local_mode import local_demo_mode
 
 
 class AIConfigGenerator:
@@ -20,6 +21,11 @@ class AIConfigGenerator:
     
     def __init__(self):
         if AIConfigGenerator._config is None:
+            if local_demo_mode():
+                self.llm = None
+                AIConfigGenerator._config = self._get_default_config()
+                print("Local demo mode: using deterministic operational configuration")
+                return
             self.llm = LLMManager()
             self._generate_all_config()
     
@@ -92,11 +98,11 @@ Return ONLY a JSON object with the following structure:
         }
     },
     "workflow_sequences": {
-        "pressure_spike": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-        "gas_leak": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-        "high_temperature": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-        "high_vibration": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-        "flow_restriction": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"]
+        "pressure_spike": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+        "gas_leak": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+        "high_temperature": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+        "high_vibration": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+        "flow_restriction": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"]
     },
     "severity_mapping": {
         "Critical": 1,
@@ -217,11 +223,11 @@ Use realistic industrial values. Respond with ONLY valid JSON, no other text.
                 }
             },
             "workflow_sequences": {
-                "pressure_spike": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-                "gas_leak": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-                "high_temperature": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-                "high_vibration": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"],
-                "flow_restriction": ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"]
+                "pressure_spike": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+                "gas_leak": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+                "high_temperature": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+                "high_vibration": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"],
+                "flow_restriction": ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"]
             },
             "severity_mapping": {"Critical": 1, "High": 2, "Medium": 3, "Low": 4},
             "health_status_mapping": {"healthy": 80, "warning": 50, "critical": 30},
@@ -259,7 +265,7 @@ Use realistic industrial values. Respond with ONLY valid JSON, no other text.
     def get_workflow_sequence(self, incident_type: str) -> List[str]:
         """Get workflow sequence for an incident type."""
         config = self.get_config()
-        return config.get("workflow_sequences", {}).get(incident_type, ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"])
+        return config.get("workflow_sequences", {}).get(incident_type, ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"])
     
     def get_prediction_params(self) -> Dict:
         """Get prediction parameters."""

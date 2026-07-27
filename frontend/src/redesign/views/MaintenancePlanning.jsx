@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
-import { BuildOutlined, FilterListOutlined, MoreHorizOutlined } from '@mui/icons-material';
+import { BuildOutlined, MoreHorizOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
@@ -135,7 +135,6 @@ export function MaintenancePlanning({ maintenance }) {
           ) : null}
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button size="small" startIcon={<FilterListOutlined />}>Priority matrix</Button>
           <Button size="small" variant="contained" startIcon={<BuildOutlined />} disabled={busy} onClick={handleCreate}>
             Create work order
           </Button>
@@ -172,7 +171,6 @@ export function MaintenancePlanning({ maintenance }) {
                 </Button>
               ))}
             </Box>
-            <Button size="small">This operating week</Button>
           </Box>
           <Box className={`maintenance-${lane}`}>
             {lane === 'kanban' ? columns.map((column) => {

@@ -1,6 +1,19 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Chip, Stack, Typography } from '@mui/material';
 import { ConfidenceMeter, StatusBadge, normalizeStatus } from './status';
-import { resolveTone } from '../tokens';
+
+function evidenceItems(inputs) {
+  if (!inputs) return [];
+  if (Array.isArray(inputs)) return inputs.filter(Boolean).map(String);
+  return [String(inputs)];
+}
+
+function numericText(value) {
+  return String(value).replace(/-?\d+(?:\.\d+)?/g, (match) => Number(match).toFixed(2));
+}
+
+function findingText(value) {
+  return String(value).replace(/-?\d+(?:\.\d+)?/g, (match) => Number(match).toFixed(0));
+}
 
 /** AgentStageCard */
 export function AgentStageCard({
@@ -21,8 +34,8 @@ export function AgentStageCard({
         <StatusBadge status={status} label={state} live={state === 'running'} />
       </Stack>
       <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
-        {duration != null && <Typography variant="caption" color="text.secondary">{duration}s</Typography>}
-        {confidence != null && <Typography className="rig-data">{Math.round(confidence)}%</Typography>}
+        {duration != null && <Typography variant="caption" color="text.secondary">{Number(duration).toFixed(2)}s</Typography>}
+        {confidence != null && <Typography className="rig-data">{Number(confidence).toFixed(2)}%</Typography>}
       </Stack>
     </Box>
   );
@@ -52,37 +65,83 @@ export function AgentPipeline({ stages = [], selectedId, onSelect, className = '
 export function TracePanel({ stages = [], selectedId, onSelect, className = '', sx }) {
   return (
     <Box className={`rig-trace-panel ${className}`} sx={sx}>
-      <Typography className="rig-label">Agent trace</Typography>
-      <Stack spacing={1} sx={{ mt: 1 }}>
+      <Box className="rig-trace-heading">
+        <Box>
+          <Typography className="rig-label">Agent decisions</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Select a step to see its conclusion and supporting evidence.
+          </Typography>
+        </Box>
+        <Chip size="small" label={`${stages.length} steps`} />
+      </Box>
+      <Stack spacing={1.25}>
         {stages.map((stage, index) => {
           const id = stage.id || stage.name || index;
-          const open = selectedId == null || selectedId === id;
+          const open = selectedId === id;
+          const evidence = evidenceItems(stage.inputs);
           return (
             <Box
               key={id}
+              component="button"
+              type="button"
               onClick={() => onSelect?.(stage)}
-              sx={{
-                p: 1.25, borderRadius: 1, cursor: 'pointer',
-                border: '1px solid', borderColor: selectedId === id ? resolveTone('ai-active').main : 'divider',
-                bgcolor: selectedId === id ? 'rgba(94,77,178,.08)' : 'transparent',
-              }}
+              className={`rig-trace-card ${open ? 'is-open' : ''}`}
+              aria-expanded={open}
             >
-              <Stack direction="row" justifyContent="space-between">
-                <Typography fontWeight={700}>{stage.name || stage.agent}</Typography>
-                <StatusBadge status={stage.state} label={stage.state} />
-              </Stack>
+              <Box className="rig-trace-summary">
+                <span className="rig-trace-step">{String(index + 1).padStart(2, '0')}</span>
+                <Box>
+                  <Typography fontWeight={750}>{stage.name || stage.agent}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {open ? 'Showing decision details' : findingText(stage.reasoning || 'Decision recorded')}
+                  </Typography>
+                </Box>
+                <Box className="rig-trace-meta">
+                  {stage.confidence != null && <b>{Number(stage.confidence).toFixed(2)}%</b>}
+                  <StatusBadge status={stage.state} label={stage.state} />
+                </Box>
+              </Box>
               {open && (
-                <Box sx={{ mt: 1 }}>
-                  {stage.reasoning && <Typography variant="body2" color="text.secondary">{stage.reasoning}</Typography>}
-                  {stage.inputs && <Typography className="rig-mono" sx={{ mt: 0.5 }}>in: {String(stage.inputs)}</Typography>}
-                  {stage.outputs && <Typography className="rig-mono">out: {String(stage.outputs)}</Typography>}
-                  {stage.modelId && <Typography className="rig-mono" color="text.secondary">model: {stage.modelId}</Typography>}
-                  {stage.duration && <Typography className="rig-mono" color="text.secondary">duration: {stage.duration}</Typography>}
+                <Box className="rig-trace-details">
+                  {stage.reasoning && (
+                    <Box className="rig-trace-finding">
+                      <Typography className="rig-label">Finding</Typography>
+                      <Typography>{findingText(stage.reasoning)}</Typography>
+                    </Box>
+                  )}
+                  {stage.outputs && (
+                    <Box className="rig-trace-action">
+                      <Typography className="rig-label">Recommended next step</Typography>
+                      <Typography>{numericText(stage.outputs)}</Typography>
+                    </Box>
+                  )}
+                  {evidence.length > 0 && (
+                    <Box className="rig-trace-evidence">
+                      <Typography className="rig-label">Evidence used</Typography>
+                      <Stack direction="row" gap={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                        {evidence.map((item, evidenceIndex) => (
+                          <Chip
+                            key={`${id}-evidence-${evidenceIndex}`}
+                            size="small"
+                            label={numericText(item)}
+                            title={item}
+                          />
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                  <Box className="rig-trace-footer">
+                    {stage.confidence != null && (
+                      <ConfidenceMeter value={stage.confidence} label="Decision confidence" />
+                    )}
+                    {stage.duration && <Typography variant="caption">Completed in {numericText(stage.duration)}</Typography>}
+                  </Box>
                 </Box>
               )}
             </Box>
           );
         })}
+        {!stages.length && <Typography color="text.secondary">No agent decisions recorded yet.</Typography>}
       </Stack>
     </Box>
   );
