@@ -7,10 +7,17 @@ records.  It does not alter agent, simulator, or database behaviour.
 from __future__ import annotations
 
 from datetime import datetime
+import time
 from typing import Any
 
 from api.adapters.backend_api_new import api
 from services.runtime import runtime
+
+# A database outage must not serially delay every HTTP poll and WebSocket tick.
+# After one failed durable-store attempt, serve the runtime audit fallback briefly
+# before probing persistence again.
+_PERSISTENCE_RETRY_AFTER = 0.0
+_PERSISTENCE_BACKOFF_SECONDS = 30.0
 
 
 def _iso(value: Any) -> str | None:
@@ -121,6 +128,9 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
     ephemeral. A live fallback keeps the control room useful during a database
     outage without presenting it as durable audit history.
     """
+    global _PERSISTENCE_RETRY_AFTER
+    if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
+        return _runtime_incidents(limit)
     session = None
     try:
         from database.connection import get_session
@@ -213,8 +223,10 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 "resolved_at": _iso(incident.resolved_at),
                 "timeline": timeline,
             })
+        _PERSISTENCE_RETRY_AFTER = 0.0
         return audits
     except Exception:
+        _PERSISTENCE_RETRY_AFTER = time.monotonic() + _PERSISTENCE_BACKOFF_SECONDS
         return _runtime_incidents(limit)
     finally:
         if session is not None:
@@ -303,6 +315,9 @@ def _notifications() -> list[dict[str, Any]]:
 
 def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
     """Prefer persisted reports; live MAO state remains an outage fallback."""
+    global _PERSISTENCE_RETRY_AFTER
+    if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
+        return api.get_reports()[-limit:]
     session = None
     try:
         from database.connection import get_session
@@ -343,8 +358,10 @@ def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
                     "operator_actions": len(actions),
                     "source": "persistent_audit",
                 })
+            _PERSISTENCE_RETRY_AFTER = 0.0
             return reports
     except Exception:
+        _PERSISTENCE_RETRY_AFTER = time.monotonic() + _PERSISTENCE_BACKOFF_SECONDS
         pass
     finally:
         if session is not None:

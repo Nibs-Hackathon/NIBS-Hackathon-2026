@@ -1,86 +1,697 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Avatar, Badge, Box, Button, Dialog, Divider, IconButton, InputAdornment, Stack, TextField, Tooltip, Typography } from '@mui/material';
-import { ArticleOutlined, BuildOutlined, CloseOutlined, DashboardOutlined, DarkModeOutlined, DevicesOutlined, KeyboardCommandKeyOutlined, LightModeOutlined, MemoryOutlined, NotificationsOutlined, ScienceOutlined, SearchOutlined, SettingsOutlined, SmartToyOutlined, WarningAmberOutlined } from '@mui/icons-material';
+import {
+  Avatar, Badge, Box, Button, Dialog, Divider, IconButton, InputAdornment, Menu, MenuItem, Stack, TextField, Tooltip, Typography,
+} from '@mui/material';
+import {
+  ArticleOutlined, BuildOutlined, ChevronLeftOutlined, ChevronRightOutlined, CloseOutlined, DashboardOutlined,
+  DarkModeOutlined, DevicesOutlined, HistoryOutlined, LightModeOutlined, MemoryOutlined, MoreHorizOutlined,
+  NotificationsOutlined, PushPinOutlined, ScienceOutlined, SearchOutlined, SettingsOutlined, SmartToyOutlined,
+  SyncOutlined, ViewSidebarOutlined, WarningAmberOutlined,
+} from '@mui/icons-material';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { useColorMode } from '../context/ColorModeContext';
 import { useOperations } from '../context/OperationsContext';
+import { useObjectContext } from '../context/ObjectContext';
+import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
+import { resolveBreadcrumbs } from '../context/breadcrumbs';
 import { markNotificationsRead } from '../api/client';
 import { AssistantPanel } from './AssistantPanel';
+import {
+  AuditSpine, exportAuditLog, useOperatorAudit,
+} from './accountability';
 
 const nav = [
-  ['Command Center', '/', DashboardOutlined, 'Navigate'], ['Assets', '/assets', DevicesOutlined, 'Navigate'],
-  ['Incidents', '/incident-simulator', WarningAmberOutlined, 'Navigate'], ['Maintenance', '/maintenance', BuildOutlined, 'Navigate'],
-  ['AI Investigation', '/agent-monitor', MemoryOutlined, 'Navigate'], ['Forecasting', '/health-prediction', ScienceOutlined, 'Navigate'],
-  ['Reports', '/reports', ArticleOutlined, 'Navigate'],
+  ['Command Center', '/', DashboardOutlined, 'Overview', 'command'],
+  ['Assets', '/assets', DevicesOutlined, 'Operations', 'assets'],
+  ['Incidents', '/incident-simulator', WarningAmberOutlined, 'Operations', 'incidents'],
+  ['Maintenance', '/maintenance', BuildOutlined, 'Operations', 'maintenance'],
+  ['AI Investigation', '/agent-monitor', MemoryOutlined, 'Intelligence', 'investigation'],
+  ['Forecasting', '/health-prediction', ScienceOutlined, 'Intelligence', 'forecasting'],
+  ['Reports', '/reports', ArticleOutlined, 'Intelligence', 'reports'],
 ];
+const facilities = ['Alpha Refinery', 'North Sea Portfolio', 'Enterprise view'];
+const label = (value = '') => String(value).replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const formatTime = (value) => (value ? new Date(value).toLocaleTimeString() : 'Live event');
 
+/** Epic 4 — ProductShell wired to ObjectContext (scope, search, keyboard, breadcrumbs). */
 export function ProductShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const reduced = useReducedMotion();
   const { mode, toggle } = useColorMode();
-  const { operations, connected, refresh } = useOperations();
-  const [expanded, setExpanded] = useState(false);
+  const { operations = {}, ambient = {}, connected = false, refresh = async () => {} } = useOperations();
+  const objectApi = useObjectContext();
+
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('rigos-nav-collapsed') === 'true');
+  const [facilityAnchor, setFacilityAnchor] = useState(null);
+  const [profileAnchor, setProfileAnchor] = useState(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [facility, setFacility] = useState(() => localStorage.getItem('rigos-facility') || 'Portfolio view');
+  const [clock, setClock] = useState(() => new Date());
+  const [syncAge, setSyncAge] = useState(0);
+  const auditSpineRef = useRef(null);
+  const workspacePanelRef = useRef(null);
+  const navRefs = useRef([]);
 
+  const facility = objectApi.scope.facility || facilities[0];
+  const workspaceKey = pathToWorkspace(location.pathname);
   const current = nav.find((item) => item[1] === location.pathname) || nav[0];
-  const notifications = operations.notifications || [];
-  const unread = notifications.filter((item) => !item.read);
-  const activeIncidents = Number(operations.dashboard?.active_incidents || 0);
-  const fleetHealth = Number(operations.dashboard?.fleet_health || 0);
-  const systemLabel = !connected ? 'Synchronizing' : activeIncidents > 0 ? 'Investigating' : fleetHealth && fleetHealth < 80 ? 'Needs review' : 'System healthy';
-  const systemTone = !connected || activeIncidents > 0 || (fleetHealth && fleetHealth < 80) ? 'warn' : 'ok';
+  const workspacePanel = objectApi.ui.workspacePanelOpen;
+  const pinned = objectApi.ui.pinnedRoutes || [];
 
-  const commands = useMemo(() => [
-    ...nav.map(([label, path, Icon, group]) => ({ label, group, icon: <Icon />, run: () => navigate(path) })),
-    { label: mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', group: 'Workspace', icon: mode === 'dark' ? <LightModeOutlined /> : <DarkModeOutlined />, run: toggle },
-    { label: 'Open notifications', group: 'Workspace', icon: <NotificationsOutlined />, run: () => setInboxOpen(true) },
-    { label: 'Open settings', group: 'Workspace', icon: <SettingsOutlined />, run: () => setSettingsOpen(true) },
-    { label: 'Ask RigOS AI', group: 'AI', icon: <SmartToyOutlined />, run: () => setAssistantOpen(true) },
-  ], [mode, navigate, toggle]);
-  const matches = commands.filter((item) => `${item.label} ${item.group}`.toLowerCase().includes(query.toLowerCase()));
+  const notifications = Array.isArray(operations.notifications) ? operations.notifications : [];
+  const unread = notifications.filter((item) => item && !item.read);
+  const agentsWorking = Array.isArray(operations.investigation?.stages)
+    ? operations.investigation.stages.filter((stage) => stage?.state === 'running').length
+    : 0;
+  const activeIncidents = Number(operations.dashboard?.active_incidents || 0);
+  const aiLabel = !connected
+    ? 'Syncing'
+    : agentsWorking
+      ? `${agentsWorking} agents active`
+      : activeIncidents
+        ? 'AI review queued'
+        : 'AI monitoring';
+
+  const selectedAsset = (operations.assets || []).find((a) => a.id === objectApi.selection.assetId);
+  const assetName = selectedAsset?.name;
+  const unitLabel = (() => {
+    const location = selectedAsset?.location || selectedAsset?.zone || objectApi.scope?.unit;
+    if (!location) return null;
+    const parts = String(location).split(/[›>\/|]/).map((part) => part.trim()).filter(Boolean);
+    return parts[1] || parts[0] || null;
+  })();
+  const incident = (operations.audit_logs || []).find((i) => i.id === objectApi.selection.incidentId)
+    || (operations.critical_incidents || []).find((i) => i.id === objectApi.selection.incidentId);
+  const crumbs = useMemo(() => resolveBreadcrumbs({
+    facility,
+    workspace: workspaceKey,
+    selection: objectApi.selection,
+    labels: {
+      assetName,
+      unitLabel: workspaceKey === 'assets' ? unitLabel : null,
+      incidentLabel: incident ? label(incident.incident_type || incident.id) : null,
+      workOrderTitle: objectApi.draft?.workOrder?.title || objectApi.selection.workOrderId,
+      reportTitle: (operations.reports || []).find((r) => r.id === objectApi.selection.reportId)?.title,
+      stageLabel: objectApi.selection.agentStageId,
+    },
+  }), [facility, workspaceKey, objectApi.selection, objectApi.draft, assetName, unitLabel, incident, operations.reports]);
+
+  const auditEvents = useOperatorAudit(objectApi, operations);
+
+  const commands = useMemo(() => {
+    const items = [
+      ...nav.map(([name, , Icon, group, workspace]) => ({
+        label: name,
+        group,
+        icon: <Icon />,
+        run: () => navigateTo(objectApi, navigate, workspace),
+      })),
+      { label: 'Open notifications', group: 'System', icon: <NotificationsOutlined />, run: () => setInboxOpen(true) },
+      { label: 'Ask RigOS AI', group: 'System', icon: <SmartToyOutlined />, run: () => setAssistantOpen(true) },
+      {
+        label: mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+        group: 'System',
+        icon: mode === 'dark' ? <LightModeOutlined /> : <DarkModeOutlined />,
+        run: toggle,
+      },
+      {
+        label: 'Export audit log',
+        group: 'System',
+        icon: <HistoryOutlined />,
+        description: 'Download immutable decision trail (CSV)',
+        run: () => exportAuditLog({ events: auditEvents, facility }),
+      },
+      {
+        label: 'Toggle asset inspector',
+        group: 'System',
+        icon: <ViewSidebarOutlined />,
+        description: 'Keyboard ] on Assets',
+        run: () => {
+          navigateTo(objectApi, navigate, 'assets');
+          objectApi.patchUi?.({ inspectorCollapsed: !objectApi.ui?.inspectorCollapsed });
+        },
+      },
+    ];
+
+    const assets = operations.assets || [];
+    const byId = new Map(assets.map((asset) => [asset.id, asset]));
+
+    (objectApi.favorites?.assetIds || []).forEach((id) => {
+      const asset = byId.get(id);
+      if (!asset) return;
+      items.push({
+        label: asset.name || asset.id,
+        group: 'Favorites',
+        description: [asset.tag, asset.location || asset.zone].filter(Boolean).join(' · ') || asset.id,
+        icon: <PushPinOutlined />,
+        run: () => navigateTo(objectApi, navigate, 'assets', { assetId: asset.id }),
+      });
+    });
+
+    (objectApi.recent?.assetIds || []).slice(0, 10).forEach((id) => {
+      const asset = byId.get(id);
+      if (!asset) return;
+      items.push({
+        label: asset.name || asset.id,
+        group: 'Recent',
+        description: [asset.tag, asset.location || asset.zone].filter(Boolean).join(' · ') || asset.id,
+        icon: <HistoryOutlined />,
+        run: () => navigateTo(objectApi, navigate, 'assets', { assetId: asset.id }),
+      });
+    });
+
+    assets.forEach((asset) => {
+      const tag = asset.tag || asset.id;
+      items.push({
+        label: asset.name || asset.id,
+        group: 'Assets',
+        description: [tag, asset.location || asset.zone, asset.type].filter(Boolean).join(' · '),
+        icon: <DevicesOutlined />,
+        run: () => navigateTo(objectApi, navigate, 'assets', { assetId: asset.id }),
+      });
+      if (asset.tag && String(asset.tag) !== String(asset.name)) {
+        items.push({
+          label: String(asset.tag),
+          group: 'Tags',
+          description: asset.name || asset.id,
+          icon: <DevicesOutlined />,
+          run: () => navigateTo(objectApi, navigate, 'assets', { assetId: asset.id }),
+        });
+      }
+    });
+
+    [...(operations.audit_logs || []), ...(operations.critical_incidents || [])]
+      .filter((item, index, list) => list.findIndex((row) => row.id === item.id) === index)
+      .slice(0, 30)
+      .forEach((item) => {
+        items.push({
+          label: label(item.incident_type || item.title || item.id),
+          group: 'Incidents',
+          description: item.asset_name || item.asset_id || item.id,
+          icon: <WarningAmberOutlined />,
+          run: () => navigateTo(objectApi, navigate, 'incidents', { incidentId: item.id, assetId: item.asset_id || null }),
+        });
+      });
+
+    (operations.maintenance?.tasks || []).slice(0, 20).forEach((task, index) => {
+      const id = task.id || `wo-${index}`;
+      items.push({
+        label: task.title || task.Task || task.name || `Work order ${index + 1}`,
+        group: 'Work orders',
+        description: task.asset_name || task.Owner || id,
+        icon: <BuildOutlined />,
+        run: () => navigateTo(objectApi, navigate, 'maintenance', { workOrderId: id }),
+      });
+    });
+
+    (operations.reports || []).slice(0, 15).forEach((report) => {
+      items.push({
+        label: report.title || report.name || report.id,
+        group: 'Reports',
+        description: report.created_at ? formatTime(report.created_at) : 'Executive brief',
+        icon: <ArticleOutlined />,
+        run: () => navigateTo(objectApi, navigate, 'reports', { reportId: report.id }),
+      });
+    });
+
+    return items;
+  }, [mode, navigate, objectApi, operations, toggle, auditEvents, facility]);
+
+  const matches = commands.filter((item) => (
+    `${item.label} ${item.group} ${item.description || ''}`.toLowerCase().includes(query.toLowerCase())
+  ));
+
+  useEffect(() => {
+    setCommandIndex(0);
+  }, [query, commandOpen]);
 
   useEffect(() => {
     const onKey = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen(true); }
-      if (event.key === 'Escape') setCommandOpen(false);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        objectApi.toggleWorkspacePanel();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        auditSpineRef.current?.focus?.();
+      }
+      if (event.key === 'Escape') {
+        setCommandOpen(false);
+        objectApi.setWorkspacePanelOpen(false);
+        setAssistantOpen(false);
+      }
+      if (commandOpen && matches.length) {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setCommandIndex((value) => Math.min(matches.length - 1, value + 1));
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setCommandIndex((value) => Math.max(0, value - 1));
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const command = matches[commandIndex];
+          if (command) {
+            command.run();
+            setCommandOpen(false);
+            setQuery('');
+          }
+        }
+      }
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, []);
+  }, [objectApi, commandOpen, matches, commandIndex]);
 
-  const execute = (command) => { command.run(); setCommandOpen(false); setQuery(''); };
-  const markInboxRead = async () => { try { await markNotificationsRead({ mark_all: true }); await refresh(); } catch { /* REST polling retries safely. */ } };
-  const openInbox = async () => { setInboxOpen(true); if (unread.length) await markInboxRead(); };
+  /* Part 8 — focus trap while WorkspacePanel is open */
+  useEffect(() => {
+    if (!workspacePanel) return undefined;
+    const root = workspacePanelRef.current;
+    if (!root) return undefined;
+    const focusables = () => [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+    const first = focusables()[0];
+    first?.focus?.();
+    const onKey = (event) => {
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) return;
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === firstEl) {
+        event.preventDefault();
+        lastEl.focus();
+      } else if (!event.shiftKey && document.activeElement === lastEl) {
+        event.preventDefault();
+        firstEl.focus();
+      }
+    };
+    root.addEventListener('keydown', onKey);
+    return () => root.removeEventListener('keydown', onKey);
+  }, [workspacePanel]);
 
-  return <Box className={`product-app ${expanded ? 'nav-open' : ''}`}>
-    <aside className="product-nav" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
-      <Box className="product-logo"><Box>R</Box><Typography>RigOS</Typography></Box>
-      <Stack className="product-nav-stack">{nav.map(([name, path, Icon]) => <Tooltip key={path} title={expanded ? '' : name} placement="right"><Link to={path} className={path === current[1] ? 'active' : ''}><Icon /><span>{name}</span></Link></Tooltip>)}</Stack>
-      <Button className="product-settings" onClick={() => setSettingsOpen(true)} startIcon={<SettingsOutlined />}><span>Settings</span></Button>
-    </aside>
-    <Box className="product-stage">
-      <header className="product-top">
-        <Button className="product-search" onClick={() => setCommandOpen(true)} startIcon={<SearchOutlined />} endIcon={<KeyboardCommandKeyOutlined />}>Search assets, incidents, knowledge…</Button>
-        <Stack direction="row" alignItems="center" spacing={1.4}>
-          <Box className={`product-live ${systemTone}`}><i />{systemLabel}</Box>
-          <IconButton onClick={() => setAssistantOpen(true)} aria-label="Open AI assistant"><SmartToyOutlined /></IconButton>
-          <IconButton onClick={toggle} aria-label="Change theme">{mode === 'dark' ? <LightModeOutlined /> : <DarkModeOutlined />}</IconButton>
-          <IconButton onClick={openInbox} aria-label="Open notifications"><Badge badgeContent={unread.length} color="error"><NotificationsOutlined /></Badge></IconButton>
-          <Avatar>CO</Avatar>
-        </Stack>
-      </header>
-      <main><Box className="product-crumb"><Typography>{current[0]}</Typography><Typography>{facility}</Typography></Box>{children}</main>
+  const onNavKeyDown = (event, index) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    const links = navRefs.current.filter(Boolean);
+    if (!links.length) return;
+    let next = index;
+    if (event.key === 'ArrowDown') next = Math.min(links.length - 1, index + 1);
+    if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = links.length - 1;
+    links[next]?.focus?.();
+  };
+
+  useEffect(() => {
+    setSyncAge(0);
+    const timer = setInterval(() => {
+      setClock(new Date());
+      setSyncAge((value) => (connected ? Math.min(value + 1, 59) : value));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [connected, operations.generated_at]);
+
+  const updateCollapse = () => setCollapsed((value) => {
+    localStorage.setItem('rigos-nav-collapsed', String(!value));
+    return !value;
+  });
+
+  const selectFacility = (name) => {
+    objectApi.setFacility(name);
+    setFacilityAnchor(null);
+  };
+
+  const openInbox = async () => {
+    setInboxOpen(true);
+    if (unread.length) {
+      try {
+        await markNotificationsRead({ mark_all: true });
+        await refresh();
+      } catch { /* polling keeps shell current */ }
+    }
+  };
+
+  const groups = ['Overview', 'Operations', 'Intelligence', 'Assets', 'Incidents', 'Work orders', 'Reports', 'System'];
+
+  return (
+    <Box className={`os-app ${collapsed ? 'is-compact' : ''}`}>
+      <LayoutGroup id="rig-os-navigation">
+        <motion.aside
+          layout
+          transition={{ layout: reduced ? { duration: 0 } : { duration: 0.12, ease: 'easeOut' } }}
+          className="os-sidebar"
+        >
+          <Box className="os-brand">
+            <Box className="os-brand-mark">R</Box>
+            {!collapsed && (
+              <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+                <Typography>RIG OS</Typography>
+                <Typography>OPERATIONS</Typography>
+              </motion.div>
+            )}
+            <Tooltip title={collapsed ? 'Expand navigation' : 'Collapse navigation'} placement="right">
+              <IconButton className="os-collapse" onClick={updateCollapse}>
+                {collapsed ? <ChevronRightOutlined /> : <ChevronLeftOutlined />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Button className="os-workspace" onClick={(event) => setFacilityAnchor(event.currentTarget)}>
+            {!collapsed && (
+              <Box>
+                <Typography className="os-overline">FACILITY SCOPE</Typography>
+                <Typography>{facility}</Typography>
+              </Box>
+            )}
+            <MoreHorizOutlined />
+          </Button>
+          <nav className="os-nav" aria-label="Primary navigation">
+            {['Overview', 'Operations', 'Intelligence'].map((group) => (
+              <Box key={group} className="os-nav-group">
+                {!collapsed && <Typography className="os-overline">{group}</Typography>}
+                {nav.filter((item) => item[3] === group).map(([name, path, Icon, , workspace]) => {
+                  const active = current[1] === path;
+                  const flatIndex = nav.findIndex((item) => item[1] === path);
+                  return (
+                    <Tooltip key={path} title={collapsed ? name : ''} placement="right">
+                      <Link
+                        to={path}
+                        className={active ? 'is-active' : ''}
+                        ref={(node) => { navRefs.current[flatIndex] = node; }}
+                        onKeyDown={(event) => onNavKeyDown(event, flatIndex)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigateTo(objectApi, navigate, workspace);
+                        }}
+                      >
+                        {active && (
+                          <motion.span
+                            className="os-active-pill"
+                            layoutId="os-active-pill"
+                            transition={{ duration: reduced ? 0 : 0.12, ease: 'easeOut' }}
+                          />
+                        )}
+                        <Icon />
+                        <AnimatePresence initial={false}>
+                          {!collapsed && (
+                            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
+                              {name}
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </Link>
+                    </Tooltip>
+                  );
+                })}
+              </Box>
+            ))}
+          </nav>
+          <Box className="os-sidebar-bottom">
+            <Tooltip title={collapsed ? 'Settings' : ''} placement="right">
+              <Button onClick={() => setProfileAnchor(document.querySelector('.os-profile'))} startIcon={<SettingsOutlined />}>
+                {!collapsed && 'Settings'}
+              </Button>
+            </Tooltip>
+            <Box className="os-connection">
+              <motion.i
+                animate={connected ? { opacity: [1, 0.5, 1] } : { opacity: [1, 0.35, 1] }}
+                transition={{ repeat: Infinity, duration: connected ? 2.4 : 0.9 }}
+              />
+              {!collapsed && <Typography>{connected ? 'Live connection' : 'Reconnecting'}</Typography>}
+            </Box>
+          </Box>
+        </motion.aside>
+      </LayoutGroup>
+
+      <Box className="os-stage">
+        <a className="e6-skip-link" href="#main-content">Skip to main content</a>
+        <header className="os-topbar" role="banner">
+          <Stack direction="row" alignItems="center" spacing={1.25}>
+            <Button className="os-command-trigger" onClick={() => setCommandOpen(true)} startIcon={<SearchOutlined />} endIcon={<kbd>⌘ K</kbd>} aria-label="Open command palette">
+              Search assets, incidents, work orders…
+            </Button>
+            <Box className="os-top-context">
+              <Typography>{WORKSPACE_LABELS[workspaceKey] || current[0]}</Typography>
+              <Typography>{facility}</Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Box className="os-ambient">
+              <Typography>{clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Typography>
+              <Typography>
+                {connected
+                  ? `${ambient?.telemetry?.value ?? '—'}${ambient?.telemetry?.unit ? ` ${ambient.telemetry.unit}` : ''} · synced ${syncAge}s ago`
+                  : 'reconnecting telemetry'}
+              </Typography>
+            </Box>
+            <Tooltip title={connected ? 'Telemetry synchronized' : 'Synchronizing telemetry'}>
+              <Button
+                className={`os-sync ${connected ? 'is-ready' : ''}`}
+                onClick={() => { setSyncAge(0); refresh(); }}
+                startIcon={(
+                  <motion.span animate={connected ? false : { rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
+                    <SyncOutlined />
+                  </motion.span>
+                )}
+              >
+                {connected ? 'Synced' : 'Syncing'}
+              </Button>
+            </Tooltip>
+            <Tooltip title={aiLabel}>
+              <Button className="os-ai-status" onClick={() => setAssistantOpen(true)} startIcon={<SmartToyOutlined />}>
+                <motion.i animate={agentsWorking ? { opacity: [1, 0.45, 1] } : false} transition={{ repeat: Infinity, duration: 1.6 }} />
+                {aiLabel}
+              </Button>
+            </Tooltip>
+            <Tooltip title="Notifications">
+              <IconButton onClick={openInbox} aria-label="Open notifications">
+                <Badge badgeContent={unread.length} color="error"><NotificationsOutlined /></Badge>
+              </IconButton>
+            </Tooltip>
+            <Button className="os-profile" onClick={(event) => setProfileAnchor(event.currentTarget)}>
+              <Avatar>CO</Avatar>
+              <Box>
+                <Typography>Control operator</Typography>
+                <Typography>Shift A</Typography>
+              </Box>
+            </Button>
+          </Stack>
+        </header>
+        <main id="main-content" tabIndex={-1}>
+          <Box className="os-crumb" component="nav" aria-label="Breadcrumb">
+            {crumbs.map((crumb, index) => (
+              <Box key={`${crumb.label}-${index}`} component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                {index > 0 && <Typography component="span" sx={{ opacity: 0.45 }} aria-hidden>›</Typography>}
+                <Button
+                  size="small"
+                  onClick={() => crumb.workspace && navigateTo(objectApi, navigate, crumb.workspace, crumb.preserve || {})}
+                  sx={{ minWidth: 0, textTransform: 'none', fontWeight: index === crumbs.length - 1 ? 800 : 600 }}
+                  aria-current={index === crumbs.length - 1 ? 'page' : undefined}
+                >
+                  {crumb.label}
+                </Button>
+              </Box>
+            ))}
+          </Box>
+          {children}
+        </main>
+        <Box
+          ref={auditSpineRef}
+          className="e5-audit-spine"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'e') {
+              event.preventDefault();
+              exportAuditLog({ events: auditEvents, facility });
+            }
+          }}
+        >
+          <AuditSpine events={auditEvents} />
+          <Button size="small" onClick={() => exportAuditLog({ events: auditEvents, facility })} sx={{ flexShrink: 0, textTransform: 'none' }}>
+            Export
+          </Button>
+        </Box>
+      </Box>
+
+      <Menu anchorEl={facilityAnchor} open={Boolean(facilityAnchor)} onClose={() => setFacilityAnchor(null)} PaperProps={{ className: 'os-menu' }}>
+        {facilities.map((name) => (
+          <MenuItem key={name} selected={name === facility} onClick={() => selectFacility(name)}>{name}</MenuItem>
+        ))}
+      </Menu>
+      <Menu anchorEl={profileAnchor} open={Boolean(profileAnchor)} onClose={() => setProfileAnchor(null)} PaperProps={{ className: 'os-menu' }}>
+        <MenuItem onClick={toggle}>{mode === 'dark' ? <LightModeOutlined /> : <DarkModeOutlined />} {mode === 'dark' ? 'Use light mode' : 'Use dark mode'}</MenuItem>
+        <MenuItem onClick={() => { setProfileAnchor(null); setAssistantOpen(true); }}><SmartToyOutlined /> Ask RigOS AI</MenuItem>
+      </Menu>
+
+      <Dialog open={commandOpen} onClose={() => setCommandOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog os-command-dialog' }}>
+        <Box className="product-command">
+          <TextField
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search assets, incidents, work orders, reports…"
+            fullWidth
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment>,
+              endAdornment: <InputAdornment position="end"><IconButton onClick={() => setCommandOpen(false)}><CloseOutlined /></IconButton></InputAdornment>,
+            }}
+          />
+          {groups.map((group) => matches.some((item) => item.group === group) && (
+            <Box key={group}>
+              <Typography className="product-dialog-label">{group}</Typography>
+              {matches.filter((item) => item.group === group).slice(0, 8).map((command) => {
+                const flatIndex = matches.indexOf(command);
+                const active = flatIndex === commandIndex;
+                return (
+                  <Button
+                    key={`${command.group}-${command.label}`}
+                    className={`product-command-item${active ? ' is-active' : ''}`}
+                    startIcon={command.icon}
+                    onMouseEnter={() => setCommandIndex(flatIndex)}
+                    onClick={() => { command.run(); setCommandOpen(false); setQuery(''); }}
+                  >
+                    <Box textAlign="left">
+                      <Typography fontWeight={700}>{command.label}</Typography>
+                      {command.description && <Typography variant="caption" color="text.secondary">{command.description}</Typography>}
+                    </Box>
+                  </Button>
+                );
+              })}
+            </Box>
+          ))}
+          {!matches.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">No matches</Typography>}
+        </Box>
+      </Dialog>
+
+      <Dialog open={inboxOpen} onClose={() => setInboxOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog product-notification-dialog' }}>
+        <Box className="product-inbox">
+          <Stack direction="row" justifyContent="space-between">
+            <Box>
+              <Typography className="product-dialog-label">OPERATOR INBOX</Typography>
+              <Typography variant="h6">Live notifications</Typography>
+            </Box>
+            <IconButton onClick={() => setInboxOpen(false)}><CloseOutlined /></IconButton>
+          </Stack>
+          <Divider sx={{ my: 2 }} />
+          {notifications.length ? notifications.map((item, index) => (
+            <Box className="product-notification" key={item.id || index}>
+              <Typography fontWeight={800}>{item.title}</Typography>
+              <Typography variant="body2">{item.message}</Typography>
+              <Typography variant="caption" color="text.secondary">{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'Live event'}</Typography>
+            </Box>
+          )) : (
+            <Box className="product-inbox-empty">
+              <NotificationsOutlined />
+              <Typography fontWeight={700}>You’re all caught up</Typography>
+            </Box>
+          )}
+        </Box>
+      </Dialog>
+
+      <Box className="workspace-dock" role="toolbar" aria-label="Workspace quick actions">
+        <Tooltip title="Command palette (Ctrl K)"><IconButton onClick={() => setCommandOpen(true)}><SearchOutlined /></IconButton></Tooltip>
+        <Tooltip title="AI copilot"><IconButton onClick={() => setAssistantOpen(true)}><SmartToyOutlined /></IconButton></Tooltip>
+        <Tooltip title="Inspector and activity (Ctrl J)">
+          <IconButton onClick={() => objectApi.toggleWorkspacePanel()}><ViewSidebarOutlined /></IconButton>
+        </Tooltip>
+        <Tooltip title="Pin current workspace">
+          <IconButton
+            onClick={() => {
+              const entry = { label: current[0], path: current[1] };
+              const next = pinned.some((item) => item.path === entry.path)
+                ? pinned.filter((item) => item.path !== entry.path)
+                : [...pinned, entry];
+              objectApi.setPinnedRoutes(next);
+            }}
+          >
+            <PushPinOutlined />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      <AnimatePresence>
+        {workspacePanel && (
+          <motion.aside
+            ref={workspacePanelRef}
+            className="workspace-inspector is-open"
+            data-focus-trap="true"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Workspace panel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.12, ease: 'easeOut' }}
+          >
+            <Stack direction="row" justifyContent="space-between">
+              <Box>
+                <Typography className="product-dialog-label">WORKSPACE PANEL</Typography>
+                <Typography fontWeight={800}>{current[0]} · audit & notifications</Typography>
+              </Box>
+              <IconButton onClick={() => objectApi.setWorkspacePanelOpen(false)} aria-label="Close workspace panel"><CloseOutlined /></IconButton>
+            </Stack>
+            <Box className="workspace-inspector-section">
+              <Typography className="product-kicker">PINNED CONTEXT</Typography>
+              {pinned.length
+                ? pinned.map((item) => <Button key={item.path} onClick={() => navigate(item.path)}>{item.label}</Button>)
+                : <Typography variant="body2" color="text.secondary">Pin an operational workspace to keep it one action away.</Typography>}
+            </Box>
+            <Box className="workspace-inspector-section">
+              <Typography className="product-kicker">RECENT ACTIVITY</Typography>
+              <Stack spacing={1}>
+                {(operations.audit_logs || []).slice(0, 4).map((item, index) => (
+                  <Box
+                    className="workspace-activity"
+                    key={item.id || index}
+                    component="button"
+                    type="button"
+                    onClick={() => navigateTo(objectApi, navigate, 'incidents', { incidentId: item.id, assetId: item.asset_id || null })}
+                    style={{ all: 'unset', cursor: 'pointer', display: 'flex', gap: 8 }}
+                  >
+                    <HistoryOutlined />
+                    <Box>
+                      <Typography>{label(item.incident_type || item.action_type || 'Operational update')}</Typography>
+                      <Typography>{formatTime(item.timestamp || item.created_at)}</Typography>
+                    </Box>
+                  </Box>
+                ))}
+                {!(operations.audit_logs || []).length && (
+                  <Typography variant="body2" color="text.secondary">No recent audit events. Telemetry monitoring remains active.</Typography>
+                )}
+              </Stack>
+            </Box>
+            <Box className="workspace-inspector-section">
+              <Typography className="product-kicker">QUICK ACTIONS</Typography>
+              <Button onClick={() => setAssistantOpen(true)}>Ask AI about this workspace</Button>
+              <Button onClick={() => setCommandOpen(true)}>Navigate or run a command</Button>
+            </Box>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {assistantOpen && (
+          <motion.aside
+            className="copilot-dock"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.12, ease: 'easeOut' }}
+          >
+            <AssistantPanel onClose={() => setAssistantOpen(false)} />
+          </motion.aside>
+        )}
+      </AnimatePresence>
     </Box>
-    <Dialog open={commandOpen} onClose={() => setCommandOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog' }}><Box className="product-command"><TextField autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Type a command or search…" fullWidth InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment>, endAdornment: <InputAdornment position="end"><IconButton onClick={() => setCommandOpen(false)}><CloseOutlined /></IconButton></InputAdornment> }} />{['Navigate', 'Workspace', 'AI'].map((group) => <Box key={group}>{matches.some((item) => item.group === group) && <><Typography className="product-dialog-label">{group}</Typography>{matches.filter((item) => item.group === group).map((command) => <Button key={command.label} className="product-command-item" startIcon={command.icon} onClick={() => execute(command)}>{command.label}</Button>)}</>}</Box>)}</Box></Dialog>
-    <Dialog open={inboxOpen} onClose={() => setInboxOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog product-notification-dialog' }}><Box className="product-inbox"><Stack direction="row" justifyContent="space-between" alignItems="start"><Box><Typography className="product-dialog-label">OPERATOR INBOX</Typography><Typography variant="h6">Live notifications</Typography><Typography variant="body2" color="text.secondary">{notifications.length ? 'The latest incident impact and AI workflow activity.' : 'No new operational events.'}</Typography></Box><IconButton onClick={() => setInboxOpen(false)}><CloseOutlined /></IconButton></Stack><Divider sx={{ my: 2 }} />{notifications.length ? notifications.map((item, index) => <Box className="product-notification" key={item.id || index}><Stack direction="row" justifyContent="space-between" gap={1}><Typography fontWeight={800}>{item.title}</Typography><Typography className={`notification-severity ${item.severity}`}>{item.severity}</Typography></Stack><Typography variant="body2">{item.message}</Typography><Typography variant="caption" color="text.secondary">{[item.asset_name || item.asset_id, item.incident_type, item.human_approval_required ? 'Operator review required' : null].filter(Boolean).join(' · ') || 'Facility event'} · {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'Live event'}</Typography></Box>) : <EmptyNotifications />}</Box></Dialog>
-    <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} fullWidth maxWidth="xs" PaperProps={{ className: 'product-dialog' }}><Box className="product-inbox"><Stack direction="row" justifyContent="space-between"><Box><Typography className="product-dialog-label">WORKSPACE</Typography><Typography variant="h6">Settings</Typography></Box><IconButton onClick={() => setSettingsOpen(false)}><CloseOutlined /></IconButton></Stack><Divider sx={{ my: 2 }} /><Typography variant="caption" color="text.secondary">CURRENT VIEW LABEL</Typography><TextField value={facility} onChange={(event) => setFacility(event.target.value)} fullWidth size="small" sx={{ mt: .7 }} /><Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 2.5 }}><Box><Typography fontWeight={700}>Appearance</Typography><Typography variant="body2" color="text.secondary">{mode === 'dark' ? 'Dark' : 'Light'} mode</Typography></Box><Button onClick={toggle}>{mode === 'dark' ? 'Use light' : 'Use dark'}</Button></Stack><Button fullWidth variant="contained" sx={{ mt: 2.5 }} onClick={() => { localStorage.setItem('rigos-facility', facility); setSettingsOpen(false); }}>Save workspace</Button></Box></Dialog>
-    <Dialog open={assistantOpen} onClose={() => setAssistantOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog' }}><AssistantPanel onClose={() => setAssistantOpen(false)} /></Dialog>
-  </Box>;
+  );
 }
-
-function EmptyNotifications() { return <Box className="product-inbox-empty"><NotificationsOutlined /><Typography fontWeight={700}>You’re all caught up</Typography><Typography variant="body2" color="text.secondary">New incidents and AI workflow updates will appear here.</Typography></Box>; }

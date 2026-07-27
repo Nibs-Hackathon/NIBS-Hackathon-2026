@@ -1,9 +1,20 @@
-import { useMemo, useState } from 'react';
-import { Box, Button, Chip, Divider, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useLocation, useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+/* Epic 6 — thin product page: facility scope + lazy workspace views */
+import { Suspense, lazy, useEffect } from 'react';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { useLocation } from 'react-router-dom';
 import { useOperations } from '../context/OperationsContext';
-import { recordOperatorAction } from '../api/client';
+import { useObjectContext } from '../context/ObjectContext';
+import { filterByFacility, assetLocation, incidentLocation, taskLocation } from '../context/objectNavigation';
+import { inferProvenance, useOperatorAudit } from './accountability';
+import { PageMotion } from './motion';
+
+const MissionControlOS = lazy(() => import('./views/MissionControlOS').then((m) => ({ default: m.MissionControlOS })));
+const AssetConsole = lazy(() => import('./views/AssetConsole').then((m) => ({ default: m.AssetConsole })));
+const IncidentManagement = lazy(() => import('./views/IncidentManagement').then((m) => ({ default: m.IncidentManagement })));
+const AIInvestigationOS = lazy(() => import('./views/AIInvestigationOS').then((m) => ({ default: m.AIInvestigationOS })));
+const MaintenancePlanning = lazy(() => import('./views/MaintenancePlanning').then((m) => ({ default: m.MaintenancePlanning })));
+const ForecastTerminal = lazy(() => import('./views/ForecastTerminal').then((m) => ({ default: m.ForecastTerminal })));
+const ExecutiveBriefing = lazy(() => import('./views/ExecutiveBriefing').then((m) => ({ default: m.ExecutiveBriefing })));
 
 const config = {
   '/': ['Command center', 'A concise view of facility condition, AI operations, and decisions requiring your attention.'],
@@ -15,142 +26,124 @@ const config = {
   '/reports': ['Executive reports', 'Decision-ready incident outcomes and AI execution records.'],
 };
 
+function WorkspaceFallback() {
+  return (
+    <Box className="e6-workspace-fallback" role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 240, gap: 1.5 }}>
+      <CircularProgress size={28} />
+      <Typography color="text.secondary">Loading workspace…</Typography>
+    </Box>
+  );
+}
+
 export function ProductPage() {
   const { pathname } = useLocation();
-  const { operations } = useOperations();
+  const { operations, connected } = useOperations();
+  const objectApi = useObjectContext();
+  const facility = objectApi.scope?.facility || 'Alpha Refinery';
+  const auditEvents = useOperatorAudit(objectApi, operations);
+  const dataProvenance = inferProvenance({ connected, syncAge: connected ? 4 : 40 });
   const [title, description] = config[pathname] || config['/'];
-  const assets = operations.assets || [];
-  const incidents = operations.critical_incidents || [];
-  const activeInvestigationIncident = (operations.audit_logs || []).find(
-    (item) => item.id === operations.investigation?.incident?.id,
-  ) || operations.investigation?.incident || incidents[0];
+  useEffect(() => {
+    if (pathname === '/assets' || ['/incident-simulator', '/agent-monitor', '/maintenance', '/health-prediction'].includes(pathname)) {
+      document.querySelector('#main-content')?.focus?.({ preventScroll: true });
+      return;
+    }
+    const heading = document.querySelector('.product-hero h1');
+    heading?.focus?.({ preventScroll: true });
+  }, [pathname]);
+
+  const assetsAll = operations.assets || [];
+  const assets = filterByFacility(assetsAll, facility, assetLocation);
+  const incidents = filterByFacility(
+    operations.critical_incidents || [],
+    facility,
+    (item) => incidentLocation(item, assetsAll),
+  );
+  const auditLogs = filterByFacility(
+    operations.audit_logs || [],
+    facility,
+    (item) => incidentLocation(item, assetsAll),
+  );
+  const tasks = filterByFacility(
+    operations.maintenance?.tasks || [],
+    facility,
+    (item) => taskLocation(item, assetsAll),
+  );
+  const predicted = filterByFacility(
+    operations.predicted_failures?.length ? operations.predicted_failures : assetsAll,
+    facility,
+    assetLocation,
+  );
+  const activeInvestigationIncident = auditLogs.find(
+    (item) => item.id === operations.investigation?.incident?.id || item.id === objectApi.selection.incidentId,
+  ) || operations.investigation?.incident || incidents[0] || auditLogs[0];
   const stages = operations.investigation?.stages || [];
   const telemetry = operations.telemetry || { readings: [] };
+  const maintenance = { ...(operations.maintenance || {}), tasks };
+  const hideHero = ['/assets', '/incident-simulator', '/agent-monitor', '/maintenance', '/health-prediction'].includes(pathname);
+  const opsClass = hideHero ? ' is-ops-os' : '';
+  const assetsClass = pathname === '/assets' ? ' is-assets-os' : '';
 
-  return <Box className="product-page">
-    <Box className="product-hero"><Typography className="product-kicker">ALPHA FACILITY · LIVE OPERATIONS</Typography><Typography component="h1">{title}</Typography><Typography>{description}</Typography></Box>
-    {pathname === '/' && <Home assets={assets} incidents={incidents} stages={stages} dashboard={operations.dashboard || {}} projection={operations.revenue_projection} refineries={operations.refineries || []} refineryTelemetry={operations.telemetry_by_refinery || []} />}
-    {pathname === '/assets' && <CriticalAssets assets={assets} incidents={incidents} telemetry={telemetry} telemetryStreams={operations.critical_asset_telemetry || []} />}
-    {pathname === '/incident-simulator' && <IncidentCenter incidents={operations.audit_logs || []} />}
-    {pathname === '/agent-monitor' && <Investigation stages={stages} investigation={operations.investigation || {}} incident={activeInvestigationIncident} />}
-    {pathname === '/maintenance' && <MaintenanceByRefinery maintenance={operations.maintenance || {}} />}
-    {pathname === '/health-prediction' && <Forecast assets={operations.predicted_failures || []} telemetry={telemetry} telemetryStreams={operations.critical_asset_telemetry || []} />}
-    {pathname === '/reports' && <Reports reports={operations.reports || []} />}
-  </Box>;
+  return (
+    <PageMotion pageKey={pathname}>
+      <Box className={`product-page${opsClass}${assetsClass}`}>
+        {!hideHero && (
+          <Box className="product-hero">
+            <Typography className="product-kicker">{facility.toUpperCase()} - LIVE OPERATIONS</Typography>
+            <Typography component="h1" tabIndex={-1}>{title}</Typography>
+            <Typography>{description}</Typography>
+          </Box>
+        )}
+        <Suspense fallback={<WorkspaceFallback />}>
+          {pathname === '/' && (
+            <MissionControlOS
+              assets={assets}
+              incidents={incidents}
+              stages={stages}
+              dashboard={operations.dashboard || {}}
+              projection={operations.revenue_projection}
+              refineries={operations.refineries || []}
+              telemetry={telemetry}
+              maintenance={maintenance}
+              facility={facility}
+              auditEvents={auditEvents}
+              provenance={dataProvenance}
+            />
+          )}
+          {pathname === '/assets' && (
+            <AssetConsole
+              assets={assets}
+              incidents={auditLogs}
+              telemetry={telemetry}
+              telemetryStreams={operations.critical_asset_telemetry || []}
+              maintenance={maintenance}
+              provenance={dataProvenance}
+            />
+          )}
+          {pathname === '/incident-simulator' && (
+            <IncidentManagement incidents={auditLogs} telemetry={telemetry} provenance={dataProvenance} />
+          )}
+          {pathname === '/agent-monitor' && (
+            <AIInvestigationOS
+              stages={stages}
+              investigation={operations.investigation || {}}
+              incident={activeInvestigationIncident}
+              telemetry={telemetry}
+              provenance={dataProvenance}
+            />
+          )}
+          {pathname === '/maintenance' && <MaintenancePlanning maintenance={maintenance} />}
+          {pathname === '/health-prediction' && (
+            <ForecastTerminal
+              assets={predicted}
+              telemetry={telemetry}
+              telemetryStreams={operations.critical_asset_telemetry || []}
+              provenance={dataProvenance}
+            />
+          )}
+          {pathname === '/reports' && <ExecutiveBriefing reports={operations.reports || []} />}
+        </Suspense>
+      </Box>
+    </PageMotion>
+  );
 }
-
-function Home({ assets, incidents, stages, dashboard, projection, refineries, refineryTelemetry }) {
-  const navigate = useNavigate(); const health = dashboard.fleet_health ?? averageHealth(assets); const incident = incidents[0];
-  return <>
-    <Box className="product-stats"><Stat label="Facility health" value={`${health}%`} /><Stat label="Connected assets" value={dashboard.total_assets ?? assets.length} /><Stat label="Open incidents" value={dashboard.active_incidents ?? incidents.length} /><Stat label="AI agents active" value={stages.filter((s) => s.state === 'running').length} /></Box>
-    <Box className="product-home-grid"><Paper className="product-feature"><Typography className="product-kicker">TODAY'S AI SUMMARY</Typography><Typography className="product-feature-title">{incident ? 'One decision needs attention.' : 'Operations are stable.'}</Typography><Typography color="text.secondary">{incident ? incident.ai_recommendation || `${label(incident.incident_type)} is under AI investigation.` : 'RigOS is monitoring a stable facility and ranking emerging risks before they become incidents.'}</Typography><Box className="product-summary-signal"><i className={incident ? 'risk' : ''} /><Typography variant="caption">{incident ? `${label(incident.severity)} incident · ${incident.asset_name || 'Asset under review'}` : 'Autonomous monitoring active across the facility'}</Typography></Box><Button variant="contained" onClick={() => navigate(incident ? '/agent-monitor' : '/assets')}>{incident ? 'Review investigation' : 'Review critical assets'}</Button></Paper><RevenueGraph projection={projection} /></Box>
-    <CompanyPulse assets={assets} incidents={incidents} stages={stages} />
-    <RefineryPortfolio refineries={refineries} telemetry={refineryTelemetry} />
-    <Paper className="product-section"><Stack direction="row" justifyContent="space-between" alignItems="center"><Typography className="product-section-title">Recent AI actions</Typography><Typography className="product-section-meta">Live workflow record</Typography></Stack><Stack divider={<Divider />}>{stages.slice(0, 5).map((s, i) => <Box className="product-row" key={i}><Box><Typography fontWeight={700}>{label(s.agent)}</Typography><Typography color="text.secondary" variant="body2">{safeReasoning(s.reasoning || s.task)}</Typography></Box><Status state={s.state} /></Box>)}{!stages.length && <Empty text="AI activity will appear when an investigation begins." />}</Stack></Paper>
-  </>;
-}
-
-function CompanyPulse({ assets, incidents, stages }) {
-  const agentNames = ['sensor', 'safety', 'diagnostic', 'knowledge', 'maintenance', 'planning', 'prediction', 'notification', 'report'];
-  const active = stages.filter((stage) => stage.state === 'running').length;
-  const completed = stages.filter((stage) => ['completed', 'success'].includes(String(stage.state).toLowerCase())).length;
-  const unhealthy = assets.filter((asset) => Number(asset.health) < 80).length;
-  const critical = incidents.filter((incident) => ['critical', 'high'].includes(String(incident.severity).toLowerCase())).length;
-  return <Box className="company-pulse">
-    <Paper className="pulse-card"><Typography className="product-kicker">FLEET AVAILABILITY</Typography><Donut value={assets.length ? Math.round(((assets.length - unhealthy) / assets.length) * 100) : 0} label="within threshold" color="#22c55e" /><Typography className="pulse-copy">{assets.length - unhealthy} operating normally · {unhealthy} need review</Typography></Paper>
-    <Paper className="pulse-card"><Typography className="product-kicker">INCIDENT EXPOSURE</Typography><Donut value={incidents.length ? Math.round((critical / incidents.length) * 100) : 0} label="high severity" color="#ef4444" /><Typography className="pulse-copy">{incidents.length} open now · {critical} critical or high</Typography></Paper>
-    <Paper className="pulse-card agent-pulse"><Typography className="product-kicker">AI WORKFORCE</Typography><Stack direction="row" justifyContent="space-between" alignItems="baseline"><Typography className="agent-number">{active}</Typography><Typography variant="caption">active now</Typography></Stack><Box className="agent-statuses">{agentNames.map((name) => { const stage = stages.find((item) => String(item.agent).toLowerCase().includes(name)); return <Box key={name}><i className={stage?.state === 'running' ? 'active' : stage ? 'done' : ''} /><Typography>{label(name)}</Typography><Typography variant="caption">{stage?.state || 'idle'}</Typography></Box>; })}</Box><Typography className="pulse-copy">{completed} completed steps in the latest workflow</Typography></Paper>
-  </Box>;
-}
-
-function RefineryPortfolio({ refineries, telemetry }) {
-  return <Paper className="product-section refinery-portfolio"><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography className="product-section-title">Refinery portfolio</Typography><Typography className="product-section-meta">Every operating site · live health, exposure, and focused telemetry</Typography></Box><Chip label={`${refineries.length} sites online`} /></Stack><Box className="refinery-grid">{refineries.map((refinery) => { const stream = telemetry.find((item) => item.refinery === refinery.name); return <Box className="refinery-card" key={refinery.name}><Stack direction="row" justifyContent="space-between" alignItems="start"><Box><Typography fontWeight={800}>{refinery.name}</Typography><Typography variant="caption">{refinery.asset_count} assets · {refinery.focus_asset?.name || 'No focus asset'}</Typography></Box><Health value={refinery.fleet_health} /></Stack><Box className="refinery-metrics"><Typography><b>{refinery.open_incidents}</b> open incidents</Typography><Typography><b>{refinery.assets_at_risk}</b> assets at risk</Typography></Box><MiniGraph values={(stream?.readings || []).map((reading) => reading.value)} label={stream?.readings?.length ? `${stream.sensor_type || 'Telemetry'} · ${stream.asset_name}` : 'Awaiting focused telemetry'} /></Box>; })}</Box>{!refineries.length && <Empty text="Refinery portfolio will appear when the simulator initializes." />}</Paper>;
-}
-
-function Donut({ value, label: donutLabel, color }) { return <Box className="donut" style={{ '--donut': `${Math.max(0, Math.min(100, value)) * 3.6}deg`, '--donut-color': color }}><Box><Typography>{value}%</Typography><Typography>{donutLabel}</Typography></Box></Box>; }
-
-function CriticalAssets({ assets, incidents, telemetry: globalTelemetry, telemetryStreams }) {
-  const [refinery, setRefinery] = useState('all'); const [selected, setSelected] = useState(null);
-  const critical = useMemo(() => {
-    const incidentAssetIds = new Set(incidents.map((item) => item.asset_id).filter(Boolean));
-    return assets.filter((asset) => incidentAssetIds.has(asset.id) || Number(asset.health) < 80).sort((a, b) => Number(a.health) - Number(b.health)).slice(0, 8);
-  }, [assets, incidents]);
-  const focus = selected || critical[0]; const telemetry = telemetryStreams.find((stream) => stream.asset_id === focus?.id) || globalTelemetry; const refineries = [...new Set(critical.map((asset) => asset.location || asset.zone || 'Unassigned'))];
-  const visible = critical.filter((asset) => refinery === 'all' || (asset.location || asset.zone || 'Unassigned') === refinery);
-  return <>
-    <Box className="product-toolbar"><Box><Typography className="product-toolbar-title">{critical.length} assets need attention</Typography><Typography variant="body2">Only incident-affected or below-threshold equipment is shown.</Typography></Box><TextField select value={refinery} onChange={(e) => setRefinery(e.target.value)} size="small"><MenuItem value="all">All refineries</MenuItem>{refineries.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}</TextField></Box>
-    {!critical.length ? <Empty text="No affected assets. The facility is operating within the current health threshold." /> : <Box className="asset-workspace"><Paper className="product-collection asset-list">{visible.map((asset) => <Button className={`asset-row ${focus?.id === asset.id ? 'selected' : ''}`} onClick={() => setSelected(asset)} key={asset.id}><Box><Typography fontWeight={800}>{asset.name}</Typography><Typography variant="body2">{label(asset.type || 'Production asset')} · {asset.location || asset.zone || 'Unassigned'}</Typography></Box><Box><Health value={asset.health} /><Typography variant="caption">{label(asset.status || 'Needs review')}</Typography></Box></Button>)}</Paper><AssetBrief asset={focus} incident={incidents.find((item) => item.asset_id === focus?.id)} telemetry={telemetry} /></Box>}
-  </>;
-}
-
-function AssetBrief({ asset, incident, telemetry, telemetryStream }) {
-  const readings = telemetryStream?.readings || (telemetry?.asset_id === asset?.id ? telemetry.readings : []);
-  const modelledTrend = readings.length > 2 ? readings.map((reading) => reading.value) : [];
-  return <Paper className="asset-brief"><Stack direction="row" justifyContent="space-between"><Box><Typography className="product-kicker">EXPOSURE BRIEF</Typography><Typography className="product-panel-title">{asset?.name || 'Select an asset'}</Typography><Typography color="text.secondary">{asset?.location || asset?.zone || 'Unassigned refinery'}</Typography></Box><Health value={asset?.health} large /></Stack><Divider /><Metric label="Current condition" value={asset?.status || 'Under review'} /><Metric label="AI finding" value={incident?.incident_type ? label(incident.incident_type) : 'Low health threshold'} /><Metric label="Recommended next step" value={incident?.ai_recommendation || 'Inspect condition and validate telemetry'} /><MiniGraph values={modelledTrend} area label={readings.length > 2 ? `${telemetry.sensor_type || 'Telemetry'} · ${telemetry.unit || 'live readings'}` : 'Modelled condition trajectory · awaiting this asset’s live stream'} /></Paper>;
-}
-
-function IncidentCenter({ incidents }) {
-  const [selectedId, setSelectedId] = useState(incidents[0]?.id); const [severity, setSeverity] = useState('all');
-  const visible = incidents.filter((item) => severity === 'all' || String(item.severity).toLowerCase() === severity); const selected = visible.find((item) => item.id === selectedId) || visible[0];
-  return <Box className="incident-workspace"><Paper className="incident-list"><Stack direction="row" justifyContent="space-between" alignItems="center"><Typography className="product-panel-title">Incident ledger</Typography><TextField select size="small" value={severity} onChange={(e) => setSeverity(e.target.value)}><MenuItem value="all">All severity</MenuItem><MenuItem value="critical">Critical</MenuItem><MenuItem value="high">High</MenuItem><MenuItem value="medium">Medium</MenuItem></TextField></Stack><Divider />{visible.length ? visible.map((item, index) => <Button key={item.id || index} className={`incident-row ${selected?.id === item.id ? 'selected' : ''}`} onClick={() => setSelectedId(item.id)}><Box><Chip size="small" label={label(item.severity || 'recorded')} className={`severity ${String(item.severity || '').toLowerCase()}`} /><Typography fontWeight={800}>{label(item.incident_type || 'Operational event')}</Typography><Typography variant="body2">{item.asset_name || item.asset_id || 'Asset pending identification'}</Typography></Box><Typography variant="caption">{formatTime(item.timestamp || item.created_at)}</Typography></Button>) : <Empty text="No incident records match this filter." />}</Paper><IncidentDetail incident={selected} /></Box>;
-}
-
-function IncidentDetail({ incident }) {
-  if (!incident) return <Empty text="Select an incident to review the AI audit trail." />;
-  const steps = [
-    ['Detected', incident.timestamp || incident.created_at, incident.incident_type || 'Anomaly received'],
-    ['Evidence assessed', null, incident.evidence || incident.reasoning || 'Telemetry and operating context evaluated'],
-    ['AI recommendation', null, incident.ai_recommendation || 'Recommendation is being assembled'],
-    ['Current state', incident.resolved_at, incident.status || 'Recorded'],
-  ];
-  return <Paper className="incident-detail"><Typography className="product-kicker">INCIDENT {String(incident.id || '').slice(0, 8)}</Typography><Stack direction="row" justifyContent="space-between" alignItems="start"><Box><Typography className="product-panel-title">{label(incident.incident_type || 'Operational event')}</Typography><Typography color="text.secondary">{incident.asset_name || incident.asset_id || 'Asset pending identification'}</Typography></Box><Status state={incident.status || incident.severity || 'recorded'} /></Stack><Box className="incident-metrics"><Metric label="Severity" value={label(incident.severity || 'Not classified')} /><Metric label="Health change" value={incident.health_before != null && incident.health_after != null ? `${round(incident.health_before)}% → ${round(incident.health_after)}%` : 'Captured at resolution'} /><Metric label="Resolution time" value={formatDuration(incident.resolution_seconds) || (incident.resolved_at ? 'Resolved — duration unavailable' : 'Field condition still active')} /></Box><Divider /><Typography className="product-kicker">AI AUDIT TRAIL</Typography><Box className="audit-timeline">{steps.map(([stage, time, detail]) => <Box key={stage}><i /><Box><Typography fontWeight={800}>{stage}</Typography>{time && <Typography variant="caption">{formatTime(time)}</Typography>}<Typography variant="body2" color="text.secondary">{safeReasoning(detail)}</Typography></Box></Box>)}</Box></Paper>;
-}
-
-function Investigation({ stages, investigation, incident }) {
-  const [busy, setBusy] = useState(false); const recommendation = investigation.current_recommendation || incident?.ai_recommendation || 'Investigate the detected anomaly and validate the evidence.';
-  const decide = async (decision) => { setBusy(true); try { await recordOperatorAction({ incident_id: incident?.id, asset_id: incident?.asset_id, action_type: recommendation, decision, risk_level: incident?.severity || 'MEDIUM', note: `Operator decision for ${label(incident?.incident_type || 'active investigation')}` }); toast.success(`Audit decision recorded: ${decision.replace('_', ' ')}`); } catch (error) { toast.error(error.response?.data?.detail?.message || 'Decision could not be persisted.'); } finally { setBusy(false); } };
-  return <Box className="investigation-workspace"><Paper className="investigation-context"><Typography className="product-kicker">DECISION CONTEXT</Typography><Typography className="product-panel-title">{label(incident?.incident_type || 'No active incident')}</Typography><Typography color="text.secondary">{incident?.asset_name || incident?.asset_id || 'Waiting for an incident event'}</Typography><Divider /><Metric label="Field condition" value={investigation.incident?.physical_state === 'active' ? 'Active — AI response is under supervision' : 'No currently active field incident'} /><Metric label="AI recommendation" value={recommendation} /><Metric label="Evidence collected" value={`${investigation.metadata?.evidence_count ?? stages.length} agent findings`} /><Metric label="Confidence" value={investigation.confidence != null ? `${round(Number(investigation.confidence) * (Number(investigation.confidence) <= 1 ? 100 : 1))}%` : 'In evaluation'} /><Stack spacing={1}><Button variant="contained" disabled={busy || !incident} onClick={() => decide('approved')}>Approve recommended response</Button><Button variant="outlined" color="error" disabled={busy || !incident} onClick={() => decide('rejected')}>Reject and keep monitoring</Button><Button disabled={busy || !incident} onClick={() => decide('evidence_requested')}>Request more evidence</Button></Stack><Typography variant="caption" color="text.secondary">These actions create a timestamped audit decision. They never control field equipment.</Typography></Paper><Paper className="reasoning-panel"><Stack direction="row" justifyContent="space-between"><Box><Typography className="product-kicker">LIVE REASONING</Typography><Typography className="product-panel-title">How RigOS reached this recommendation</Typography></Box><Status state={investigation.status || 'waiting'} /></Stack><Divider />{stages.length ? <Box className="reasoning-timeline">{stages.map((stage, index) => <Box key={`${stage.agent}-${index}`}><Box className="agent-dot"><span>{String(stage.agent || 'A')[0]}</span></Box><Box><Stack direction="row" justifyContent="space-between"><Typography fontWeight={800}>{label(stage.agent)}</Typography><Typography variant="caption">{stage.duration_seconds != null ? `${Number(stage.duration_seconds).toFixed(1)}s` : stage.state || 'Completed'}</Typography></Stack><Typography variant="body2" color="text.secondary">{safeReasoning(stage.reasoning || stage.task || stage.output)}</Typography>{stage.evidence?.length ? <Typography variant="caption" color="text.secondary">{stage.evidence.length} evidence item{stage.evidence.length === 1 ? '' : 's'} attached</Typography> : null}{stage.confidence != null && <Confidence value={stage.confidence} />}</Box></Box>)}</Box> : <Empty text="The AI workforce will populate this timeline once an incident starts." />}</Paper></Box>;
-}
-
-function MaintenanceByRefinery({ maintenance }) {
-  const tasks = maintenance.tasks || [];
-  const byRefinery = tasks.reduce((groups, task) => {
-    const refinery = task.Refinery || 'Unassigned refinery';
-    groups[refinery] = [...(groups[refinery] || []), task];
-    return groups;
-  }, {});
-  return <><Box className="product-toolbar"><Box><Typography className="product-toolbar-title">Refinery maintenance plan</Typography><Typography variant="body2">Field work only — generated by the maintenance and planning agents, grouped by operating site.</Typography></Box><Chip label={`${tasks.length} planned work orders`} /></Box><Box className="maintenance-by-refinery">{Object.entries(byRefinery).map(([refinery, refineryTasks]) => <Paper className="maintenance-refinery" key={refinery}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography className="product-panel-title">{refinery}</Typography><Typography variant="body2" color="text.secondary">{refineryTasks.length} planned interventions</Typography></Box><Chip label={`${refineryTasks.filter((task) => task.Priority === 'P1').length} immediate`} /></Stack><Divider />{refineryTasks.map((task, index) => <Box className="maintenance-plan-row" key={`${task['Work order']}-${index}`}><Chip label={task.Priority || 'P2'} size="small" className={`priority ${(task.Priority || '').toLowerCase()}`} /><Box><Typography fontWeight={800}>{task['Work order']}</Typography><Typography variant="body2">{task.Asset} · {task['Service provider'] || task.Owner}</Typography></Box><Box><Typography variant="caption">Scheduled</Typography><Typography>{task['Scheduled date'] || 'To be planned'}</Typography></Box><Box><Typography variant="caption">Downtime</Typography><Typography>{task['Estimated downtime'] || 'To be assessed'}</Typography></Box><Status state={task.State || 'Planned'} /></Box>)}</Paper>)}</Box>{!tasks.length && <Empty text="Maintenance work orders appear after the planning agent completes an incident workflow." />}</>;
-}
-
-// Kept during the transition from a task lane to the refinery work-plan view.
-// eslint-disable-next-line no-unused-vars
-function MaintenanceBoard({ maintenance }) {
-  const tasks = maintenance.tasks || []; const lanes = [['P1 · Immediate', tasks.filter((t) => t.Priority === 'P1')], ['Scheduled', tasks.filter((t) => t.Priority !== 'P1' && t.State !== 'Completed')], ['Completed', tasks.filter((t) => t.State === 'Completed')]];
-  return <><Box className="product-toolbar"><Box><Typography className="product-toolbar-title">AI-planned work</Typography><Typography variant="body2">{maintenance.priority !== 'Not available' ? `${maintenance.priority} current maintenance priority · ${maintenance.downtime || 'downtime being assessed'}` : 'Tasks are generated from live MAO workflow state.'}</Typography></Box><Chip label={`${tasks.length} work orders`} /></Box><Box className="maintenance-board">{lanes.map(([lane, laneTasks]) => <Box key={lane} className="maintenance-lane"><Typography className="product-kicker">{lane} · {laneTasks.length}</Typography>{laneTasks.length ? laneTasks.map((task, index) => <Paper className="work-order" key={`${task['Work order']}-${index}`}><Stack direction="row" justifyContent="space-between"><Chip label={task.Priority || 'P2'} size="small" className={`priority ${(task.Priority || '').toLowerCase()}`} /><Typography variant="caption">{task.Confidence || 'Confidence pending'}</Typography></Stack><Typography fontWeight={800}>{task['Work order']}</Typography><Typography variant="body2" color="text.secondary">{task.Asset || 'Asset pending'} · {task.Owner || 'Unassigned'}</Typography><Status state={task.State || 'Queued'} /></Paper>) : <Box className="lane-empty">No work in this lane</Box>}</Box>)}</Box></>;
-}
-
-function Forecast({ assets, telemetry, telemetryStreams = [] }) {
-  const [selected, setSelected] = useState(assets[0]); const focus = selected || assets[0]; const stream = telemetryStreams.find((item) => item.asset_id === focus?.id) || (telemetry?.asset_id === focus?.id ? telemetry : null); const observed = stream?.health_history || []; const projected = stream?.forecast?.projected_health || []; const values = observed.length > 2 ? observed : projected;
-  return <><Box className="forecast-grid"><Paper className="forecast-focus"><Typography className="product-kicker">INTERVENTION WINDOW</Typography><Typography className="product-panel-title">{focus?.name || 'No at-risk asset'}</Typography><Typography color="text.secondary">{focus?.location || focus?.zone || 'Facility data pending'}</Typography><Health value={focus?.health} large /><Metric label="Estimated condition in 30 days" value={values.length ? `${round(values.at(-1))}% health` : 'Awaiting forecast'} /><Metric label="Failure exposure" value={focus?.health < 60 ? 'High — plan inspection' : 'Monitor — no immediate shutdown'} /></Paper><Paper className="forecast-chart"><Typography className="product-kicker">HEALTH TRAJECTORY</Typography><Typography className="product-panel-title">{observed.length > 2 ? 'Observed telemetry trend' : 'Projected health — next 30 days'}</Typography><MiniGraph values={values} label={observed.length > 2 ? `${telemetry.sensor_type || 'Telemetry'} readings from this asset` : 'Model uses current health trend and operational exposure'} area /></Paper></Box><Paper className="product-section"><Stack direction="row" justifyContent="space-between"><Typography className="product-section-title">Ranked intervention queue</Typography><Typography className="product-section-meta">Lowest health first</Typography></Stack>{assets.length ? assets.map((asset, index) => <Button onClick={() => setSelected(asset)} className={`forecast-row ${focus?.id === asset.id ? 'selected' : ''}`} key={asset.id || index}><Typography className="forecast-rank">{String(index + 1).padStart(2, '0')}</Typography><Box><Typography fontWeight={800}>{asset.name}</Typography><Typography variant="body2">{asset.location || asset.zone || 'Unassigned refinery'}</Typography></Box><Box><Health value={asset.health} /><Typography variant="caption">{asset.health < 60 ? 'Inspection recommended' : 'Monitor trend'}</Typography></Box></Button>) : <Empty text="Health forecasts appear when asset data is available." />}</Paper></>;
-}
-
-function Reports({ reports }) {
-  const [selected, setSelected] = useState(reports[0]); const report = selected || reports[0];
-  const download = () => { if (!report) return; const content = `RigOS executive report\n\nTitle: ${report.name || report.title || report.workflow || 'Execution report'}\n\n${report.summary || report.description || report.content || JSON.stringify(report, null, 2)}`; const url = URL.createObjectURL(new Blob([content], { type: 'text/plain' })); const link = document.createElement('a'); link.href = url; link.download = 'rigos-executive-report.txt'; link.click(); URL.revokeObjectURL(url); toast.success('Report downloaded'); };
-  return <Box className="reports-workspace"><Paper className="report-index"><Typography className="product-panel-title">Report library</Typography><Typography variant="body2" color="text.secondary">AI-generated outcomes available for executive review.</Typography><Divider />{reports.length ? reports.map((item, index) => <Button className={`report-index-item ${report === item ? 'selected' : ''}`} key={item.id || index} onClick={() => setSelected(item)}><Box><Typography fontWeight={800}>{label(item.name || item.title || item.workflow || 'Execution report')}</Typography><Typography variant="caption">{formatTime(item.created_at || item.timestamp)} · {item.status || 'Available'}</Typography></Box></Button>) : <Empty text="A report is created after a multi-agent workflow completes." />}</Paper><Paper className="report-reader">{report ? <><Stack direction="row" justifyContent="space-between" alignItems="start"><Box><Typography className="product-kicker">EXECUTIVE BRIEF</Typography><Typography className="product-panel-title">{label(report.name || report.title || report.workflow || 'Execution report')}</Typography><Typography color="text.secondary">Generated from the completed AI workflow and attached evidence.</Typography></Box><Button variant="contained" onClick={download}>Download brief</Button></Stack><Divider /><Metric label="Decision summary" value={safeReasoning(report.summary || report.description || report.content || 'The completed workflow is available for review.')} /><Metric label="Workflow status" value={report.status || 'Available'} /><Metric label="Operator value" value="Traceable evidence, recommendation, and execution outcome in one record." /><Box className="report-note"><Typography className="product-kicker">WHAT TO DO NEXT</Typography><Typography>{report.recommendation || 'Review the incident record, confirm the recommendation, and retain this brief for shift handover.'}</Typography></Box></> : <Empty text="Select a report to open its executive brief." />}</Paper></Box>;
-}
-
-function RevenueGraph({ projection }) { const periods = projection?.periods || []; const values = periods.map((item) => Number(item.value)); return <Paper className="product-map product-revenue"><Box className="product-chart-head"><Box><Typography className="product-kicker">LIVE OPERATIONS</Typography><Typography className="product-chart-title">Modelled production-value projection</Typography></Box><Box><Typography className="product-chart-number">{values[0] ? `$${(values[0] / 1_000_000).toFixed(1)}M` : '—'}</Typography><Typography className="product-chart-caption">Current period</Typography></Box></Box><MiniGraph values={values} area label={projection?.basis || 'Asset availability and health'} /><Box className="product-chart-footer"><Typography>{projection?.basis || 'Asset availability and health'}</Typography><Typography>Next 8 operating periods</Typography></Box></Paper>; }
-function MiniGraph({ values = [], label, area = false }) { const numbers = values.map(Number).filter(Number.isFinite); if (!numbers.length) return <Box className="mini-graph empty"><Typography>{label}</Typography></Box>; const max = Math.max(...numbers), min = Math.min(...numbers), span = Math.max(max - min, 1); const points = numbers.map((n, i) => `${i * (440 / Math.max(numbers.length - 1, 1))},${116 - ((n - min) / span) * 82}`).join(' '); return <Box className="mini-graph"><svg viewBox="0 0 440 130" preserveAspectRatio="none"><defs><linearGradient id="rigosFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#4f8cff" stopOpacity=".34" /><stop offset="1" stopColor="#4f8cff" stopOpacity="0" /></linearGradient></defs>{[28, 58, 88].map((y) => <line key={y} x1="0" x2="440" y1={y} y2={y} stroke="rgba(148,163,184,.15)" />)}{area && <polyline points={`0,130 ${points} 440,130`} fill="url(#rigosFill)" />}<polyline points={points} fill="none" stroke="#4f8cff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg><Typography>{label}</Typography></Box>; }
-function Health({ value, large = false }) { const health = round(value); return <Box className={`health ${large ? 'large' : ''}`}><Box><i style={{ width: `${Math.max(0, Math.min(health, 100))}%` }} /></Box><Typography>{health}%</Typography></Box>; }
-function Confidence({ value }) { const percent = round(Number(value) <= 1 ? Number(value) * 100 : value); return <Box className="confidence"><Box><i style={{ width: `${percent}%` }} /></Box><Typography variant="caption">{percent}% confidence</Typography></Box>; }
-function Status({ state }) { return <Chip size="small" className="state" label={label(state || 'Available')} />; }
-function Metric({ label: metricLabel, value }) { return <Box className="metric"><Typography>{metricLabel}</Typography><Typography>{String(value)}</Typography></Box>; }
-function Stat({ label: statLabel, value }) { return <Box><Typography>{statLabel}</Typography><Typography>{value}</Typography></Box>; }
-function Empty({ text }) { return <Box className="product-empty"><Typography>{text}</Typography></Box>; }
-function safeReasoning(value = '') { return /connection to server|operationalerror|permission denied/i.test(String(value)) ? 'Knowledge retrieval was unavailable for this workflow; the remaining agent evidence is retained.' : String(value); }
-function label(value = '') { return String(value).replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-function formatTime(value) { if (!value) return 'Live record'; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
-function formatDuration(seconds) { if (!Number.isFinite(Number(seconds))) return null; const total = Math.round(Number(seconds)); return total < 60 ? `${total}s` : `${Math.floor(total / 60)}m ${total % 60}s`; }
-function averageHealth(assets) { return assets.length ? round(assets.reduce((total, asset) => total + Number(asset.health || 0), 0) / assets.length) : 0; }
-function round(value) { return Math.round(Number(value) || 0); }

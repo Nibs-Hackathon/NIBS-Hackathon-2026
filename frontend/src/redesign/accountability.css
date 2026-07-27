@@ -1,0 +1,110 @@
+/* Epic 5 — AI accountability chrome */
+
+.e5-audit-spine {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  min-height: 36px;
+  padding: 6px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(9, 11, 15, 0.94);
+  backdrop-filter: blur(10px);
+}
+
+.e5-audit-spine:focus {
+  outline: 2px solid #4f8cff;
+  outline-offset: -2px;
+}
+
+.e5-decision-bar {
+  position: sticky;
+  bottom: 36px;
+  z-index: 11;
+  margin-top: 16px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #111722 !important;
+}
+
+.e5-evidence-lineage {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 10px;
+  background: rgba(15, 20, 28, 0.55);
+}
+
+.e5-lineage-chip {
+  background: rgba(79, 140, 255, 0.12) !important;
+  border: 1px solid rgba(79, 140, 255, 0.28) !important;
+}
+
+.e5-decision-history {
+  margin-top: 12px;
+}
+
+.e5-decision-row {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(17, 20, 24, 0.7);
+}
+
+.e5-metric .rig-provenance {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.e5-trace-wrap {
+  margin-top: 8px;
+}
+
+.os-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.os-stage > main {
+  flex: 1;
+  padding-bottom: 48px;
+}
+
+.workspace-dock {
+  bottom: 48px !important;
+}
+
+.e6-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #4f8cff;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.e6-skip-link:focus {
+  left: 12px;
+}
+
+.e6-workspace-fallback {
+  color: #94a3b8;
+}
+
+html[data-rigos-theme='light'] .e5-audit-spine,
+html[data-rigos-theme='light'] .e5-decision-bar {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+html[data-rigos-theme='light'] .e5-evidence-lineage,
+html[data-rigos-theme='light'] .e5-decision-row {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.1);
+}

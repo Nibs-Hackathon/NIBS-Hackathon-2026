@@ -34,7 +34,9 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
     pool_timeout=15,
-    connect_args={"connect_timeout": 10},
+    # Keep control-room reads responsive when a local/remote database is offline.
+    # Durable queries use an in-memory runtime fallback during transient outages.
+    connect_args={"connect_timeout": 2},
     echo=False,
 )
 

@@ -12,10 +12,26 @@ const emptySnapshot = {
   telemetry: { readings: [] }, critical_asset_telemetry: [],
 };
 
+const collectionKeys = ['assets', 'refineries', 'telemetry_by_refinery', 'critical_incidents', 'audit_logs', 'ai_activity', 'predicted_failures', 'notifications', 'reports', 'critical_asset_telemetry'];
+const objectKeys = ['dashboard', 'investigation', 'maintenance', 'telemetry'];
+
+function mergeOperations(current, incoming) {
+  if (!incoming || typeof incoming !== 'object') return current;
+  const next = { ...current, ...incoming };
+  objectKeys.forEach((key) => {
+    if (incoming[key] && typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) next[key] = { ...(current[key] || {}), ...incoming[key] };
+  });
+  collectionKeys.forEach((key) => {
+    if (!Array.isArray(incoming[key])) next[key] = current[key] || [];
+  });
+  return next;
+}
+
 export function OperationsProvider({ children }) {
   const [initialOperations, setInitialOperations] = useState(emptySnapshot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const notifiedIds = useRef(new Set());
   const { connected, data: socketSnapshot } = useWebSocket();
 
@@ -23,7 +39,8 @@ export function OperationsProvider({ children }) {
     setLoading(true);
     try {
       const response = await getOperationsLive();
-      setInitialOperations({ ...emptySnapshot, ...response.data });
+      setInitialOperations((current) => mergeOperations(current, response.data));
+      setLastUpdated(Date.now());
       setError(null);
     } catch (requestError) {
       setError(requestError);
@@ -37,7 +54,8 @@ export function OperationsProvider({ children }) {
     getOperationsLive()
       .then((response) => {
         if (!active) return;
-        setInitialOperations({ ...emptySnapshot, ...response.data });
+        setInitialOperations((current) => mergeOperations(current, response.data));
+        setLastUpdated(Date.now());
         setError(null);
       })
       .catch((requestError) => active && setError(requestError))
@@ -54,6 +72,8 @@ export function OperationsProvider({ children }) {
 
   useEffect(() => {
     if (!socketSnapshot) return;
+    setInitialOperations((current) => mergeOperations(current, socketSnapshot));
+    setLastUpdated(Date.now());
     (socketSnapshot.notifications || []).forEach((notification) => {
       if (notifiedIds.current.has(notification.id)) return;
       notifiedIds.current.add(notification.id);
@@ -65,9 +85,13 @@ export function OperationsProvider({ children }) {
   }, [socketSnapshot]);
 
   const value = useMemo(() => {
-    const operations = socketSnapshot ? { ...emptySnapshot, ...initialOperations, ...socketSnapshot } : initialOperations;
-    return { operations, connected, loading: socketSnapshot ? false : loading, error: socketSnapshot ? null : error, refresh };
-  }, [initialOperations, connected, loading, error, socketSnapshot, refresh]);
+    const operations = initialOperations;
+    const telemetryReadings = operations.telemetry?.readings || [];
+    const currentValue = Number(telemetryReadings.at?.(-1)?.value);
+    const agents = (operations.investigation?.stages || []).map((stage) => ({ name: stage.agent, state: stage.state || 'waiting', confidence: stage.confidence, duration: stage.duration_seconds }));
+    const ambient = { lastUpdated, telemetry: { value: currentValue, delta: 0, unit: operations.telemetry?.unit || '' }, agents, incidentCount: Number(operations.dashboard?.active_incidents || operations.critical_incidents?.length || 0) };
+    return { operations, ambient, connected, loading: socketSnapshot ? false : loading, error: socketSnapshot ? null : error, refresh };
+  }, [initialOperations, connected, loading, error, socketSnapshot, refresh, lastUpdated]);
   return <OperationsContext.Provider value={value}>{children}</OperationsContext.Provider>;
 }
 

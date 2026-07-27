@@ -19,3 +19,9 @@ The library uses a shared state vocabulary: `hover`, `active`, `loading`, `disab
 - Tokens are centralized in `tokens.js`; `RigOSV2Theme.js` derives light and dark themes from those tokens.
 - Motion is CSS-only and respects `prefers-reduced-motion`.
 - Components are presentational and data-agnostic. Pages own API calls and domain state.
+
+## Primitives
+
+Use `src/design-system/primitives.jsx` as the canonical reusable surface. It provides RigCard, MetricCard, StatusBadge, AIAgentCard, TimelineCard, EmptyState, TelemetryChart, RigDrawer, RigModal, Toast, NotificationItem, CommandPalette, RigSearch, RigToolbar, SectionHeader, PageHeader and FloatingPanel.
+
+The implementation takes the structural card/layout approach of Kokonut UI, restrained state treatments from Magic UI, and the utility interactions of ReactBits. Motion powers state entrances, hover/press feedback and live-status indicators; all work is reduced or removed under `prefers-reduced-motion`.

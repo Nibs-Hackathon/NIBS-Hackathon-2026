@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.websockets import WebSocketState
 import sys
 from pathlib import Path
 import asyncio
@@ -98,7 +99,7 @@ class OperatorActionRequest(BaseModel):
     decision: str = Field(pattern="^(approved|rejected|escalated|evidence_requested)$")
     operator: str = Field(default="Chief Operator", min_length=2, max_length=120)
     risk_level: str = Field(default="MEDIUM", max_length=30)
-    note: str | None = Field(default=None, max_length=2000)
+    note: str = Field(min_length=20, max_length=2000)
 
 
 class NotificationReadRequest(BaseModel):
@@ -159,6 +160,7 @@ async def platform_metadata():
             "rag_assistant": True,
             "websocket_updates": True,
             "persistent_operator_actions": True,
+            "mandatory_decision_rationale": True,
             "modelled_production_value": True,
         },
         "contracts": {
@@ -310,7 +312,7 @@ async def get_operations_live():
     try:
         require_operational_services()
         from api.adapters.operations_adapter import get_operations_live as operations_live
-        return operations_live()
+        return await run_in_threadpool(operations_live)
     except Exception as e:
         print(f"⚠️ Error fetching operations snapshot: {e}")
         raise HTTPException(
@@ -403,70 +405,78 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
+        dead = []
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception:
+                dead.append(connection)
+        for connection in dead:
+            self.disconnect(connection)
 
 manager = ConnectionManager()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """Push operations snapshots every ~2s.
+
+    Must also await receive() — a send-only loop never notices the browser
+    drop (refresh / Vite HMR / React Strict Mode). asyncio then keeps writing
+    to a dead transport and logs 'socket.send() raised exception.'
+    """
     await manager.connect(websocket)
-    
+
+    async def _client_still_connected() -> bool:
+        return websocket.client_state == WebSocketState.CONNECTED
+
+    async def _wait_interval_or_disconnect(seconds: float = 2.0) -> bool:
+        """Return False when the client disconnected."""
+        try:
+            message = await asyncio.wait_for(websocket.receive(), timeout=seconds)
+        except asyncio.TimeoutError:
+            return await _client_still_connected()
+        except WebSocketDisconnect:
+            return False
+        if message.get("type") == "websocket.disconnect":
+            return False
+        return await _client_still_connected()
+
     try:
-        while True:
+        while await _client_still_connected():
             try:
                 from api.adapters.operations_adapter import get_operations_live as operations_live
                 snapshot = await run_in_threadpool(operations_live)
-                
+                if not await _client_still_connected():
+                    break
                 await websocket.send_json({
                     "type": "update",
-                    "data": snapshot
+                    "data": snapshot,
                 })
-                
-            except (WebSocketDisconnect, RuntimeError):
+            except WebSocketDisconnect:
                 break
-            except Exception as e:
-                print(f"⚠️ WebSocket update error: {e}")
-            
-            await asyncio.sleep(2)
-            
-    except Exception as e:
-        print(f"⚠️ WebSocket disconnected: {e}")
-        manager.disconnect(websocket)
+            except (RuntimeError, OSError):
+                break
+            except Exception as exc:
+                print(f"WebSocket update error: {exc}")
+                break
+
+            if not await _wait_interval_or_disconnect(2.0):
+                break
+    except WebSocketDisconnect:
+        pass
     finally:
         manager.disconnect(websocket)
 
 @app.on_event("startup")
 async def startup_event():
-    """Print startup status."""
+    """Report readiness without blocking the HTTP/WebSocket server."""
     print("=" * 50)
-    print("🚀 RIGOS API STARTUP")
-    print("=" * 50)
-    print(f"✅ Real services: {REAL_SERVICES_AVAILABLE}")
-    if REAL_SERVICES_AVAILABLE:
-        try:
-            assets = backend_api.get_assets()
-            print(f"✅ Assets loaded: {len(assets)}")
-        except Exception as e:
-            print(f"⚠️ Could not load assets: {e}")
-    # Safe additive upgrade for existing Railway PostgreSQL deployments.
-    try:
-        from sqlalchemy import text
-        from database.connection import engine
-        with engine.begin() as connection:
-            for statement in (
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS health_before DOUBLE PRECISION",
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS health_after DOUBLE PRECISION",
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolution_seconds DOUBLE PRECISION",
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
-            ):
-                connection.execute(text(statement))
-        print("Incident outcome snapshot columns are ready")
-    except Exception as e:
-        print(f"Incident outcome schema check skipped: {e}")
+    print("RigOS API startup")
+    print(f"Real services available: {REAL_SERVICES_AVAILABLE}")
+    # Do not synchronously query external services or alter database schema here.
+    # Either can wait indefinitely when a local database is unavailable, leaving
+    # Uvicorn listening on the port but unable to answer HTTP or WebSocket calls.
+    print("HTTP and WebSocket transport ready")
     print("=" * 50)
 
 # ============================================

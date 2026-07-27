@@ -2,6 +2,7 @@
 
 import time
 import threading
+import os
 from mao import MAOKernel
 from models.asset import Asset, AssetType
 from models.facility import Facility
@@ -188,13 +189,16 @@ def _auto_simulation_loop(kernel):
     except Exception as e:
         print(f"⚠️ Warm-up error: {e}")
     
-    print("Simulation running. Incidents every 60-240 seconds.")
+    initial_incident_delay = max(1, int(os.getenv("RIGOS_INITIAL_INCIDENT_DELAY", "8")))
+    incident_min_delay = max(5, int(os.getenv("RIGOS_INCIDENT_MIN_DELAY", "60")))
+    incident_max_delay = max(incident_min_delay, int(os.getenv("RIGOS_INCIDENT_MAX_DELAY", "240")))
+    print(f"Simulation running. First incident in {initial_incident_delay}s; subsequent incidents every {incident_min_delay}-{incident_max_delay}s.")
     
     # ✅ Run with timer-based incidents
     while _simulation_running:
         try:
             # ✅ Generate random wait time (15-45 seconds)
-            wait_time = random.randint(60, 240)
+            wait_time = initial_incident_delay if incident_counter == 0 else random.randint(incident_min_delay, incident_max_delay)
             print(f"⏳ Next incident in {wait_time} seconds...")
             
             # ✅ Wait for the interval (with regular ticks)

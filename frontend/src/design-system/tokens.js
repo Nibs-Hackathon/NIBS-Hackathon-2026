@@ -14,21 +14,51 @@ export const rigosV2Tokens = {
   blur: { surface: 'blur(18px)', overlay: 'blur(28px)', dense: 'blur(44px)' },
   motion: {
     instant: '110ms', fast: '170ms', normal: '240ms', slow: '420ms', deliberate: '640ms',
+    crossfade: '200ms', select: '120ms', pulse: '400ms',
     standard: 'cubic-bezier(0.2, 0.8, 0.2, 1)', enter: 'cubic-bezier(0, 0.8, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 1, 1)',
   },
   typography: {
-    display: { fontSize: 'clamp(3.25rem, 8vw, 7rem)', lineHeight: 0.92, fontWeight: 800, letterSpacing: '-0.07em' },
-    hero: { fontSize: 'clamp(2.35rem, 5vw, 5rem)', lineHeight: 0.96, fontWeight: 780, letterSpacing: '-0.06em' },
-    heading: { fontSize: 'clamp(1.55rem, 2.5vw, 2.35rem)', lineHeight: 1.04, fontWeight: 750, letterSpacing: '-0.045em' },
-    title: { fontSize: '1rem', lineHeight: 1.3, fontWeight: 750, letterSpacing: '-0.02em' },
-    body: { fontSize: '0.9rem', lineHeight: 1.6, fontWeight: 500 },
-    caption: { fontSize: '0.68rem', lineHeight: 1.35, fontWeight: 750, letterSpacing: '0.12em' },
+    display: { fontSize: '1.75rem', lineHeight: 1.15, fontWeight: 600, letterSpacing: '-0.02em' },
+    heading: { fontSize: '1.125rem', lineHeight: 1.25, fontWeight: 600, letterSpacing: '-0.01em' },
+    body: { fontSize: '0.8125rem', lineHeight: 1.45, fontWeight: 450 },
+    data: { fontSize: '0.8125rem', lineHeight: 1.35, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
+    kpi: { fontSize: '2.05rem', lineHeight: 1.05, fontWeight: 780, letterSpacing: '-0.045em', fontVariantNumeric: 'tabular-nums' },
+    label: { fontSize: '0.62rem', lineHeight: 1.3, fontWeight: 750, letterSpacing: '0.12em', textTransform: 'uppercase' },
     mono: { fontFamily: '"DM Mono", "SFMono-Regular", Consolas, monospace', fontSize: '0.75rem', lineHeight: 1.5, fontWeight: 500 },
+    hero: { fontSize: 'clamp(2.35rem, 5vw, 5rem)', lineHeight: 0.96, fontWeight: 780, letterSpacing: '-0.06em' },
+    title: { fontSize: '1rem', lineHeight: 1.3, fontWeight: 750, letterSpacing: '-0.02em' },
+    caption: { fontSize: '0.68rem', lineHeight: 1.35, fontWeight: 750, letterSpacing: '0.12em' },
   },
+  pane: { explorer: 240, queue: 280, inspector: 320, dossier: 360 },
+  strip: { toolbar: 48, operations: 56, decision: 64, audit: 32 },
+};
+
+/** Control-room status colors from DESIGN_SYSTEM.md */
+export const statusColors = {
+  nominal: { main: '#22A06B', soft: 'rgba(34, 160, 107, 0.14)' },
+  advisory: { main: '#F5A524', soft: 'rgba(245, 165, 36, 0.14)' },
+  attention: { main: '#E56910', soft: 'rgba(229, 105, 16, 0.14)' },
+  critical: { main: '#E2483D', soft: 'rgba(226, 72, 61, 0.14)' },
+  offline: { main: '#6B7785', soft: 'rgba(107, 119, 133, 0.14)' },
+  'ai-active': { main: '#5E4DB2', soft: 'rgba(94, 77, 178, 0.14)' },
+  info: { main: '#2684FF', soft: 'rgba(38, 132, 255, 0.14)' },
 };
 
 export const semanticTone = {
-  neutral: { main: '#93A2B8', soft: 'rgba(147, 162, 184, 0.14)' }, info: { main: '#58D8FF', soft: 'rgba(88, 216, 255, 0.13)' },
-  success: { main: '#22C58B', soft: 'rgba(34, 197, 139, 0.13)' }, warning: { main: '#F5AE38', soft: 'rgba(245, 174, 56, 0.14)' },
-  danger: { main: '#F25F5C', soft: 'rgba(242, 95, 92, 0.14)' }, violet: { main: '#9772FF', soft: 'rgba(151, 114, 255, 0.14)' },
+  neutral: { main: '#93A2B8', soft: 'rgba(147, 162, 184, 0.14)' },
+  info: statusColors.info,
+  success: statusColors.nominal,
+  warning: statusColors.advisory,
+  danger: statusColors.critical,
+  violet: { main: '#9772FF', soft: 'rgba(151, 114, 255, 0.14)' },
+  nominal: statusColors.nominal,
+  advisory: statusColors.advisory,
+  attention: statusColors.attention,
+  critical: statusColors.critical,
+  offline: statusColors.offline,
+  'ai-active': statusColors['ai-active'],
 };
+
+export function resolveTone(name = 'neutral') {
+  return semanticTone[name] || statusColors[name] || semanticTone.neutral;
+}
