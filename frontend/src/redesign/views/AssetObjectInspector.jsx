@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
 import { ExpandMoreOutlined } from '@mui/icons-material';
 import { ProvenanceBadge } from '../accountability';
 import { StatusBadge, RiskBadge } from '../../design-system/catalog/status';
 import { HealthRing, SignalCard, Sparkline } from '../../design-system/catalog/data';
+import { searchKnowledge } from '../../api/client';
 import { Health, label, round } from './shared';
 
 function AccordionSection({ id, title, open, onToggle, children, count }) {
@@ -36,12 +37,15 @@ export function AssetObjectInspector({
   workOrders = [],
   note = '',
   onNoteChange,
+  knowledgeQuery = '',
   onOpenIncident,
   onOpenForecast,
   onCreateWorkOrder,
   onOpenInvestigation,
 }) {
   const [openSections, setOpenSections] = useState(() => new Set());
+  const [knowledge, setKnowledge] = useState([]);
+  const [knowledgeStatus, setKnowledgeStatus] = useState('idle');
 
   const toggle = (id) => {
     setOpenSections((current) => {
@@ -51,6 +55,24 @@ export function AssetObjectInspector({
       return next;
     });
   };
+
+  useEffect(() => {
+    if (!openSections.has('knowledge') || !knowledgeQuery) return undefined;
+    let cancelled = false;
+    setKnowledgeStatus('loading');
+    searchKnowledge(knowledgeQuery)
+      .then((response) => {
+        if (cancelled) return;
+        setKnowledge(Array.isArray(response.data?.results) ? response.data.results : []);
+        setKnowledgeStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setKnowledge([]);
+        setKnowledgeStatus('unavailable');
+      });
+    return () => { cancelled = true; };
+  }, [openSections, knowledgeQuery, asset?.id]);
 
   if (!asset) {
     return (
@@ -63,14 +85,20 @@ export function AssetObjectInspector({
   }
 
   const health = round(asset.health ?? 0);
-  const rull = Number(asset.remaining_life_days ?? asset.remaining_life ?? Math.max(8, Math.round(health * 0.9)));
-  const failure = Math.min(94, Math.max(6, 100 - health));
+  const hasForecast = asset.remaining_life_days != null
+    || asset.remaining_life != null
+    || asset.failure_probability != null
+    || asset.risk_score != null
+    || asset.forecast_available;
+  const rull = asset.remaining_life_days ?? asset.remaining_life ?? null;
+  const failure = asset.failure_probability ?? asset.risk_score ?? null;
   const assetWOs = workOrders.filter(
-    (wo) => wo.assetId === asset.id || wo.asset_id === asset.id || wo.asset === asset.name,
+    (wo) => wo.assetId === asset.id || wo.asset_id === asset.id || wo.asset === asset.name || wo.Asset === asset.name,
   );
   const docs = Number(asset.documents_count) || 0;
   const aiText = selected?.incident?.reasoning
     || asset.ai_recommendation
+    || asset.recommendation
     || (risk > 70
       ? 'Condition trend supports containment planning — verify linked evidence before authorizing work.'
       : 'No elevated agent recommendation for this object.');
@@ -78,7 +106,7 @@ export function AssetObjectInspector({
     ? Math.round(Number(selected.incident.confidence) <= 1
       ? Number(selected.incident.confidence) * 100
       : Number(selected.incident.confidence))
-    : risk > 70 ? 78 : 54;
+    : null;
 
   return (
     <Paper className="twin-inspector p8-inspector-swap assets-pane assets-inspector" key={asset.id}>
@@ -108,7 +136,7 @@ export function AssetObjectInspector({
             <b>{health}%</b>
             <Health value={asset.health} />
             <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-              Last inspection {clean(asset.last_inspection, 'Pending')}
+              Last reading {clean(asset.last_reading_at || asset.last_inspection, 'Pending')}
             </Typography>
           </Box>
         </Box>
@@ -138,8 +166,20 @@ export function AssetObjectInspector({
         </AccordionSection>
 
         <AccordionSection id="forecast" title="FORECAST" open={openSections.has('forecast')} onToggle={toggle}>
-          <Typography variant="body2">Failure probability <b>{failure}%</b></Typography>
-          <Typography variant="body2">Remaining useful life <b>{rull} days</b></Typography>
+          {hasForecast ? (
+            <>
+              <Typography variant="body2">
+                Failure probability <b>{failure != null ? `${round(failure)}%` : '—'}</b>
+              </Typography>
+              <Typography variant="body2">
+                Remaining useful life <b>{rull != null ? `${round(rull)} days` : '—'}</b>
+              </Typography>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No forecast published for this asset. Open the forecast terminal when predictions are available.
+            </Typography>
+          )}
           <Button size="small" sx={{ mt: 1, textTransform: 'none' }} onClick={onOpenForecast}>Open forecast terminal</Button>
         </AccordionSection>
 
@@ -147,17 +187,30 @@ export function AssetObjectInspector({
           {assetWOs.length
             ? assetWOs.map((wo, index) => (
               <Typography key={wo.id || index} variant="body2">
-                {wo.title || wo.name || `WO ${index + 1}`} · {wo.status || 'Backlog'}
+                {wo.title || wo['Work order'] || wo.name || `WO ${index + 1}`} · {wo.status || wo.State || 'Backlog'}
               </Typography>
             ))
             : <Typography variant="body2" color="text.secondary">No open work orders.</Typography>}
           <Button size="small" sx={{ mt: 1, textTransform: 'none' }} onClick={onCreateWorkOrder}>Create work order</Button>
         </AccordionSection>
 
-        <AccordionSection id="knowledge" title="KNOWLEDGE" open={openSections.has('knowledge')} onToggle={toggle}>
-          <Typography variant="body2" color="text.secondary">
-            Similar past events and procedures load when retrieval is available for this tag class.
-          </Typography>
+        <AccordionSection id="knowledge" title="KNOWLEDGE" open={openSections.has('knowledge')} onToggle={toggle} count={knowledge.length || undefined}>
+          {knowledgeStatus === 'loading' && (
+            <Typography variant="body2" color="text.secondary">Searching knowledge base…</Typography>
+          )}
+          {knowledgeStatus === 'unavailable' && (
+            <Typography variant="body2" color="text.secondary">Knowledge search is unavailable right now.</Typography>
+          )}
+          {knowledgeStatus === 'ready' && !knowledge.length && (
+            <Typography variant="body2" color="text.secondary">No retrieved documents for this asset class yet.</Typography>
+          )}
+          {knowledge.map((doc, index) => (
+            <Typography key={`${doc.filename || doc.source}-${index}`} variant="body2" sx={{ mb: 1 }}>
+              <b>{doc.filename || doc.source || `Document ${index + 1}`}</b>
+              <br />
+              {(doc.content || '').slice(0, 180)}{(doc.content || '').length > 180 ? '…' : ''}
+            </Typography>
+          ))}
         </AccordionSection>
 
         <AccordionSection id="documents" title="DOCUMENTS" open={openSections.has('documents')} onToggle={toggle} count={docs}>
@@ -172,7 +225,7 @@ export function AssetObjectInspector({
             minRows={3}
             fullWidth
             size="small"
-            placeholder="Shift notes for this asset (session persisted)"
+            placeholder="Shift notes for this asset (persisted)"
             value={note}
             onChange={(event) => onNoteChange?.(event.target.value)}
           />
@@ -180,9 +233,11 @@ export function AssetObjectInspector({
 
         <AccordionSection id="ai" title="AI RECOMMENDATIONS" open={openSections.has('ai')} onToggle={toggle}>
           <Typography variant="body2">{aiText}</Typography>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
-            Confidence {confidence}% · lineage via investigation trace
-          </Typography>
+          {confidence != null && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+              Confidence {confidence}% · lineage via investigation trace
+            </Typography>
+          )}
           {selected?.incident && (
             <Button size="small" sx={{ mt: 1, textTransform: 'none' }} onClick={onOpenInvestigation}>
               Open investigation

@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-from functools import lru_cache
 from contextlib import contextmanager
 import time
 
@@ -12,7 +11,9 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Prefer committed-local secrets file first, then optional overrides.
 load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
@@ -23,37 +24,56 @@ if DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing. Add it to .env locally or Streamlit Secrets.")
+engine = None
+SessionLocal = None
+db_session = None
 
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    pool_timeout=15,
-    # Keep control-room reads responsive when a local/remote database is offline.
-    # Durable queries use an in-memory runtime fallback during transient outages.
-    connect_args={"connect_timeout": 2},
-    echo=False,
-)
+if DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        poolclass=QueuePool,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        pool_timeout=15,
+        # Keep control-room reads responsive when a local/remote database is offline.
+        # Durable queries use an in-memory runtime fallback during transient outages.
+        connect_args={"connect_timeout": 2},
+        echo=False,
+    )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+    SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+    )
+    db_session = scoped_session(SessionLocal)
+else:
+    print(
+        "WARNING: DATABASE_URL is missing. Add it to backend/.env "
+        "(copy from .env.example). Runtime will use in-memory fallbacks."
+    )
 
-# ✅ Scoped session for thread safety
-db_session = scoped_session(SessionLocal)
+
+def is_database_configured() -> bool:
+    """True when DATABASE_URL was provided and a session factory exists."""
+    return db_session is not None
+
+
+def _require_session_factory():
+    if db_session is None:
+        raise RuntimeError(
+            "DATABASE_URL is missing. Add it to backend/.env locally "
+            "(see backend/.env.example) or set it in deployment secrets."
+        )
+    return db_session
 
 
 @contextmanager
 def get_session_context():
     """Context manager for database sessions with automatic cleanup."""
-    session = db_session()
+    session = _require_session_factory()()
     try:
         yield session
         session.commit()
@@ -64,10 +84,9 @@ def get_session_context():
         session.close()
 
 
-# ✅ SIMPLE SESSION FUNCTION (returns a session, NOT a context manager)
 def get_session():
     """Return a database session."""
-    return db_session()
+    return _require_session_factory()()
 
 
 # ✅ Cache for frequently accessed data
@@ -79,36 +98,31 @@ _CACHE_TTL = 5
 def cached_query(key: str, func, *args, **kwargs):
     """Get cached data or compute it."""
     now = time.time()
-    if key in _cache_data and now - _cache_timestamps.get(key, 0) < _CACHE_TTL:
+    if key in _cache_data and (now - _cache_timestamps.get(key, 0)) < _CACHE_TTL:
         return _cache_data[key]
-    
     result = func(*args, **kwargs)
     _cache_data[key] = result
     _cache_timestamps[key] = now
     return result
 
 
-def invalidate_cache(key: str = None):
-    """Invalidate cache for a key or all keys."""
-    if key:
-        _cache_data.pop(key, None)
-        _cache_timestamps.pop(key, None)
-    else:
+def clear_cache(key: str | None = None):
+    """Clear one cache entry or the entire cache."""
+    if key is None:
         _cache_data.clear()
         _cache_timestamps.clear()
+        return
+    _cache_data.pop(key, None)
+    _cache_timestamps.pop(key, None)
 
 
-@lru_cache(maxsize=128)
-def get_all_assets_cached():
-    """Cache all assets for 5 seconds."""
-    session = get_session()
+def healthcheck() -> bool:
+    """Return True when the database accepts a trivial query."""
+    if engine is None:
+        return False
     try:
-        from database.models import AssetDB
-        return session.query(AssetDB).all()
-    finally:
-        session.close()
-
-
-def invalidate_asset_cache():
-    """Invalidate the asset cache when new assets are added."""
-    get_all_assets_cached.cache_clear()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

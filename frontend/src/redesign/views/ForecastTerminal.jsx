@@ -2,34 +2,85 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { FilterListOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
 import { ProvenanceBadge } from '../accountability';
+import { createWorkOrder, getPredictions } from '../../api/client';
+import { normalizePredictionResponse } from '../../api/resourceAdapters';
 import { MiniGraph, Empty, Metric, round } from './shared';
 
-/** Part 8 — Forecast in-place select + draft WO navigate + scenario focus. */
+function formatMetric(value, suffix = '') {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${round(Number(value))}${suffix}`;
+}
+
+/** Part 8 — Forecast in-place select + draft WO navigate. Phase 3: stress scenarios. */
 export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenance = 'estimated' }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
   const scenarioRef = useRef(null);
   const safeAssets = Array.isArray(assets) ? assets.filter(Boolean) : [];
   const [selectedId, setSelectedId] = useState(objectApi.selection.assetId);
-  const [scenario, setScenario] = useState(0);
+  const [prediction, setPrediction] = useState(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [stress, setStress] = useState(0);
+  const [creatingWo, setCreatingWo] = useState(false);
 
   const chooseAsset = (id) => {
     setSelectedId(id);
     objectApi.setSelection({ assetId: id });
   };
 
-  const focus = safeAssets.find((asset) => asset.id === (selectedId || objectApi.selection.assetId)) || safeAssets[0];
+  const baseFocus = safeAssets.find((asset) => asset.id === (selectedId || objectApi.selection.assetId)) || safeAssets[0];
+  const focus = prediction && baseFocus && prediction.id === baseFocus.id
+    ? { ...baseFocus, ...prediction }
+    : baseFocus;
   const stream = (Array.isArray(telemetryStreams) ? telemetryStreams : []).find((item) => item?.asset_id === focus?.id) || telemetry;
-  const raw = Array.isArray(stream?.readings) ? stream.readings.map((item) => Number(item.value)).filter(Number.isFinite) : [];
-  const health = round(focus?.health ?? raw.at?.(-1) ?? 78);
-  const rull = Number(focus?.remaining_life_days ?? focus?.remaining_life ?? Math.max(8, Math.round(health * 0.9)));
-  const failure = Math.min(94, Math.max(6, 100 - health + scenario * 5));
-  const projected = raw.length > 3
-    ? raw
-    : Array.from({ length: 18 }, (_, index) => Math.max(16, health - index * (1.2 + scenario * 0.24) + Math.sin(index) * 2));
+  const raw = Array.isArray(stream?.readings)
+    ? stream.readings.map((item) => Number(item.value)).filter(Number.isFinite)
+    : [];
+  const health = focus?.health != null ? round(focus.health) : null;
+
+  const hasForecastPayload = focus && (
+    focus.remaining_life_days != null
+    || focus.remaining_life != null
+    || focus.failure_probability != null
+    || focus.risk_score != null
+    || focus.forecast_available
+    || (Array.isArray(focus.projected_health) && focus.projected_health.length > 0)
+  );
+
+  const rull = focus?.remaining_life_days ?? focus?.remaining_life ?? null;
+  const failure = focus?.failure_probability ?? focus?.risk_score ?? null;
+  const projected = Array.isArray(focus?.projected_health) && focus.projected_health.length > 1
+    ? focus.projected_health.map(Number).filter(Number.isFinite)
+    : raw.length > 3
+      ? raw
+      : [];
+  const scenario = focus?.scenario;
+
+  useEffect(() => {
+    if (!baseFocus?.id) {
+      setPrediction(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setPredictionLoading(true);
+    getPredictions(baseFocus.id, 14, stress)
+      .then((response) => {
+        if (!cancelled) {
+          setPrediction(normalizePredictionResponse(response.data, baseFocus));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPrediction(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPredictionLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [baseFocus?.id, stress]);
 
   useEffect(() => {
     if (!focus?.id) return undefined;
@@ -37,23 +88,48 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
     return () => cancelAnimationFrame(timer);
   }, [focus?.id]);
 
-  const createWorkOrder = () => {
+  const createWorkOrderAction = async () => {
     if (!focus) return;
-    navigateTo(objectApi, navigate, 'maintenance', {
-      assetId: focus.id,
-      draftWorkOrder: {
-        id: `draft-${focus.id}`,
+    setCreatingWo(true);
+    try {
+      const response = await createWorkOrder({
+        asset_id: focus.id,
         title: `Intervene on ${focus.name || focus.id}`,
-        asset: focus.name,
-        assetName: focus.name,
-        assetId: focus.id,
-        cost: 24500,
-        downtime: '12h',
-        status: 'Backlog',
         priority: 'P1',
-      },
-    });
+        owner: 'Control operator',
+        downtime: scenario?.estimated_downtime_hours != null
+          ? `${scenario.estimated_downtime_hours}h`
+          : undefined,
+        estimated_cost: scenario?.estimated_intervention_cost_usd ?? undefined,
+        note: stress > 0
+          ? `Created from forecast terminal with stress=${stress.toFixed(2)}.`
+          : 'Created from forecast terminal.',
+      });
+      const created = response.data || {};
+      navigateTo(objectApi, navigate, 'maintenance', {
+        assetId: focus.id,
+        workOrderId: created.id,
+        draftWorkOrder: {
+          id: created.id,
+          title: created.title || `Intervene on ${focus.name || focus.id}`,
+          asset: focus.name,
+          assetName: focus.name,
+          assetId: focus.id,
+          status: 'Ready',
+          priority: 'P1',
+          cost: created.estimated_cost,
+          downtime: created.downtime,
+        },
+      });
+      toast.success('Work order submitted for approval');
+    } catch (error) {
+      toast.error(error.response?.data?.detail?.message || 'Work order could not be created');
+    } finally {
+      setCreatingWo(false);
+    }
   };
+
+  const watchlist = safeAssets.slice().sort((a, b) => Number(a.health ?? 100) - Number(b.health ?? 100));
 
   return (
     <Box className="forecast-terminal">
@@ -67,8 +143,9 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
         </Box>
         <Stack direction="row" spacing={1}>
           <Button size="small" startIcon={<FilterListOutlined />}>Asset universe</Button>
-          <Button size="small" variant="outlined" disabled={!focus} onClick={createWorkOrder}>Create work order</Button>
-          <Button size="small" variant="contained">Export scenario</Button>
+          <Button size="small" variant="outlined" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
+            Create work order
+          </Button>
         </Stack>
       </Box>
 
@@ -79,9 +156,8 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
           <Box
             tabIndex={0}
             onKeyDown={(event) => {
-              const list = safeAssets.slice().sort((a, b) => Number(a.health) - Number(b.health));
-              if (!list.length) return;
-              const ids = list.map((asset) => asset.id);
+              if (!watchlist.length) return;
+              const ids = watchlist.map((asset) => asset.id);
               const idx = Math.max(0, ids.indexOf(focus?.id));
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
@@ -93,8 +169,8 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
               }
             }}
           >
-            {safeAssets.length
-              ? safeAssets.slice().sort((a, b) => Number(a.health) - Number(b.health)).map((asset, index) => (
+            {watchlist.length
+              ? watchlist.map((asset, index) => (
                 <button
                   type="button"
                   key={asset.id || index}
@@ -106,7 +182,13 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
                     <b>{asset.name || `Asset ${index + 1}`}</b>
                     <small>{asset.location || asset.zone || 'Process train'} · {round(asset.health)}% health</small>
                   </Box>
-                  <em>{Math.max(8, 100 - round(asset.health))}%</em>
+                  <em>
+                    {asset.risk_score != null
+                      ? `${round(asset.risk_score)}%`
+                      : asset.failure_probability != null
+                        ? `${round(asset.failure_probability)}%`
+                        : '—'}
+                  </em>
                 </button>
               ))
               : <Empty text="health forecasts" />}
@@ -118,71 +200,99 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
             <Box>
               <Typography className="product-kicker">HEALTH FORECAST · {focus?.name || 'Awaiting asset'}</Typography>
               <Typography>Observed + predicted trajectory with uncertainty</Typography>
+              {predictionLoading && (
+                <Typography variant="caption" color="text.secondary">Loading prediction model…</Typography>
+              )}
             </Box>
-            <Box className="terminal-chart-legend">
-              <span><i className="observed" />Observed</span>
-              <span><i className="model" />Forecast</span>
-              <span><i className="band" />80% confidence band</span>
+            {projected.length > 1 && (
+              <Box className="terminal-chart-legend">
+                <span><i className="observed" />Observed</span>
+                <span><i className="model" />Forecast</span>
+                <span><i className="band" />80% confidence band</span>
+              </Box>
+            )}
+          </Box>
+          {projected.length > 1 ? (
+            <>
+              <Box className="terminal-graph">
+                <svg viewBox="0 0 760 285" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="uncertainty" x1="0" x2="0" y1="0" y2="1">
+                      <stop stopColor="#5f9eff" stopOpacity=".25" />
+                      <stop offset="1" stopColor="#5f9eff" stopOpacity=".02" />
+                    </linearGradient>
+                  </defs>
+                  {[55, 115, 175, 235].map((y) => <line key={y} x1="0" x2="760" y1={y} y2={y} />)}
+                  <rect x="0" y="195" width="760" height="40" className="terminal-watch-zone" />
+                  <rect x="0" y="235" width="760" height="50" className="terminal-critical-zone" />
+                  <polyline
+                    points={projected.map((value, index) => `${index * (760 / (projected.length - 1))},${48 + (100 - value) * 1.9}`).join(' ')}
+                    className="terminal-line"
+                  />
+                </svg>
+                <Box className="terminal-axis"><span>Now</span><span>7d</span><span>14d</span><span>21d</span><span>30d</span></Box>
+              </Box>
+              <Box className="terminal-stats">
+                <Metric label="Failure probability" value={formatMetric(failure, '%')} />
+                <Metric label="Remaining useful life" value={rull != null ? `${round(rull)} days` : '—'} />
+                <Metric label="Current health" value={health != null ? `${health}%` : '—'} />
+                <Metric label="Model confidence" value={focus?.prediction_confidence != null ? `${round(focus.prediction_confidence)}%` : '—'} />
+              </Box>
+            </>
+          ) : (
+            <Box sx={{ p: 3 }}>
+              <Empty text="health forecasts" />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {focus
+                  ? 'No forecast series is available for this asset yet. Predictions appear when the backend publishes projected health or enough telemetry history exists.'
+                  : 'Select an asset from the watchlist to view forecasts.'}
+              </Typography>
             </Box>
-          </Box>
-          <Box className="terminal-graph">
-            <svg viewBox="0 0 760 285" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="uncertainty" x1="0" x2="0" y1="0" y2="1">
-                  <stop stopColor="#5f9eff" stopOpacity=".25" />
-                  <stop offset="1" stopColor="#5f9eff" stopOpacity=".02" />
-                </linearGradient>
-              </defs>
-              {[55, 115, 175, 235].map((y) => <line key={y} x1="0" x2="760" y1={y} y2={y} />)}
-              <rect x="0" y="195" width="760" height="40" className="terminal-watch-zone" />
-              <rect x="0" y="235" width="760" height="50" className="terminal-critical-zone" />
-              <polygon
-                points={`${projected.map((value, index) => `${index * (760 / (projected.length - 1))},${48 + (100 - value) * 1.9 - (8 + index * 0.7)}`).join(' ')} ${projected.slice().reverse().map((value, index) => `${(projected.length - 1 - index) * (760 / (projected.length - 1))},${48 + (100 - value) * 1.9 + (8 + (projected.length - 1 - index) * 0.7)}`).join(' ')}`}
-                fill="url(#uncertainty)"
-              />
-              <polyline
-                points={projected.map((value, index) => `${index * (760 / (projected.length - 1))},${48 + (100 - value) * 1.9}`).join(' ')}
-                className="terminal-line"
-              />
-              <line x1="420" x2="420" y1="20" y2="272" className="terminal-marker" />
-              <text x="426" y="32">Maintenance window</text>
-            </svg>
-            <Box className="terminal-axis"><span>Now</span><span>7d</span><span>14d</span><span>21d</span><span>30d</span></Box>
-            <Box className="terminal-brush"><span style={{ left: '15%', width: '55%' }} /></Box>
-          </Box>
-          <Box className="terminal-stats">
-            <Metric label="Failure probability" value={`${failure}%`} />
-            <Metric label="Remaining useful life" value={`${rull} days`} />
-            <Metric label="Maintenance window" value={`Day ${Math.max(4, Math.round(rull * 0.55))}–${Math.max(7, Math.round(rull * 0.72))}`} />
-            <Metric label="Model confidence" value={`${Math.max(61, 93 - scenario * 4)}%`} />
-          </Box>
+          )}
         </Paper>
 
         <Paper className="terminal-scenario">
           <Typography className="product-kicker">WHAT IF SIMULATION</Typography>
-          <Typography className="terminal-scenario-title">Operating sensitivity</Typography>
-          <Typography>Stress the model to compare risk, downtime, and production impact.</Typography>
-          <Box className="scenario-control">
-            <Typography>Load increase</Typography>
-            <Stack direction="row" spacing={1}>
-              <Button size="small" onClick={() => setScenario(Math.max(0, scenario - 1))}>−</Button>
-              <b>{scenario * 5}%</b>
-              <Button ref={scenarioRef} size="small" onClick={() => setScenario(Math.min(4, scenario + 1))}>+</Button>
-            </Stack>
-          </Box>
-          <Box className="scenario-outcomes">
-            <Metric label="Projected cost" value={`$${(18400 + scenario * 7200).toLocaleString()}`} />
-            <Metric label="Downtime estimate" value={`${4 + scenario * 2.5}h`} />
-            <Metric label="Production impact" value={`${1.2 + scenario * 0.8}%`} />
-          </Box>
-          <Box className="terminal-recommendation">
-            <Typography className="product-kicker">MODEL RECOMMENDATION</Typography>
-            <Typography>
-              {scenario > 2
-                ? 'Advance intervention and protect the next scheduled production window.'
-                : 'Plan condition-based maintenance in the identified low-load window.'}
+          <Typography className="terminal-scenario-title">Operating stress</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Stress scales degradation in the prediction API (0 = baseline, 1 = high load).
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <input
+              ref={scenarioRef}
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={stress}
+              disabled={!focus}
+              onChange={(event) => setStress(Number(event.target.value))}
+              style={{ width: '100%' }}
+              aria-label="Operating stress"
+            />
+            <Typography variant="caption" color="text.secondary">
+              Stress {stress.toFixed(2)} · multiplier {focus?.stress_multiplier != null ? `${focus.stress_multiplier}×` : '—'}
             </Typography>
-            <Button size="small" sx={{ mt: 1 }} variant="contained" disabled={!focus} onClick={createWorkOrder}>
+          </Box>
+          {scenario ? (
+            <Box className="terminal-stats" sx={{ mt: 2 }}>
+              <Metric label="Intervention cost" value={`$${Number(scenario.estimated_intervention_cost_usd || 0).toLocaleString()}`} />
+              <Metric label="Downtime" value={`${scenario.estimated_downtime_hours ?? '—'}h`} />
+              <Metric label="Prod. impact" value={`${scenario.estimated_production_impact_pct ?? '—'}%`} />
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Scenario estimates appear once a forecast is available.
+            </Typography>
+          )}
+          <Box className="terminal-recommendation" sx={{ mt: 2 }}>
+            <Typography className="product-kicker">MODEL RECOMMENDATION</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {hasForecastPayload
+                ? 'Review the published forecast and open maintenance planning when intervention is warranted.'
+                : 'Awaiting a verified forecast before recommending intervention timing.'}
+            </Typography>
+            <Button size="small" sx={{ mt: 1 }} variant="contained" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
               Create work order
             </Button>
           </Box>
@@ -192,20 +302,31 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
       <Paper className="terminal-bottom">
         <Box>
           <Typography className="product-kicker">HISTORICAL COMPARISON</Typography>
-          <Typography>Current trajectory is <b>{failure > 45 ? 'above' : 'within'}</b> the prior 90-day risk envelope.</Typography>
-          <MiniGraph values={projected.map((value, index) => value + ((index % 3) - 1) * 4)} label="90-day baseline overlay" />
+          {projected.length > 1 ? (
+            <>
+              <Typography>
+                Showing {projected.length} points from {focus?.forecast_method ? 'published forecast' : 'telemetry history'}.
+              </Typography>
+              <MiniGraph values={projected} label="Forecast / telemetry series" />
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Historical comparison requires a forecast or telemetry series from the backend.
+            </Typography>
+          )}
         </Box>
         <Box>
           <Typography className="product-kicker">RISK & IMPACT SENSITIVITY</Typography>
-          <Box className="sensitivity-bars">
-            {['Process load', 'Ambient heat', 'Vibration trend', 'Maintenance delay'].map((labelText, index) => (
-              <Typography key={labelText}>
-                <span>{labelText}</span>
-                <i><b style={{ width: `${38 + index * 14 + scenario * 4}%` }} /></i>
-                <em>{['Low', 'Medium', 'High', 'Critical'][Math.min(3, Math.floor((index + scenario) / 2))]}</em>
-              </Typography>
-            ))}
-          </Box>
+          {scenario ? (
+            <Typography variant="body2">
+              Method: {scenario.method || focus?.forecast_method || 'stress-scaled forecast'}.
+              Higher stress increases failure probability and estimated intervention cost.
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Sensitivity drivers will appear when the prediction service publishes scenario data.
+            </Typography>
+          )}
         </Box>
       </Paper>
     </Box>

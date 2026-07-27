@@ -128,6 +128,15 @@ def get_maintenance_plan() -> dict:
     elif latest_maintenance:
         rationale = latest_maintenance.recommendations or latest_maintenance.evidence
 
+    persisted = _persisted_work_orders()
+    for row in persisted:
+        key = (row.get("Asset"), row.get("Work order"))
+        if key in seen_work:
+            continue
+        seen_work.add(key)
+        rows.append(row)
+        owners[row.get("Owner") or "Operator"] += 1
+
     return {
         "tasks": rows,
         "metrics": [
@@ -148,3 +157,142 @@ def get_maintenance_plan() -> dict:
             else "Not available"
         ),
     }
+
+
+def _persisted_work_orders() -> list[dict[str, Any]]:
+    """Load operator-created work orders from ActionDB."""
+    try:
+        from database.connection import get_session
+        from database.models import ActionDB
+
+        session = get_session()
+        try:
+            actions = (
+                session.query(ActionDB)
+                .filter(ActionDB.action_type.in_(["work_order", "work_order_create"]))
+                .order_by(ActionDB.created_at.desc())
+                .limit(100)
+                .all()
+            )
+            rows = []
+            for action in actions:
+                payload = action.payload or {}
+                asset = runtime.kernel.asset_service.get(action.asset_id) if action.asset_id else None
+                status = "Scheduled" if action.status == "approved" else (
+                    "Ready" if action.status == "pending_approval" else action.status or "Backlog"
+                )
+                rows.append({
+                    "id": action.id,
+                    "Priority": payload.get("priority") or "P2",
+                    "Asset": payload.get("asset_name") or getattr(asset, "name", action.asset_id),
+                    "asset_id": action.asset_id,
+                    "Refinery": payload.get("refinery") or getattr(asset, "location", "Unassigned"),
+                    "Work order": payload.get("title") or payload.get("description") or "Operator work order",
+                    "title": payload.get("title") or payload.get("description") or "Operator work order",
+                    "Owner": payload.get("owner") or action.requested_by or "Control operator",
+                    "Service provider": payload.get("service_provider") or "RigOS Certified Maintenance",
+                    "Scheduled date": payload.get("scheduled_date"),
+                    "Estimated downtime": payload.get("downtime") or "To be assessed",
+                    "estimated_cost": payload.get("estimated_cost"),
+                    "cost": payload.get("estimated_cost"),
+                    "State": status,
+                    "status": status,
+                    "Confidence": "Operator requested",
+                    "source": "operator_action",
+                })
+            return rows
+        finally:
+            session.close()
+    except Exception:
+        return []
+
+
+def create_work_order(
+    *,
+    asset_id: str | None = None,
+    title: str,
+    priority: str = "P2",
+    owner: str = "Control operator",
+    downtime: str | None = None,
+    estimated_cost: float | None = None,
+    note: str | None = None,
+    incident_id: str | None = None,
+) -> dict[str, Any]:
+    """Persist a new work-order request as an ActionDB audit row."""
+    from uuid import uuid4
+    from database.connection import get_session
+    from database.models import ActionDB
+
+    asset = runtime.kernel.asset_service.get(asset_id) if asset_id else None
+    session = get_session()
+    try:
+        action = ActionDB(
+            id=str(uuid4()),
+            incident_id=incident_id,
+            asset_id=asset_id,
+            action_type="work_order",
+            payload={
+                "title": title,
+                "description": title,
+                "priority": priority,
+                "owner": owner,
+                "downtime": downtime,
+                "estimated_cost": estimated_cost,
+                "asset_name": getattr(asset, "name", None),
+                "refinery": getattr(asset, "location", None),
+                "note": note,
+            },
+            risk_level="HIGH" if str(priority).upper() in {"P1", "CRITICAL", "HIGH"} else "MEDIUM",
+            status="pending_approval",
+            requires_human_approval=True,
+            requested_by=owner,
+        )
+        session.add(action)
+        session.commit()
+        return {
+            "id": action.id,
+            "asset_id": asset_id,
+            "title": title,
+            "priority": priority,
+            "status": action.status,
+            "owner": owner,
+            "downtime": downtime,
+            "estimated_cost": estimated_cost,
+            "message": "Work order recorded for approval. No industrial command was executed.",
+        }
+    finally:
+        session.close()
+
+
+def approve_work_order(work_order_id: str, *, operator: str = "Maintenance lead", note: str | None = None) -> dict[str, Any]:
+    """Approve a pending work-order ActionDB row."""
+    from datetime import datetime
+    from database.connection import get_session
+    from database.models import ActionDB
+
+    session = get_session()
+    try:
+        action = session.query(ActionDB).filter(ActionDB.id == work_order_id).first()
+        if action is None:
+            raise LookupError(f"Work order {work_order_id} not found")
+        if action.action_type not in {"work_order", "work_order_create"}:
+            raise ValueError("Action is not a work order")
+        payload = dict(action.payload or {})
+        if note:
+            payload["approval_note"] = note
+        action.payload = payload
+        action.status = "approved"
+        action.approved_by = operator
+        action.executed_at = datetime.utcnow()
+        action.requires_human_approval = False
+        session.add(action)
+        session.commit()
+        return {
+            "id": action.id,
+            "status": action.status,
+            "approved_by": operator,
+            "message": "Work order approved. No industrial command was executed.",
+        }
+    finally:
+        session.close()
+

@@ -195,24 +195,29 @@ export function MissionControlOS({
             </Typography>
           </Box>
           <Box className="mission-agent-list">
-            {(safeStages.length ? safeStages : ['Telemetry', 'Diagnostic', 'Knowledge', 'Prediction']).slice(0, 4).map((stage, index) => {
-              const agent = typeof stage === 'string' ? stage : stage.agent;
-              const state = typeof stage === 'string' ? 'standing by' : stage.state;
+            {safeStages.length ? safeStages.slice(0, 4).map((stage, index) => {
+              const agent = stage.agent;
+              const state = stage.state;
               return (
-                <Box key={`${agent}-${index}`}>
-                  <span>{String(agent)[0]}</span>
+                <Box key={`${stage.id || agent}-${index}`}>
+                  <span>{String(agent || '?')[0]}</span>
                   <Typography>
                     <b>{traceLabel(agent, index)}</b>
                     <small>
-                      {label(state || 'standing by')} · {stage.confidence
-                        ? `${round(Number(stage.confidence) <= 1 ? Number(stage.confidence) * 100 : Number(stage.confidence))}% confidence`
-                        : 'heartbeat active'}
+                      {label(state || 'standing by')}
+                      {stage.confidence != null
+                        ? ` · ${round(Number(stage.confidence) <= 1 ? Number(stage.confidence) * 100 : Number(stage.confidence))}% confidence`
+                        : ''}
                     </small>
                   </Typography>
-                  <i className={/running|streaming/i.test(state || '') ? 'active' : ''} />
+                  <i className={/running|streaming/i.test(String(state || '')) ? 'active' : ''} />
                 </Box>
               );
-            })}
+            }) : (
+              <Typography className="mission-empty-copy">
+                No agent stages are active. The MAO network will appear here during an investigation.
+              </Typography>
+            )}
           </Box>
         </Paper>
 
@@ -259,7 +264,7 @@ export function MissionControlOS({
         <Box>
           <Metric label="Portfolio health" value={`${health}%`} />
           <Metric label="Forecast exposure" value={primary ? 'Moderate' : 'Low'} />
-          <Metric label="Knowledge updates" value={`${safeStages.filter((s) => String(s.agent || '').toLowerCase().includes('knowledge')).length || 1} linked`} />
+          <Metric label="Knowledge updates" value={String(safeStages.filter((s) => String(s.agent || '').toLowerCase().includes('knowledge')).length)} />
         </Box>
         <Button onClick={() => navigateTo(objectApi, navigate, 'reports')}>Open board brief</Button>
       </Paper>

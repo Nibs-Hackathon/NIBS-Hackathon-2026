@@ -162,6 +162,19 @@ class ActionDB(Base):
     executed_at = Column(DateTime)
 
 
+class AssetNoteDB(Base):
+    """Operator shift notes attached to an asset (Phase 3 persistence)."""
+
+    __tablename__ = "asset_notes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    asset_id = Column(String, nullable=False, index=True)
+    note = Column(Text, nullable=False, default="")
+    operator = Column(String, default="Control operator")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ActivityEventDB(Base):
 
     __tablename__ = "activity_events"

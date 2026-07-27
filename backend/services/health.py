@@ -29,6 +29,8 @@ class HealthService:
         # Get asset type from first reading
         asset_id = readings[0].asset_id
         asset = self.engine.kernel.asset_service.get(asset_id)
+        if asset is None:
+            return 100.0
         asset_type = asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type)
         
         # Get thresholds from AI config

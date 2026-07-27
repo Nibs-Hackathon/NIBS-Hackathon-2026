@@ -1,18 +1,25 @@
 import { useState } from 'react';
 import { Box, Button, CircularProgress, IconButton, Stack, TextField, Typography } from '@mui/material';
 import { CloseOutlined, SendOutlined, SmartToyOutlined } from '@mui/icons-material';
+import { useObjectContext } from '../context/ObjectContext';
 import { askAssistant } from '../api/client';
 
 const prompts = ['What needs my attention?', 'Explain the active investigation', 'Summarize current asset risk'];
 
 export function AssistantPanel({ onClose }) {
+  const objectApi = useObjectContext();
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const send = async (value = question) => {
     const text = value.trim(); if (!text || busy) return;
     setMessages((items) => [...items, { role: 'operator', text }]); setQuestion(''); setBusy(true);
-    try { const response = await askAssistant(text); setMessages((items) => [...items, { role: 'assistant', text: response.data.answer || 'No response was returned.' }]); }
+    try {
+      const response = await askAssistant(text, {
+        asset_id: objectApi.selection.assetId,
+        incident_id: objectApi.selection.incidentId,
+        facility: objectApi.scope?.facility,
+      }); setMessages((items) => [...items, { role: 'assistant', text: response.data.answer || 'No response was returned.' }]); }
     catch (error) {
       const unavailable = !error.response;
       setMessages((items) => [...items, { role: 'assistant', text: unavailable ? 'RigOS cannot reach the AI service. Check the deployed backend connection, then try again.' : (error.response?.data?.detail || 'The AI service could not complete that request. Please try again.') }]);

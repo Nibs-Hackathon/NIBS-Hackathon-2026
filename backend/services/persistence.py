@@ -7,7 +7,7 @@ from collections import deque
 from datetime import datetime
 from typing import List, Any
 
-from database.connection import get_session
+from database.connection import get_session, is_database_configured
 from database.models import AgentExecutionDB, ExecutionReportDB, IncidentDB, TelemetryDB
 from database.repositories.agent_repo import AgentRepository
 from database.repositories.incident_repo import IncidentRepository
@@ -70,6 +70,9 @@ class PersistenceService:
         """Save telemetry to database synchronously."""
         if not readings:
             return
+        # Simulator-only / no-DATABASE_URL mode: drop durable writes quietly.
+        if not is_database_configured():
+            return
         
         session = None
         try:
@@ -120,6 +123,8 @@ class PersistenceService:
         ).start()
 
     def _resolve_incident_sync(self, incident_id, health_after):
+        if not is_database_configured():
+            return
         session = None
         try:
             session = get_session()
@@ -148,6 +153,8 @@ class PersistenceService:
     
     def _record_execution_sync(self, event, report, severity):
         """Sync version for execution."""
+        if not is_database_configured():
+            return
         session = None
         try:
             session = get_session()

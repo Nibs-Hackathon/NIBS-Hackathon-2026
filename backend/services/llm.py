@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 
 # ✅ SUPPORTED ENV VARS - ALL POSSIBLE NAMING CONVENTIONS
 SUPPORTED_GEMINI_ENV_VARS = (

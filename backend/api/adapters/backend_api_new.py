@@ -14,6 +14,16 @@ if str(PROJECT_ROOT) not in sys.path:
 from services.config_services import ConfigService
 
 
+def _parse_iso(value: str | None):
+    if not value:
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 class BackendAPI:
     """Single interface for frontend to access backend data with caching."""
 
@@ -146,8 +156,35 @@ class BackendAPI:
             for r in readings
         ])
 
-    def get_asset_telemetry(self, asset_id: str, limit: int = 100, force_refresh: bool = False) -> List[Dict]:
-        """Get telemetry history for an asset with caching."""
+    def get_asset_telemetry(
+        self,
+        asset_id: str,
+        limit: int = 100,
+        force_refresh: bool = False,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> List[Dict]:
+        """Get telemetry history for an asset; optional ISO since/until window."""
+        if since or until:
+            readings = self.kernel.state.get_history(asset_id) or []
+            since_dt = _parse_iso(since) if since else None
+            until_dt = _parse_iso(until) if until else None
+            rows = []
+            for reading in readings:
+                ts = getattr(reading, "timestamp", None)
+                if since_dt and ts and ts < since_dt:
+                    continue
+                if until_dt and ts and ts > until_dt:
+                    continue
+                rows.append({
+                    "timestamp": ts.isoformat() if ts else datetime.now().isoformat(),
+                    "sensor_type": reading.sensor_type.value if hasattr(reading.sensor_type, "value") else str(reading.sensor_type),
+                    "value": float(reading.value) if hasattr(reading, "value") else 0,
+                    "unit": getattr(reading, "unit", ""),
+                })
+            if limit:
+                rows = rows[-limit:]
+            return rows
         if force_refresh:
             self._invalidate_cache("get_asset_telemetry")
         return list(self._get_asset_telemetry_cached(asset_id, limit))

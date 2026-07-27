@@ -82,12 +82,32 @@ def get_knowledge_agent() -> "KnowledgeAgent":
         raise KnowledgeAgentUnavailable("Command Nexus is temporarily unavailable. Please try again shortly.") from error
 
 
-def ask_knowledge_agent(question: str, on_progress: ProgressCallback | None = None) -> str:
+def ask_knowledge_agent(
+    question: str,
+    on_progress: ProgressCallback | None = None,
+    asset_id: str | None = None,
+    incident_id: str | None = None,
+    facility: str | None = None,
+) -> str:
     """Route casual conversation to Gemini and operational questions to KnowledgeAgent."""
     _emit(on_progress, "Command Nexus received a question.")
     normalized_question = question.strip()
     if not normalized_question:
         raise KnowledgeAgentUnavailable("Enter a question before asking Command Nexus.")
+
+    context_lines = []
+    if facility:
+        context_lines.append(f"Facility scope: {facility}")
+    if asset_id:
+        context_lines.append(f"Selected asset id: {asset_id}")
+    if incident_id:
+        context_lines.append(f"Active incident id: {incident_id}")
+    if context_lines:
+        normalized_question = (
+            "Operator context:\n"
+            + "\n".join(context_lines)
+            + f"\n\nQuestion: {normalized_question}"
+        )
 
     if not is_operational_query(normalized_question):
         _emit(on_progress, "Conversational request detected.")

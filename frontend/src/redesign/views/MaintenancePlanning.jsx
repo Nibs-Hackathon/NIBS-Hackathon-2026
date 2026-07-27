@@ -1,9 +1,269 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { BuildOutlined, FilterListOutlined, MoreHorizOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
+import { approveWorkOrder, createWorkOrder, getMaintenancePlan } from '../../api/client';
 import { Metric, MaintenanceSchedule, Status, Empty } from './shared';
 
-export function MaintenancePlanning({ maintenance }) { const navigate = useNavigate(); const objectApi = useObjectContext(); const tasks = Array.isArray(maintenance?.tasks) ? maintenance.tasks : []; const [lane, setLane] = useState('kanban'); const draft = objectApi.draft?.workOrder; const baseWork = tasks.map((task, index) => ({ ...task, id: task.id || index, title: task.title || task.Task || task.name || `Work order ${index + 1}`, priority: task.priority || task.Priority || (index % 3 === 0 ? 'P1' : 'P2'), owner: task.owner || task.Owner || 'Mechanical crew', status: task.status || task.Status || (index % 3 === 0 ? 'Ready' : index % 3 === 1 ? 'Scheduled' : 'In progress'), cost: task.estimated_cost || task.cost || 18500 + index * 4200, downtime: task.estimated_downtime || task.downtime || `${4 + index}h`, assetId: task.asset_id || task.assetId || null })); const work = draft && !baseWork.some((item) => item.id === draft.id) ? [{ ...draft, status: draft.status || 'Backlog', priority: draft.priority || 'P1', owner: draft.owner || 'Mechanical crew' }, ...baseWork] : baseWork; const [selected, setSelected] = useState(objectApi.selection.workOrderId || draft?.id || null); const chooseWork = (id) => { setSelected(id); objectApi.setSelection({ workOrderId: id }); }; const columns = ['Backlog', 'Ready', 'Scheduled', 'In progress', 'Complete']; const selectedWork = work.find((item) => item.id === selected) || work[0]; return <Box className="maintenance-planner"><Box className="maintenance-planner-head"><Box><Typography className="product-kicker">MAINTENANCE PLANNING</Typography><Typography className="maintenance-planner-title">Reliability work control</Typography>{draft ? <Typography variant="caption" color="text.secondary">Draft work order from forecast is staged in Backlog.</Typography> : null}</Box><Stack direction="row" spacing={1}><Button size="small" startIcon={<FilterListOutlined />}>Priority matrix</Button><Button size="small" variant="contained" startIcon={<BuildOutlined />} onClick={() => { const id = `wo-${Date.now()}`; const card = { id, title: 'New reliability work order', status: 'Backlog', priority: 'P2', owner: 'Mechanical crew', cost: 12000, downtime: '4h' }; objectApi.setDraftWorkOrder(card); chooseWork(id); }}>Create work order</Button>{selectedWork?.assetId || selectedWork?.asset_id ? <Button size="small" onClick={() => navigateTo(objectApi, navigate, 'assets', { assetId: selectedWork.assetId || selectedWork.asset_id })}>Open twin</Button> : null}</Stack></Box><Box className="maintenance-kpis"><Metric label="Open work orders" value={work.length} /><Metric label="Approval queue" value={work.filter((item) => item.priority === 'P1').length} /><Metric label="Estimated downtime" value={work.length ? `${work.length * 4}h` : '0h'} /><Metric label="Planned cost" value={`$${work.reduce((sum, item) => sum + Number(item.cost || 0), 0).toLocaleString()}`} /></Box><Box className="maintenance-layout"><Paper className="maintenance-board"><Box className="maintenance-board-head"><Box className="maintenance-view-tabs">{['kanban', 'calendar', 'timeline', 'gantt'].map((view) => <Button key={view} className={lane === view ? 'active' : ''} onClick={() => setLane(view)}>{view}</Button>)}</Box><Button size="small">This operating week</Button></Box><Box className={`maintenance-${lane}`}>{lane === 'kanban' ? columns.map((column) => <Box key={column} className="maintenance-column"><Typography>{column}<b>{work.filter((item) => String(item.status).toLowerCase().includes(column.toLowerCase().split(' ')[0])).length}</b></Typography>{work.filter((item, index) => String(item.status).toLowerCase().includes(column.toLowerCase().split(' ')[0]) || (!work.some((other) => String(other.status).toLowerCase().includes(column.toLowerCase().split(' ')[0])) && index % columns.length === columns.indexOf(column))).map((item) => <button type="button" key={item.id} onClick={() => chooseWork(item.id)} className={`work-order ${selectedWork?.id === item.id ? 'selected' : ''}`}><Box><span className={`priority ${String(item.priority).toLowerCase()}`}>{item.priority}</span><MoreHorizOutlined fontSize="small" /></Box><b>{item.title}</b><Typography>{item.owner}</Typography><Box><span>{item.downtime} downtime</span><span>${Number(item.cost).toLocaleString()}</span></Box><i><span style={{ width: `${item.status === 'Complete' ? 100 : item.status === 'In progress' ? 62 : item.status === 'Scheduled' ? 34 : 12}%` }} /></i></button>)}</Box>) : <MaintenanceSchedule work={work} lane={lane} onSelect={chooseWork} />}</Box></Paper><Paper className="maintenance-inspector"><Typography className="product-kicker">WORK ORDER INSPECTOR</Typography>{selectedWork ? <><Typography className="maintenance-work-title">{selectedWork.title}</Typography><Status state={selectedWork.status} /><Box className="maintenance-facts"><Metric label="Priority" value={selectedWork.priority} /><Metric label="Crew" value={selectedWork.owner} /><Metric label="Cost" value={`$${Number(selectedWork.cost).toLocaleString()}`} /><Metric label="Downtime" value={selectedWork.downtime} /></Box><Box className="maintenance-ai"><Typography className="product-kicker">AI SUGGESTED SCHEDULE</Typography><Typography>Schedule in the next low-load window after upstream isolation is confirmed. Reserve mechanical crew and two seal kits.</Typography></Box><Box className="maintenance-checklist"><Typography className="product-kicker">DEPENDENCIES & APPROVALS</Typography><Typography><i />Isolation permit <b>pending</b></Typography><Typography><i />Parts availability <b>2 kits reserved</b></Typography><Typography><i />Shutdown window <b>confirmed</b></Typography></Box><Button variant="contained" fullWidth>Request approval</Button></> : <Empty text="maintenance" />}</Paper></Box><Paper className="maintenance-bottom"><Box><Typography className="product-kicker">CREW ALLOCATION</Typography><Typography>Mechanical A <b>3 / 4 allocated</b></Typography><Typography>Electrical B <b>2 / 3 allocated</b></Typography><Typography>Contractor team <b>on standby</b></Typography></Box><Box><Typography className="product-kicker">INVENTORY & SHUTDOWN PLAN</Typography><Typography><i className="event-dot active" />Critical spares <b>14 available</b></Typography><Typography><i className="event-dot risk" />Valve kits <b>2 below reorder point</b></Typography><Typography><i className="event-dot" />Next shutdown <b>Oct 18  -  12h window</b></Typography></Box></Paper></Box>; }
+function normalizeTask(task, index) {
+  return {
+    ...task,
+    id: task.id || `task-${index}`,
+    title: task.title || task['Work order'] || task.Task || task.name || `Work order ${index + 1}`,
+    priority: task.priority || task.Priority || 'P2',
+    owner: task.owner || task.Owner || 'Mechanical crew',
+    status: task.status || task.State || task.Status || 'Ready',
+    cost: task.estimated_cost ?? task.cost ?? null,
+    downtime: task.estimated_downtime || task.downtime || task['Estimated downtime'] || null,
+    assetId: task.asset_id || task.assetId || null,
+    assetName: task.Asset || task.asset || task.assetName || null,
+  };
+}
+
+export function MaintenancePlanning({ maintenance }) {
+  const navigate = useNavigate();
+  const objectApi = useObjectContext();
+  const [plan, setPlan] = useState(maintenance);
+  const [lane, setLane] = useState('kanban');
+  const [busy, setBusy] = useState(false);
+  const draft = objectApi.draft?.workOrder;
+
+  useEffect(() => { setPlan(maintenance); }, [maintenance]);
+
+  const refreshPlan = () => {
+    getMaintenancePlan()
+      .then((response) => {
+        if (!response?.data) return;
+        setPlan((prev) => ({
+          ...(prev || {}),
+          ...response.data,
+          tasks: Array.isArray(response.data.tasks) && response.data.tasks.length
+            ? response.data.tasks
+            : prev?.tasks || [],
+        }));
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshPlan();
+  }, []);
+
+  const tasks = Array.isArray(plan?.tasks) ? plan.tasks : [];
+  const baseWork = tasks.map(normalizeTask);
+  const work = draft && !baseWork.some((item) => item.id === draft.id)
+    ? [{ ...normalizeTask(draft, 0), status: draft.status || 'Backlog' }, ...baseWork]
+    : baseWork;
+  const [selected, setSelected] = useState(objectApi.selection.workOrderId || draft?.id || null);
+
+  const chooseWork = (id) => {
+    setSelected(id);
+    objectApi.setSelection({ workOrderId: id });
+  };
+
+  const columns = ['Backlog', 'Ready', 'Scheduled', 'In progress', 'Complete'];
+  const selectedWork = work.find((item) => item.id === selected) || work[0];
+
+  const handleCreate = async () => {
+    setBusy(true);
+    try {
+      const response = await createWorkOrder({
+        asset_id: objectApi.selection.assetId || null,
+        title: 'New reliability work order',
+        priority: 'P2',
+        owner: 'Mechanical crew',
+        note: 'Created from maintenance planning board.',
+      });
+      const created = response.data || {};
+      objectApi.setDraftWorkOrder({
+        id: created.id,
+        title: created.title,
+        status: 'Ready',
+        priority: created.priority || 'P2',
+        owner: created.owner || 'Mechanical crew',
+        cost: created.estimated_cost,
+        downtime: created.downtime,
+        assetId: created.asset_id,
+      });
+      chooseWork(created.id);
+      refreshPlan();
+      toast.success('Work order created');
+    } catch (error) {
+      toast.error(error.response?.data?.detail?.message || 'Work order could not be created');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedWork?.id) return;
+    // Local drafts without server ids cannot be approved via API
+    if (String(selectedWork.id).startsWith('draft-') || String(selectedWork.id).startsWith('wo-')) {
+      toast.error('Persist the work order before requesting approval');
+      return;
+    }
+    setBusy(true);
+    try {
+      await approveWorkOrder(selectedWork.id, {
+        operator: 'Maintenance lead',
+        note: `Approval requested for ${selectedWork.title}`,
+      });
+      refreshPlan();
+      toast.success('Work order approved');
+    } catch (error) {
+      toast.error(error.response?.data?.detail?.message || 'Approval failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const plannedCost = work.reduce((sum, item) => sum + Number(item.cost || 0), 0);
+
+  return (
+    <Box className="maintenance-planner">
+      <Box className="maintenance-planner-head">
+        <Box>
+          <Typography className="product-kicker">MAINTENANCE PLANNING</Typography>
+          <Typography className="maintenance-planner-title">Reliability work control</Typography>
+          {draft ? (
+            <Typography variant="caption" color="text.secondary">
+              Draft work order from forecast is staged in Backlog.
+            </Typography>
+          ) : null}
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <Button size="small" startIcon={<FilterListOutlined />}>Priority matrix</Button>
+          <Button size="small" variant="contained" startIcon={<BuildOutlined />} disabled={busy} onClick={handleCreate}>
+            Create work order
+          </Button>
+          {selectedWork?.assetId || selectedWork?.asset_id ? (
+            <Button
+              size="small"
+              onClick={() => navigateTo(objectApi, navigate, 'assets', {
+                assetId: selectedWork.assetId || selectedWork.asset_id,
+              })}
+            >
+              Open twin
+            </Button>
+          ) : null}
+        </Stack>
+      </Box>
+
+      <Box className="maintenance-kpis">
+        <Metric label="Open work orders" value={work.length} />
+        <Metric label="Approval queue" value={work.filter((item) => /ready|pending/i.test(String(item.status))).length} />
+        <Metric
+          label="Estimated downtime"
+          value={work.some((item) => item.downtime) ? work.map((item) => item.downtime).filter(Boolean)[0] : '—'}
+        />
+        <Metric label="Planned cost" value={plannedCost ? `$${plannedCost.toLocaleString()}` : '—'} />
+      </Box>
+
+      <Box className="maintenance-layout">
+        <Paper className="maintenance-board">
+          <Box className="maintenance-board-head">
+            <Box className="maintenance-view-tabs">
+              {['kanban', 'calendar', 'timeline', 'gantt'].map((view) => (
+                <Button key={view} className={lane === view ? 'active' : ''} onClick={() => setLane(view)}>
+                  {view}
+                </Button>
+              ))}
+            </Box>
+            <Button size="small">This operating week</Button>
+          </Box>
+          <Box className={`maintenance-${lane}`}>
+            {lane === 'kanban' ? columns.map((column) => {
+              const columnWork = work.filter((item) => String(item.status).toLowerCase().includes(column.toLowerCase().split(' ')[0]));
+              return (
+                <Box key={column} className="maintenance-column">
+                  <Typography>
+                    {column}
+                    <b>{columnWork.length}</b>
+                  </Typography>
+                  {columnWork.map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => chooseWork(item.id)}
+                      className={`work-order ${selectedWork?.id === item.id ? 'selected' : ''}`}
+                    >
+                      <Box>
+                        <span className={`priority ${String(item.priority).toLowerCase()}`}>{item.priority}</span>
+                        <MoreHorizOutlined fontSize="small" />
+                      </Box>
+                      <b>{item.title}</b>
+                      <Typography>{item.owner}</Typography>
+                      <Box>
+                        <span>{item.downtime || '—'} downtime</span>
+                        <span>{item.cost != null ? `$${Number(item.cost).toLocaleString()}` : '—'}</span>
+                      </Box>
+                      <i>
+                        <span style={{
+                          width: `${item.status === 'Complete' ? 100 : item.status === 'In progress' ? 62 : item.status === 'Scheduled' ? 34 : 12}%`,
+                        }}
+                        />
+                      </i>
+                    </button>
+                  ))}
+                </Box>
+              );
+            }) : (
+              <MaintenanceSchedule work={work} lane={lane} onSelect={chooseWork} />
+            )}
+          </Box>
+        </Paper>
+
+        <Paper className="maintenance-inspector">
+          <Typography className="product-kicker">WORK ORDER INSPECTOR</Typography>
+          {selectedWork ? (
+            <>
+              <Typography className="maintenance-work-title">{selectedWork.title}</Typography>
+              <Status state={selectedWork.status} />
+              <Box className="maintenance-facts">
+                <Metric label="Priority" value={selectedWork.priority} />
+                <Metric label="Crew" value={selectedWork.owner} />
+                <Metric label="Cost" value={selectedWork.cost != null ? `$${Number(selectedWork.cost).toLocaleString()}` : '—'} />
+                <Metric label="Downtime" value={selectedWork.downtime || '—'} />
+              </Box>
+              <Box className="maintenance-ai">
+                <Typography className="product-kicker">AI SUGGESTED SCHEDULE</Typography>
+                <Typography>
+                  {plan?.rationale?.[0] || 'Schedule after upstream isolation is confirmed. Reserve mechanical crew capacity.'}
+                </Typography>
+              </Box>
+              <Box className="maintenance-checklist">
+                <Typography className="product-kicker">DEPENDENCIES & APPROVALS</Typography>
+                <Typography><i />Status <b>{selectedWork.status}</b></Typography>
+                <Typography><i />Asset <b>{selectedWork.assetName || selectedWork.assetId || 'Unassigned'}</b></Typography>
+                <Typography><i />Source <b>{selectedWork.source || 'maintenance plan'}</b></Typography>
+              </Box>
+              <Button variant="contained" fullWidth disabled={busy} onClick={handleApprove}>
+                Request approval
+              </Button>
+            </>
+          ) : <Empty text="maintenance" />}
+        </Paper>
+      </Box>
+
+      <Paper className="maintenance-bottom">
+        <Box>
+          <Typography className="product-kicker">PLAN RATIONALE</Typography>
+          {(Array.isArray(plan?.rationale) && plan.rationale.length
+            ? plan.rationale
+            : ['No maintenance rationale published yet.']
+          ).slice(0, 3).map((line) => (
+            <Typography key={String(line).slice(0, 40)}>{String(line)}</Typography>
+          ))}
+        </Box>
+        <Box>
+          <Typography className="product-kicker">PRIORITY & DOWNTIME</Typography>
+          <Typography>Plan priority <b>{plan?.priority || '—'}</b></Typography>
+          <Typography>Estimated downtime <b>{plan?.downtime || '—'}</b></Typography>
+        </Box>
+      </Paper>
+    </Box>
+  );
+}

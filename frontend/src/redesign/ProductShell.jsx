@@ -10,12 +10,14 @@ import {
   SyncOutlined, ViewSidebarOutlined, WarningAmberOutlined,
 } from '@mui/icons-material';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
+import toast from 'react-hot-toast';
 import { useColorMode } from '../context/ColorModeContext';
 import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
 import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
 import { resolveBreadcrumbs } from '../context/breadcrumbs';
 import { markNotificationsRead } from '../api/client';
+import { facilityOptionsFromRefineries } from '../api/resourceAdapters';
 import { AssistantPanel } from './AssistantPanel';
 import {
   AuditSpine, exportAuditLog, useOperatorAudit,
@@ -30,7 +32,6 @@ const nav = [
   ['Forecasting', '/health-prediction', ScienceOutlined, 'Intelligence', 'forecasting'],
   ['Reports', '/reports', ArticleOutlined, 'Intelligence', 'reports'],
 ];
-const facilities = ['Alpha Refinery', 'North Sea Portfolio', 'Enterprise view'];
 const label = (value = '') => String(value).replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const formatTime = (value) => (value ? new Date(value).toLocaleTimeString() : 'Live event');
 
@@ -57,7 +58,19 @@ export function ProductShell({ children }) {
   const workspacePanelRef = useRef(null);
   const navRefs = useRef([]);
 
-  const facility = objectApi.scope.facility || facilities[0];
+  const facilities = useMemo(
+    () => facilityOptionsFromRefineries(operations.refineries),
+    [operations.refineries],
+  );
+
+  const facility = objectApi.scope.facility || facilities[0] || 'Enterprise view';
+
+  useEffect(() => {
+    if (!facilities.length) return;
+    if (!facilities.includes(objectApi.scope.facility)) {
+      objectApi.setFacility(facilities[0]);
+    }
+  }, [facilities, objectApi]);
   const workspaceKey = pathToWorkspace(location.pathname);
   const current = nav.find((item) => item[1] === location.pathname) || nav[0];
   const workspacePanel = objectApi.ui.workspacePanelOpen;
@@ -317,10 +330,16 @@ export function ProductShell({ children }) {
     setSyncAge(0);
     const timer = setInterval(() => {
       setClock(new Date());
-      setSyncAge((value) => (connected ? Math.min(value + 1, 59) : value));
+      // Derive sync age from the OperationsContext lastUpdated timestamp when available
+      const snapshotTs = ambient?.lastUpdated;
+      if (snapshotTs && connected) {
+        setSyncAge(Math.min(Math.round((Date.now() - snapshotTs) / 1000), 59));
+      } else if (!connected) {
+        setSyncAge((value) => Math.min(value + 1, 59));
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, [connected, operations.generated_at]);
+  }, [connected, operations.generated_at, ambient?.lastUpdated]);
 
   const updateCollapse = () => setCollapsed((value) => {
     localStorage.setItem('rigos-nav-collapsed', String(!value));
@@ -338,7 +357,11 @@ export function ProductShell({ children }) {
       try {
         await markNotificationsRead({ mark_all: true });
         await refresh();
-      } catch { /* polling keeps shell current */ }
+      } catch (error) {
+        const detail = error?.response?.data?.detail;
+        const msg = typeof detail === 'string' ? detail : detail?.message;
+        toast.error(msg || 'Notifications could not be marked as read. Check backend connectivity.');
+      }
     }
   };
 

@@ -1,10 +1,13 @@
-# frontend Code Inventory
+# frontend
 
-Generated: 2026-07-25T06:14:25 UTC
+Generated: 2026-07-27T04:24:37 UTC
 
 **Folder path:** `frontend`
 
-## Folder inventories
+- [Source files in this folder](FILES.md) (8 files)
 
-- [frontend root files](_root.md) (7 files)
-- [frontend/src](src.md) (19 files)
+## Subfolders
+
+- [e2e](e2e/README.md)
+- [public](public/README.md)
+- [src](src/README.md)

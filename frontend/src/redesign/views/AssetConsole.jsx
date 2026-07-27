@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import {
   Box, Button, Checkbox, FormControlLabel, Typography,
 } from '@mui/material';
@@ -8,6 +8,8 @@ import toast from 'react-hot-toast';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
+import { getTwinAssets, createWorkOrder, recordOperatorAction, getAssetHealth, getAssetNotes, saveAssetNote } from '../../api/client';
+import { mergeAssetsWithTwin } from '../../api/resourceAdapters';
 import { FilterChipBar } from '../../design-system/catalog/actions';
 import { assetRisk } from './shared';
 import { DigitalTwinCanvas } from './DigitalTwinCanvas';
@@ -41,7 +43,22 @@ export function AssetConsole({
   const [mobilePane, setMobilePane] = useState('twin');
   const [bottomTab, setBottomTab] = useState('telemetry');
   const [focusTag, setFocusTag] = useState(null);
+  const [twinAssets, setTwinAssets] = useState([]);
+  const [assetDetail, setAssetDetail] = useState(null);
+  const [knowledgeQuery, setKnowledgeQuery] = useState('');
   const { workspace, setWorkspaceValue } = useWorkspace();
+
+  useEffect(() => {
+    let cancelled = false;
+    getTwinAssets()
+      .then((response) => {
+        if (!cancelled) setTwinAssets(Array.isArray(response.data) ? response.data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTwinAssets([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const layers = objectApi.ui?.twinLayers || {};
   const camera = objectApi.ui?.twinCamera || { zoom: 1, panX: 0, panY: 0 };
@@ -56,7 +73,13 @@ export function AssetConsole({
     return result && !/[\u00c3\u00c2]/.test(result) ? result : fallback;
   };
 
-  const safeAssets = Array.isArray(assets) ? assets.filter((asset) => asset && typeof asset === 'object') : [];
+  const safeAssets = useMemo(
+    () => mergeAssetsWithTwin(
+      Array.isArray(assets) ? assets.filter((asset) => asset && typeof asset === 'object') : [],
+      twinAssets,
+    ),
+    [assets, twinAssets],
+  );
   const safeIncidents = Array.isArray(incidents) ? incidents.filter((item) => item && typeof item === 'object') : [];
   const safeStreams = Array.isArray(telemetryStreams) ? telemetryStreams.filter((item) => item && typeof item === 'object') : [];
 
@@ -112,11 +135,39 @@ export function AssetConsole({
     }
   };
   const selected = allRows.find((row) => row.asset.id === selectedId) || rows[0] || allRows[0];
-  const asset = selected?.asset;
+  const asset = selected?.asset
+    ? { ...selected.asset, ...(assetDetail?.id === selected.asset.id ? assetDetail : {}) }
+    : null;
   const risk = selected ? assetRisk(asset, selected.incident) : 0;
   const stream = selected?.telemetry && typeof selected.telemetry === 'object' ? selected.telemetry : null;
   const readings = Array.isArray(stream?.readings) ? stream.readings : [];
   const signalValues = readings.map((reading) => Number(reading.value)).filter(Number.isFinite);
+
+  useEffect(() => {
+    if (!selected?.asset?.id) {
+      setAssetDetail(null);
+      return undefined;
+    }
+    const assetId = selected.asset.id;
+    let cancelled = false;
+    getAssetHealth(assetId)
+      .then((response) => {
+        if (!cancelled && response?.data) setAssetDetail(response.data);
+      })
+      .catch(() => {
+        if (!cancelled) setAssetDetail(null);
+      });
+    getAssetNotes(assetId)
+      .then((response) => {
+        if (cancelled) return;
+        const notes = Array.isArray(response.data) ? response.data : [];
+        const latest = notes[0]?.note;
+        if (latest != null) objectApi.setAssetNote?.(assetId, latest);
+      })
+      .catch(() => {});
+    setKnowledgeQuery(`${selected.asset.name || ''} ${selected.asset.type || ''} maintenance`.trim());
+    return () => { cancelled = true; };
+  }, [selected?.asset?.id]);
 
   useEffect(() => {
     if (!asset?.id || inspectorCollapsed) return undefined;
@@ -159,48 +210,88 @@ export function AssetConsole({
     objectApi.patchUi?.({ activeSavedViewId: view.id });
   };
 
-  const createWorkOrderFor = (row) => {
+  const createWorkOrderFor = async (row) => {
     const target = row?.asset || asset;
     if (!target) return;
-    objectApi.pushAuditDecision?.({
-      id: `wo-${Date.now()}`,
-      decision: 'create_work_order',
-      what: `Create work order — ${target.name}`,
-      who: 'Control operator',
-      operator: 'Control operator',
-      at: new Date().toISOString(),
-      objectLabel: target.name,
-      assetId: target.id,
-    });
-    navigateTo(objectApi, navigate, 'maintenance', {
-      assetId: target.id,
-      draftWorkOrder: {
-        id: `draft-${target.id}`,
+    try {
+      const response = await createWorkOrder({
+        asset_id: target.id,
+        incident_id: row?.incident?.id || selected?.incident?.id || null,
         title: `Inspect ${target.name}`,
-        asset: target.name,
-        assetName: target.name,
-        assetId: target.id,
-        cost: 18500,
-        downtime: '8h',
-        status: 'Backlog',
         priority: 'P1',
-      },
-    });
+        owner: 'Control operator',
+        note: `Created from assets workspace for ${target.name}.`,
+      });
+      const created = response.data || {};
+      objectApi.pushAuditDecision?.({
+        id: created.id || `wo-${Date.now()}`,
+        decision: 'create_work_order',
+        what: `Create work order — ${target.name}`,
+        who: 'Control operator',
+        operator: 'Control operator',
+        at: new Date().toISOString(),
+        objectLabel: target.name,
+        assetId: target.id,
+      });
+      navigateTo(objectApi, navigate, 'maintenance', {
+        assetId: target.id,
+        workOrderId: created.id,
+        draftWorkOrder: {
+          id: created.id || `draft-${target.id}`,
+          title: created.title || `Inspect ${target.name}`,
+          asset: target.name,
+          assetName: target.name,
+          assetId: target.id,
+          status: 'Ready',
+          priority: created.priority || 'P1',
+          cost: created.estimated_cost,
+          downtime: created.downtime,
+        },
+      });
+      toast.success('Work order submitted for approval');
+    } catch (error) {
+      toast.error(error.response?.data?.detail?.message || 'Work order could not be created');
+    }
   };
 
-  const acknowledgeWatch = () => {
+  const acknowledgeWatch = async () => {
     if (!asset) return;
-    objectApi.pushAuditDecision?.({
-      id: `ack-${Date.now()}`,
-      decision: 'acknowledge_watch',
-      what: `Acknowledge watch — ${asset.name}`,
-      who: 'Control operator',
-      operator: 'Control operator',
-      at: new Date().toISOString(),
-      objectLabel: asset.name,
-      assetId: asset.id,
-    });
-    toast.success(`Watch acknowledged for ${asset.name}`);
+    try {
+      await recordOperatorAction({
+        asset_id: asset.id,
+        incident_id: selected?.incident?.id || null,
+        action_type: 'acknowledge_watch',
+        decision: 'approved',
+        risk_level: risk > 70 ? 'HIGH' : 'MEDIUM',
+        note: `Acknowledge watch for ${asset.name}. Operator confirms elevated monitoring without immediate intervention.`,
+        operator: 'Control operator',
+      });
+      objectApi.pushAuditDecision?.({
+        id: `ack-${Date.now()}`,
+        decision: 'acknowledge_watch',
+        what: `Acknowledge watch — ${asset.name}`,
+        who: 'Control operator',
+        operator: 'Control operator',
+        at: new Date().toISOString(),
+        objectLabel: asset.name,
+        assetId: asset.id,
+      });
+      toast.success(`Watch acknowledged for ${asset.name}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail?.message || 'Watch acknowledgement could not be persisted');
+    }
+  };
+
+  const noteTimerRef = useRef(null);
+  const persistNote = (text) => {
+    if (!asset?.id) return;
+    objectApi.setAssetNote?.(asset.id, text);
+    if (noteTimerRef.current) clearTimeout(noteTimerRef.current);
+    noteTimerRef.current = setTimeout(() => {
+      saveAssetNote(asset.id, text).catch(() => {
+        toast.error('Note could not be saved to the server');
+      });
+    }, 600);
   };
 
   const primaryAction = () => {
@@ -375,7 +466,8 @@ export function AssetConsole({
             clean={clean}
             workOrders={workOrders}
             note={assetNote}
-            onNoteChange={(text) => objectApi.setAssetNote?.(asset.id, text)}
+            onNoteChange={persistNote}
+            knowledgeQuery={knowledgeQuery}
             onOpenIncident={() => selected?.incident && navigateTo(objectApi, navigate, 'incidents', {
               incidentId: selected.incident.id,
               assetId: asset.id,

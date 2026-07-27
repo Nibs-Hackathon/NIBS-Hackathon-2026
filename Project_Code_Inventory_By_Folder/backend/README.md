@@ -1,18 +1,19 @@
-# backend Code Inventory
+# backend
 
-Generated: 2026-07-25T06:14:25 UTC
+Generated: 2026-07-27T04:24:37 UTC
 
 **Folder path:** `backend`
 
-## Folder inventories
+- [Source files in this folder](FILES.md) (5 files)
 
-- [backend root files](_root.md) (4 files)
-- [backend/agents](agents.md) (11 files)
-- [backend/api](api.md) (34 files)
-- [backend/data](data.md) (1 files)
-- [backend/database](database.md) (19 files)
-- [backend/mao](mao.md) (30 files)
-- [backend/models](models.md) (12 files)
-- [backend/rag](rag.md) (16 files)
-- [backend/services](services.md) (24 files)
-- [backend/simulator](simulator.md) (6 files)
+## Subfolders
+
+- [agents](agents/README.md)
+- [api](api/README.md)
+- [data](data/README.md)
+- [database](database/README.md)
+- [mao](mao/README.md)
+- [models](models/README.md)
+- [rag](rag/README.md)
+- [services](services/README.md)
+- [simulator](simulator/README.md)

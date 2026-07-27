@@ -60,6 +60,14 @@ def _initialize_kernel():
     """Initialize the MAO kernel with all agents and workflows."""
     print("🚀 Initializing MAO Kernel...")
     start = time.time()
+
+    # Ensure operational tables exist when DATABASE_URL is configured.
+    # Knowledge/pgvector is optional for local Postgres without the extension.
+    try:
+        from database.bootstrap import create_schema
+        create_schema()
+    except Exception as e:
+        print(f"⚠️ Schema bootstrap skipped: {e}")
     
     # ✅ Generate AI configuration ONCE on startup
     try:

@@ -37,11 +37,14 @@ function WorkspaceFallback() {
 
 export function ProductPage() {
   const { pathname } = useLocation();
-  const { operations, connected } = useOperations();
+  const { operations, connected, ambient } = useOperations();
   const objectApi = useObjectContext();
-  const facility = objectApi.scope?.facility || 'Alpha Refinery';
+  const facility = objectApi.scope?.facility || 'Enterprise view';
   const auditEvents = useOperatorAudit(objectApi, operations);
-  const dataProvenance = inferProvenance({ connected, syncAge: connected ? 4 : 40 });
+  const syncAge = ambient?.lastUpdated
+    ? Math.round((Date.now() - ambient.lastUpdated) / 1000)
+    : (connected ? 0 : 60);
+  const dataProvenance = inferProvenance({ connected, syncAge });
   const [title, description] = config[pathname] || config['/'];
   useEffect(() => {
     if (pathname === '/assets' || ['/incident-simulator', '/agent-monitor', '/maintenance', '/health-prediction'].includes(pathname)) {
@@ -70,7 +73,7 @@ export function ProductPage() {
     (item) => taskLocation(item, assetsAll),
   );
   const predicted = filterByFacility(
-    operations.predicted_failures?.length ? operations.predicted_failures : assetsAll,
+    operations.predicted_failures || [],
     facility,
     assetLocation,
   );

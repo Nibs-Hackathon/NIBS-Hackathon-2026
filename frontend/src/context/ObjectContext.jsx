@@ -34,7 +34,7 @@ const defaultTwinCamera = {
 };
 
 const defaultState = {
-  scope: { facility: 'Alpha Refinery', unit: null },
+  scope: { facility: 'Enterprise view', unit: null },
   selection: {
     assetId: null,
     incidentId: null,
