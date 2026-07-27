@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
-import { ArticleOutlined, PlayArrowOutlined } from '@mui/icons-material';
+import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { ArticleOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { useObjectContext } from '../../context/ObjectContext';
@@ -15,12 +15,20 @@ import {
   DecisionHistory,
   ProvenanceBadge,
 } from '../accountability';
-import { MiniGraph, Empty, Metric, round } from './shared';
+import {
+  MiniGraph,
+  Empty,
+  Metric,
+  label,
+  round,
+  safeReasoning,
+  traceLabel,
+} from './shared';
 
 function stageConfidence(stage) {
   if (stage?.confidence == null) return null;
   const value = Number(stage.confidence);
-  return round(value <= 1 ? value * 100 : value);
+  return Number((value <= 1 ? value * 100 : value).toFixed(2));
 }
 
 export function AIInvestigationOS({ stages, investigation, incident, telemetry, provenance = 'live' }) {
@@ -114,7 +122,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
           <i />
           {pipeline.length ? 'STREAMING EXECUTION' : 'AWAITING WORKFLOW'}
           <small>
-            {investigationConfidence != null ? `${investigationConfidence}% model confidence` : 'No active investigation confidence'}
+            {investigationConfidence != null ? `${Number(investigationConfidence).toFixed(2)}% model confidence` : 'No active investigation confidence'}
           </small>
           <ProvenanceBadge value={provenance} />
         </Box>
@@ -162,7 +170,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                       </i>
                     </Box>
                     <Box className="ai-stage-state">
-                      <b>{confidence != null ? `${confidence}%` : '—'}</b>
+                      <b>{confidence != null ? `${confidence.toFixed(2)}%` : '—'}</b>
                       <small>{label(state)}</small>
                     </Box>
                     {index < pipeline.length - 1 && <em />}
@@ -177,11 +185,11 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                           {safeReasoning(stage.reasoning || stage.output || stage.task || 'No reasoning recorded for this stage.')}
                         </Typography>
                         <Box>
-                          <span>Evidence {evidenceCount}</span>
-                          <span>Artifacts {artifactCount}</span>
+                          <span>Evidence {evidenceCount.toFixed(2)}</span>
+                          <span>Artifacts {artifactCount.toFixed(2)}</span>
                           <span>
                             Duration {stage.duration_seconds
-                              ? `${Number(stage.duration_seconds).toFixed(1)}s`
+                              ? `${Number(stage.duration_seconds).toFixed(2)}s`
                               : '—'}
                           </span>
                         </Box>
@@ -231,7 +239,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                         {safeReasoning(stage.reasoning || stage.output || stage.task || 'Stage recorded without narrative.')}
                         <small>
                           {label(stage.state || 'recorded')}
-                          {confidence != null ? ` · confidence ${confidence}%` : ''}
+                          {confidence != null ? ` · confidence ${confidence.toFixed(2)}%` : ''}
                         </small>
                       </Typography>
                     </Box>
@@ -252,9 +260,6 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
               <Typography className="product-kicker">LIVE EVIDENCE</Typography>
               <Typography>Data and artifacts</Typography>
             </Box>
-            <Button size="small" startIcon={<PlayArrowOutlined />} disabled>
-              Replay
-            </Button>
           </Box>
           <Box className="ai-telemetry">
             <Typography className="product-kicker">TELEMETRY WINDOW</Typography>
@@ -262,7 +267,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
               values={readings.map((reading) => reading.value)}
               area
               label={readings.length
-                ? `${readings.length} samples · live historian feed`
+                ? `${readings.length.toFixed(2)} samples · live historian feed`
                 : 'No telemetry samples for this incident window'}
             />
           </Box>
@@ -303,7 +308,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
             <>
               <Box>
                 {confidenceHistory.map((value, index) => (
-                  <span key={index} style={{ height: `${value}%` }}><small>{value}%</small></span>
+                  <span key={index} style={{ height: `${value}%` }}><small>{value.toFixed(2)}%</small></span>
                 ))}
               </Box>
               <Typography>Recorded stage confidence values</Typography>

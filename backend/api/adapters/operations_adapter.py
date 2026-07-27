@@ -85,9 +85,40 @@ def _action_step(action: Any) -> dict[str, Any]:
 def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
     """Graceful live fallback when PostgreSQL is not available."""
     incidents = []
-    for event in reversed(runtime.kernel.event_store.all()[-limit:]):
+    events = runtime.kernel.event_store.all()
+    reports = list(getattr(runtime.kernel.state, "execution_reports", []) or [])
+    reports_by_incident = {
+        (report.metadata or {}).get("incident_id"): report
+        for report in reports
+        if (report.metadata or {}).get("incident_id")
+    }
+    # Reports produced before incident identifiers were added still align with
+    # the event store because the kernel appends each pair once per workflow.
+    for event, report in zip(events, reports):
+        reports_by_incident.setdefault(event.id, report)
+
+    for event in reversed(events[-limit:]):
         payload = getattr(event, "payload", {}) or {}
         asset = runtime.kernel.asset_service.get(getattr(event, "source", ""))
+        report = reports_by_incident.get(event.id)
+        report_results = list(getattr(report, "agent_results", []) or [])
+        confidence = getattr(report, "average_confidence", None)
+        timeline = [{
+            "id": event.id,
+            "kind": "incident",
+            "agent": None,
+            "title": "Incident detected",
+            "status": "detected",
+            "timestamp": _iso(event.timestamp),
+            "reasoning": "Simulator emitted an operational event.",
+            "evidence": [f"{key}: {value}" for key, value in payload.items()],
+            "confidence": None,
+            "duration_seconds": None,
+            "output": payload,
+            "recommendations": [],
+            "requires_human_approval": False,
+        }]
+        timeline.extend(_agent_step(result) for result in report_results)
         incidents.append({
             "id": event.id,
             "timestamp": _iso(event.timestamp),
@@ -96,28 +127,25 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
             "asset_name": getattr(asset, "name", event.source),
             "incident_type": event.name,
             "status": "recorded",
+            "confidence": confidence,
             "health_before": None,
             "health_after": getattr(asset, "health", None),
             "health_capture_status": "not persisted for this runtime event",
             "operator_actions": [],
-            "ai_recommendation": None,
-            "execution_report": None,
+            "ai_recommendation": (
+                report.recommendations[0]
+                if report and report.recommendations
+                else None
+            ),
+            "execution_report": {
+                "id": report.id,
+                "summary": report.final_summary,
+                "success": report.success,
+                "recommendations": report.recommendations or [],
+                "confidence": confidence,
+            } if report else None,
             "resolution_seconds": None,
-            "timeline": [{
-                "id": event.id,
-                "kind": "incident",
-                "agent": None,
-                "title": "Incident detected",
-                "status": "detected",
-                "timestamp": _iso(event.timestamp),
-                "reasoning": "Simulator emitted an operational event.",
-                "evidence": [f"{key}: {value}" for key, value in payload.items()],
-                "confidence": None,
-                "duration_seconds": None,
-                "output": payload,
-                "recommendations": [],
-                "requires_human_approval": False,
-            }],
+            "timeline": timeline,
         })
     return incidents
 
@@ -201,6 +229,16 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "requires_human_approval": False,
                 })
             timeline.sort(key=lambda item: item["timestamp"] or "")
+            confidence_values = [
+                float(execution.confidence)
+                for execution in executions
+                if execution.confidence is not None
+            ]
+            confidence = (
+                round(sum(confidence_values) / len(confidence_values), 4)
+                if confidence_values
+                else None
+            )
             audits.append({
                 "id": incident.id,
                 "timestamp": _iso(incident.created_at),
@@ -209,6 +247,7 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 "asset_name": getattr(asset, "name", incident.asset_id),
                 "incident_type": incident.event,
                 "status": incident.status,
+                "confidence": confidence,
                 # Historic before/after health was not captured by the original
                 # schema. Never infer it as an audit fact.
                 "health_before": incident.health_before,
@@ -221,6 +260,7 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "summary": report.summary,
                     "success": report.success,
                     "recommendations": report.recommendations or [],
+                    "confidence": confidence,
                 } if report else None,
                 "resolution_seconds": incident.resolution_seconds,
                 "resolved_at": _iso(incident.resolved_at),

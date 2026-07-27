@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Button, IconButton, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import {
-  ArticleOutlined, CommentOutlined, DevicesOutlined, ExpandMoreOutlined, FactCheckOutlined,
-  FilterListOutlined, MemoryOutlined, MoreHorizOutlined, PlayArrowOutlined, SearchOutlined,
+  ArticleOutlined, DevicesOutlined, ExpandMoreOutlined,
+  MemoryOutlined, SearchOutlined,
   ShieldOutlined, WarningAmberOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -27,7 +27,7 @@ function riskScore(severity) {
 function confidencePercent(incident) {
   if (incident?.confidence == null) return null;
   const value = Number(incident.confidence);
-  return round(value <= 1 ? value * 100 : value);
+  return (value <= 1 ? value * 100 : value).toFixed(2);
 }
 
 export function IncidentManagement({ incidents, telemetry, provenance = 'live' }) {
@@ -43,7 +43,6 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
     setWorkspaceValue('incidentSelection', id);
   };
   const [reasoning, setReasoning] = useState(false);
-  const [replay, setReplay] = useState(false);
   const [auditDetail, setAuditDetail] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
 
@@ -113,10 +112,6 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
             <Typography variant="caption" color="text.secondary">Loading audit record…</Typography>
           )}
         </Box>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" startIcon={<FilterListOutlined />}>Filters</Button>
-          <Button size="small" variant="contained" startIcon={<FactCheckOutlined />}>Decision log</Button>
-        </Stack>
       </Box>
 
       <Box className="incident-os-grid">
@@ -126,7 +121,6 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
               <Typography className="product-kicker">INCIDENT QUEUE</Typography>
               <Typography>{visible.length} active cases</Typography>
             </Box>
-            <IconButton size="small"><MoreHorizOutlined /></IconButton>
           </Box>
           <TextField size="small" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cases" slotProps={{ input: { startAdornment: <SearchOutlined fontSize="small" /> } }} />
           <TextField select size="small" value={severity} onChange={(e) => setSeverity(e.target.value)}>
@@ -215,9 +209,6 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
               <Typography className="product-kicker">EVIDENCE</Typography>
               <Typography>Live case record</Typography>
             </Box>
-            <Button size="small" startIcon={<PlayArrowOutlined />} disabled onClick={() => setReplay(!replay)}>
-              {replay ? 'Pause replay' : 'Replay telemetry'}
-            </Button>
           </Box>
           <Box className="evidence-snapshot">
             <Box>
@@ -240,13 +231,6 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
       </Box>
 
       <Paper className="incident-bottom">
-        <Box className="incident-bottom-tabs">
-          <Button className="active" startIcon={<CommentOutlined />}>Comments</Button>
-          <Button startIcon={<FactCheckOutlined />}>Decisions</Button>
-          <Button>Logs</Button>
-          <Button>Approvals</Button>
-          <Button>Recommended actions</Button>
-        </Box>
         <Box className="incident-bottom-body">
           <Box>
             <Typography className="product-kicker">OPERATOR NOTES</Typography>

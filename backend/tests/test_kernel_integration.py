@@ -112,6 +112,11 @@ def test_pressure_spike_runs_agents_in_dependency_order():
     )
     assert report.metadata["knowledge"]["query"] == "Pressure surge"
     assert report.metadata["report"]["source_agents"] == AGENT_ORDER[:-1]
+    assert report.metadata["incident_id"] == event.id
+    assert all(
+        result.metadata["incident_id"] == event.id
+        for result in report.agent_results
+    )
 
     assert kernel.event_store.all() == [event]
     assert kernel.state.events == [event]

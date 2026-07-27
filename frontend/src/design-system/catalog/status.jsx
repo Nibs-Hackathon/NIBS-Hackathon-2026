@@ -62,7 +62,7 @@ export function ConfidenceMeter({ value = 0, label = 'Confidence', className = '
     <Box className={`rig-confidence-meter ${className}`} sx={sx}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
         <Typography className="rig-label">{label}</Typography>
-        <Typography className="rig-data">{Math.round(pct)}%</Typography>
+        <Typography className="rig-data">{pct.toFixed(2)}%</Typography>
       </Box>
       <Box className="rig-confidence-track" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <Box className="rig-confidence-fill" style={{ width: `${pct}%` }} />

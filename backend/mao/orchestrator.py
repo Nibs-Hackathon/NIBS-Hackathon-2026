@@ -111,7 +111,12 @@ class Orchestrator:
             average_confidence=context.execution_metrics["average_confidence"],
             approval_required=context.requires_human_approval,
             incident_severity=context.incident_level or "Unknown",
-            metadata=context.metadata,
+            metadata={
+                **context.metadata,
+                "incident_id": event.id,
+                "incident_type": event.name,
+                "asset_id": event.source,
+            },
         )
 
         self.state.add_report(report)

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
-import { FilterListOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
@@ -142,7 +141,6 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
           <Typography className="forecast-terminal-title">Asset risk curve · forward operating model</Typography>
         </Box>
         <Stack direction="row" spacing={1}>
-          <Button size="small" startIcon={<FilterListOutlined />}>Asset universe</Button>
           <Button size="small" variant="outlined" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
             Create work order
           </Button>

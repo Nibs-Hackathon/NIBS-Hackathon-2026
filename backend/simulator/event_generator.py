@@ -33,7 +33,9 @@ class EventGenerator:
             asset_id = fault_data["asset_id"]
             asset_type = fault_data["asset_type"]
             
-            sensor = fault.get("sensor", "")
+            raw_sensor = fault.get("sensor", "")
+            sensor = getattr(raw_sensor, "value", raw_sensor)
+            sensor = str(sensor).strip().lower()
             value = fault.get("value", 0)
             
             # Map sensor to event name

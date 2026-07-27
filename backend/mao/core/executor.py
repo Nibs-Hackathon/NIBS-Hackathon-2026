@@ -60,6 +60,7 @@ class Executor:
         result.metadata.update({
             "task_name": task.name,
             "task_description": task.description,
+            "incident_id": context.event.id,
             "event_name": context.event.name,
             "asset_id": context.event.source,
             "execution_time": elapsed,
