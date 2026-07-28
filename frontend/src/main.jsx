@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
-import './styles/premium.css';
 import './design-system/primitives.css';
 import './redesign/twin.css';
 import './redesign/workspace-twin.css';

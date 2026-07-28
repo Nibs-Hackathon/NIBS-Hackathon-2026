@@ -18,11 +18,11 @@ const createProductTheme = (mode) => createTheme({
     error: { main: '#ef4444' },
     background: {
       default: mode === 'dark' ? '#090b0f' : '#f6f7f9',
-      paper: mode === 'dark' ? '#111418' : '#fff',
+      paper: mode === 'dark' ? '#10151c' : '#ffffff',
     },
     text: {
-      primary: mode === 'dark' ? '#f8fafc' : '#111827',
-      secondary: mode === 'dark' ? '#94a3b8' : '#64748b',
+      primary: mode === 'dark' ? '#e7eef8' : '#0f172a',
+      secondary: mode === 'dark' ? '#8d9eb3' : '#64748b',
     },
   },
   typography: {

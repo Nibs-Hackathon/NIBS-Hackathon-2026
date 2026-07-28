@@ -280,6 +280,54 @@ def get_incident_audit_detail(incident_id: str) -> dict[str, Any] | None:
     return next((item for item in get_incident_audit(limit=500) if item["id"] == incident_id), None)
 
 
+def get_operator_actions(
+    limit: int = 50,
+    incident_id: str | None = None,
+    asset_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return persisted operator actions for audit spine and incident detail."""
+    global _PERSISTENCE_RETRY_AFTER
+    if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
+        return []
+    session = None
+    try:
+        from database.connection import get_session
+        from database.models import ActionDB
+
+        session = get_session()
+        query = session.query(ActionDB).order_by(ActionDB.created_at.desc())
+        if incident_id:
+            query = query.filter(ActionDB.incident_id == incident_id)
+        if asset_id:
+            query = query.filter(ActionDB.asset_id == asset_id)
+        records = query.limit(max(1, min(limit, 200))).all()
+        actions = []
+        for action in records:
+            payload = action.payload or {}
+            actions.append({
+                "id": action.id,
+                "incident_id": action.incident_id,
+                "asset_id": action.asset_id,
+                "action_type": action.action_type,
+                "title": action.action_type.replace("_", " ").title(),
+                "status": action.status,
+                "timestamp": _iso(action.executed_at or action.created_at),
+                "approved_by": action.approved_by,
+                "operator": action.approved_by or action.requested_by,
+                "decision": payload.get("decision"),
+                "note": payload.get("note"),
+                "payload": payload,
+            })
+        _PERSISTENCE_RETRY_AFTER = 0.0
+        return actions
+    except Exception:
+        _PERSISTENCE_RETRY_AFTER = time.monotonic() + _PERSISTENCE_BACKOFF_SECONDS
+        return []
+    finally:
+        if session is not None:
+            session.close()
+
+
 def get_live_investigation() -> dict[str, Any]:
     """Expose only the latest workflow's own evidence and agent sequence."""
     kernel = runtime.kernel
@@ -606,6 +654,7 @@ def get_operations_live() -> dict[str, Any]:
         "critical_asset_telemetry": critical_asset_telemetry,
         "critical_incidents": [audit for audit in audits if audit["severity"] in ("Critical", "High")][:5],
         "audit_logs": audits,
+        "operator_actions": get_operator_actions(limit=50),
         "investigation": get_live_investigation(),
         "ai_activity": activity,
         "maintenance": maintenance,

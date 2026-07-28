@@ -5,7 +5,15 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
-import { getIncidentAuditDetail } from '../../api/client';
+import { getIncidentAuditDetail, getTelemetry, searchKnowledge, getAgents, getAgentMetrics } from '../../api/client';
+import {
+  incidentTelemetryWindow,
+  normalizeTelemetryReadings,
+  decisionEntriesFromIncident,
+  normalizeAgentActivityRow,
+  normalizeAgentRegistryRow,
+  normalizeAgentMetricRow,
+} from '../../api/resourceAdapters';
 import {
   OperatorDecisionBar,
   EvidenceLineage,
@@ -31,10 +39,17 @@ function stageConfidence(stage) {
   return Number((value <= 1 ? value * 100 : value).toFixed(2));
 }
 
-export function AIInvestigationOS({ stages, investigation, incident, telemetry, provenance = 'live' }) {
+export function AIInvestigationOS({ stages, investigation, incident, telemetry, aiActivity = [], provenance = 'live' }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
   const [auditIncident, setAuditIncident] = useState(null);
+  const [replayReadings, setReplayReadings] = useState([]);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [evidenceMode, setEvidenceMode] = useState('live');
+  const [knowledgeResults, setKnowledgeResults] = useState([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [agentRegistry, setAgentRegistry] = useState([]);
+  const [agentMetrics, setAgentMetrics] = useState([]);
 
   useEffect(() => {
     if (!incident?.id) {
@@ -53,7 +68,87 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
   }, [incident?.id]);
 
   const activeIncident = auditIncident?.id === incident?.id ? { ...incident, ...auditIncident } : incident;
+
+  useEffect(() => {
+    const assetId = activeIncident?.asset_id;
+    const window = incidentTelemetryWindow(activeIncident);
+    if (!assetId || !window) {
+      setReplayReadings([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setReplayLoading(true);
+    getTelemetry(assetId, { limit: 120, since: window.since, until: window.until })
+      .then((response) => {
+        if (!cancelled) setReplayReadings(normalizeTelemetryReadings(response.data));
+      })
+      .catch(() => {
+        if (!cancelled) setReplayReadings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setReplayLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeIncident?.id, activeIncident?.asset_id, activeIncident?.timestamp, activeIncident?.created_at, activeIncident?.resolved_at]);
+
+  useEffect(() => {
+    if (!activeIncident) {
+      setKnowledgeResults([]);
+      return undefined;
+    }
+    const query = [
+      activeIncident.incident_type,
+      activeIncident.asset_name,
+      activeIncident.reasoning,
+      activeIncident.root_cause,
+    ].filter(Boolean).join(' ').trim();
+    if (!query) {
+      setKnowledgeResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setKnowledgeLoading(true);
+    searchKnowledge(query)
+      .then((response) => {
+        if (!cancelled) setKnowledgeResults(Array.isArray(response.data?.results) ? response.data.results : []);
+      })
+      .catch(() => {
+        if (!cancelled) setKnowledgeResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setKnowledgeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeIncident?.id, activeIncident?.incident_type, activeIncident?.asset_name, activeIncident?.reasoning, activeIncident?.root_cause]);
+
   const pipeline = Array.isArray(stages) ? stages.filter(Boolean) : [];
+
+  useEffect(() => {
+    if (pipeline.length) return undefined;
+    let cancelled = false;
+    Promise.all([getAgents(), getAgentMetrics()])
+      .then(([agentsResponse, metricsResponse]) => {
+        if (cancelled) return;
+        setAgentRegistry(
+          (Array.isArray(agentsResponse.data) ? agentsResponse.data : [])
+            .map(normalizeAgentRegistryRow)
+            .filter(Boolean),
+        );
+        setAgentMetrics(
+          (Array.isArray(metricsResponse.data) ? metricsResponse.data : [])
+            .map(normalizeAgentMetricRow)
+            .filter(Boolean),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentRegistry([]);
+          setAgentMetrics([]);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [pipeline.length]);
+
   const [expanded, setExpanded] = useState(pipeline.length ? 0 : null);
 
   const selectStage = (index) => {
@@ -66,7 +161,8 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
 
   const traceStages = normalizeTraceStages(pipeline, investigation);
   const evidenceFacts = buildEvidenceFacts({ incident: activeIncident, stages: pipeline, investigation });
-  const readings = Array.isArray(telemetry?.readings) ? telemetry.readings : [];
+  const liveReadings = Array.isArray(telemetry?.readings) ? telemetry.readings : [];
+  const displayReadings = evidenceMode === 'replay' && replayReadings.length ? replayReadings : liveReadings;
 
   const investigationConfidence = investigation?.confidence != null
     ? round(Number(investigation.confidence) <= 1
@@ -82,6 +178,21 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
     }
     return [];
   });
+  const knowledgeDocs = knowledgeResults.map((doc) => ({
+    title: doc.filename || doc.source || doc.title || 'Knowledge document',
+    content: doc.content || doc.snippet,
+    score: doc.score,
+  }));
+  const displayedDocs = knowledgeDocs.length
+    ? knowledgeDocs
+    : retrievedDocs.map((doc) => (typeof doc === 'string' ? { title: doc } : doc));
+  const sessionDecisions = objectApi.audit?.recentDecisions?.filter(
+    (entry) => !incident?.id || entry.incidentId === incident.id,
+  ) || [];
+  const decisionEntries = decisionEntriesFromIncident(activeIncident, sessionDecisions);
+  const activityLog = (Array.isArray(aiActivity) ? aiActivity : [])
+    .map(normalizeAgentActivityRow)
+    .filter(Boolean);
 
   const confidenceHistory = pipeline
     .map((stage) => stageConfidence(stage))
@@ -199,6 +310,22 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                 );
               })}
             </Box>
+          ) : agentRegistry.length ? (
+            <Box className="ai-pipeline-list">
+              {agentRegistry.map((agent, index) => (
+                <Box key={`${agent.name}-${index}`} className="ai-stage completed">
+                  <span className="ai-stage-index">{index + 1}</span>
+                  <Box>
+                    <Typography>{agent.name}</Typography>
+                    <Typography>{agent.task}</Typography>
+                  </Box>
+                  <Box className="ai-stage-state">
+                    <b>{agent.confidence || '—'}</b>
+                    <small>{label(agent.state || 'ready')}</small>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
           ) : (
             <Box sx={{ p: 2 }}>
               <Empty text="agent activity" />
@@ -263,24 +390,51 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
           </Box>
           <Box className="ai-telemetry">
             <Typography className="product-kicker">TELEMETRY WINDOW</Typography>
+            {replayReadings.length > 0 && (
+              <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+                <Chip
+                  clickable
+                  size="small"
+                  label="Live feed"
+                  color={evidenceMode === 'live' ? 'primary' : 'default'}
+                  onClick={() => setEvidenceMode('live')}
+                />
+                <Chip
+                  clickable
+                  size="small"
+                  label={replayLoading ? 'Loading replay…' : `Incident replay (${replayReadings.length})`}
+                  color={evidenceMode === 'replay' ? 'primary' : 'default'}
+                  onClick={() => setEvidenceMode('replay')}
+                  disabled={replayLoading}
+                />
+              </Stack>
+            )}
             <MiniGraph
-              values={readings.map((reading) => reading.value)}
+              values={displayReadings.map((reading) => reading.value)}
               area
-              label={readings.length
-                ? `${readings.length.toFixed(2)} samples · live historian feed`
+              label={displayReadings.length
+                ? `${displayReadings.length} samples · ${evidenceMode === 'replay' ? 'incident window replay' : 'live historian feed'}`
                 : 'No telemetry samples for this incident window'}
             />
           </Box>
           <Box className="ai-documents">
             <Typography className="product-kicker">RETRIEVED DOCUMENTS & KNOWLEDGE LINKS</Typography>
-            {retrievedDocs.length ? retrievedDocs.map((doc, index) => (
-              <Typography key={`${doc}-${index}`}>
+            {knowledgeLoading && (
+              <Typography variant="caption" color="text.secondary">Searching knowledge base…</Typography>
+            )}
+            {displayedDocs.length ? displayedDocs.map((doc, index) => (
+              <Typography key={`${doc.title}-${index}`}>
                 <ArticleOutlined />
-                <span>{typeof doc === 'string' ? doc : doc.title || 'Document'}</span>
+                <span title={doc.content || ''}>
+                  {doc.title || 'Document'}
+                  {doc.score != null ? ` · ${(doc.score * 100).toFixed(0)}% match` : ''}
+                </span>
               </Typography>
             )) : (
               <Typography variant="body2" color="text.secondary">
-                No retrieved documents for this investigation yet.
+                {knowledgeLoading
+                  ? 'Retrieving documents…'
+                  : 'No retrieved documents for this investigation yet.'}
               </Typography>
             )}
           </Box>
@@ -331,7 +485,19 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                 {stage.timestamp ? ` · ${new Date(stage.timestamp).toLocaleTimeString()}` : ''}
               </b>
             </Typography>
-          )          ) : (
+          )) : activityLog.length ? activityLog.slice(0, 6).map((entry, index) => (
+            <Typography key={`${entry.agent}-${index}`}>
+              <i />
+              {entry.agent}
+              {' '}
+              <b>
+                {label(entry.state || 'recorded')}
+                {entry.time ? ` · ${new Date(entry.time).toLocaleTimeString()}` : ''}
+              </b>
+              {' — '}
+              {entry.action}
+            </Typography>
+          )) : (
             <Typography variant="body2" color="text.secondary">
               No execution log entries yet.
             </Typography>
@@ -340,6 +506,13 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
         <Box className="ai-decisions">
           <Typography className="product-kicker">OPERATOR DECISION</Typography>
           <Typography>Generated actions are advisory. Approval preserves the auditable execution record.</Typography>
+          {agentMetrics.length ? (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+              {agentMetrics.map((metric) => (
+                <Chip key={metric.label} size="small" label={`${metric.label}: ${metric.value}`} title={metric.detail} />
+              ))}
+            </Stack>
+          ) : null}
         </Box>
       </Paper>
 
@@ -353,11 +526,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
             if (idx >= 0) selectStage(idx);
           }}
         />
-        <DecisionHistory
-          entries={objectApi.audit?.recentDecisions?.filter(
-            (entry) => !incident?.id || entry.incidentId === incident.id,
-          ) || []}
-        />
+        <DecisionHistory entries={decisionEntries} />
         <OperatorDecisionBar
           incident={activeIncident}
           objectApi={objectApi}

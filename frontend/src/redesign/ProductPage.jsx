@@ -103,8 +103,8 @@ export function ProductPage() {
               assets={assets}
               incidents={incidents}
               stages={stages}
+              aiActivity={operations.ai_activity || []}
               dashboard={operations.dashboard || {}}
-              projection={operations.revenue_projection}
               refineries={operations.refineries || []}
               telemetry={telemetry}
               maintenance={maintenance}
@@ -132,6 +132,7 @@ export function ProductPage() {
               investigation={operations.investigation || {}}
               incident={activeInvestigationIncident}
               telemetry={telemetry}
+              aiActivity={operations.ai_activity || []}
               provenance={dataProvenance}
             />
           )}

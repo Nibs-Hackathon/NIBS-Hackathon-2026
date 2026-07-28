@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { ArticleOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +10,24 @@ import { downloadReportExport } from '../../api/downloadHelpers';
 import { DecisionRail } from '../../design-system/catalog/panels';
 import { ApprovalStamp, RATIONALE_MIN } from '../accountability';
 import { formatTime, round, Metric } from './shared';
+
+function timelineFromReport(report, approval) {
+  const rows = [];
+  const detected = report.created_at || report.started_at || report.timestamp;
+  if (detected) rows.push({ event: 'Signal detected', detail: 'Case opened in the operating record', when: detected });
+  if (report.completed_at) rows.push({ event: 'Investigation completed', detail: 'AI evidence package closed', when: report.completed_at });
+  if (report.recommendation || report.ai_recommendation) {
+    rows.push({
+      event: 'Recommendation prepared',
+      detail: String(report.recommendation || report.ai_recommendation).slice(0, 120),
+      when: report.completed_at || report.updated_at || detected,
+    });
+  }
+  if (!approval.includes('Awaiting') && report.id) {
+    rows.push({ event: 'Board decision', detail: approval, when: new Date().toISOString() });
+  }
+  return rows;
+}
 
 /** Part 8 — Executive approval with persisted board decisions + export package. */
 export function ExecutiveBriefing({ reports }) {
@@ -39,21 +57,37 @@ export function ExecutiveBriefing({ reports }) {
   const [mode, setMode] = useState('brief');
   const [approval, setApproval] = useState('Awaiting board approval');
   const [rationale, setRationale] = useState('');
+  const [decisionAt, setDecisionAt] = useState(null);
   const rationaleRef = useRef(null);
 
   const chooseReport = (id) => {
     setSelectedId(id);
     objectApi.setSelection({ reportId: id });
+    setApproval('Awaiting board approval');
+    setDecisionAt(null);
   };
 
-  const report = safeReports.find((item) => item.id === (selectedId || objectApi.selection.reportId)) || safeReports[0] || {};
-  const title = report.title || report.name || report.incident_type || 'Operating brief';
-  const confidenceRaw = report.confidence;
+  const report = safeReports.find((item) => item.id === (selectedId || objectApi.selection.reportId)) || safeReports[0] || null;
+  const title = report?.title || report?.name || report?.incident_type || 'Operating brief';
+  const confidenceRaw = report?.confidence;
   const confidence = confidenceRaw != null
     ? round(Number(confidenceRaw) <= 1 ? Number(confidenceRaw) * 100 : Number(confidenceRaw))
     : null;
 
+  const timeline = useMemo(
+    () => (report ? timelineFromReport(report, approval) : []),
+    [report, approval],
+  );
+
+  const boardDone = !approval.includes('Awaiting');
+  const opsDone = Boolean(report?.completed_at || report?.summary || report?.executive_summary);
+  const reliabilityDone = Boolean(report?.recommendation || report?.ai_recommendation || boardDone);
+
   const recordDecision = async (decision, statusLabel, actionType) => {
+    if (!report?.id) {
+      toast.error('Select a report before recording a board decision');
+      return;
+    }
     const note = String(rationale || '').trim();
     if (note.length < RATIONALE_MIN) {
       toast.error(`Rationale must be at least ${RATIONALE_MIN} characters`);
@@ -72,6 +106,7 @@ export function ExecutiveBriefing({ reports }) {
         operator: 'Board chair',
       });
       setApproval(statusLabel);
+      setDecisionAt(new Date().toISOString());
       objectApi.pushAuditDecision({
         id: response?.data?.id || `brief-${Date.now()}`,
         decision,
@@ -111,13 +146,27 @@ export function ExecutiveBriefing({ reports }) {
     }
   };
 
+  if (!safeReports.length) {
+    return (
+      <Box className="executive-briefing">
+        <Box className="briefing-head">
+          <Box>
+            <Typography className="product-kicker">EXECUTIVE BRIEFING CENTER</Typography>
+            <Typography className="briefing-title">No board briefs published</Typography>
+            <Typography>Executive packs appear after investigations produce execution reports.</Typography>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box className={`executive-briefing ${mode === 'presentation' ? 'presentation' : ''}`}>
       <Box className="briefing-head">
         <Box>
           <Typography className="product-kicker">EXECUTIVE BRIEFING CENTER</Typography>
           <Typography className="briefing-title">{title}</Typography>
-          <Typography>{report.created_at || report.completed_at ? formatTime(report.created_at || report.completed_at) : 'Prepared for the operating committee'}</Typography>
+          <Typography>{report.created_at || report.completed_at ? formatTime(report.created_at || report.completed_at) : 'Timestamp not published'}</Typography>
         </Box>
         <Stack direction="row" spacing={1}>
           <Button size="small" onClick={() => setMode(mode === 'brief' ? 'presentation' : 'brief')}>
@@ -139,8 +188,8 @@ export function ExecutiveBriefing({ reports }) {
 
       <Stack spacing={1} sx={{ mt: 1.5, mb: 2, maxWidth: 360 }}>
         <ApprovalStamp
-          signatory={approval.includes('Awaiting') ? 'Control operator' : 'Board chair'}
-          timestamp={new Date().toLocaleString()}
+          signatory={boardDone ? 'Board chair' : '—'}
+          timestamp={decisionAt ? new Date(decisionAt).toLocaleString() : null}
           status={approval}
         />
         {sessionApprovals.slice(0, 3).map((entry) => (
@@ -157,24 +206,24 @@ export function ExecutiveBriefing({ reports }) {
         <Paper className="briefing-index">
           <Typography className="product-kicker">BRIEFING PACK</Typography>
           <Typography className="briefing-index-title">Board view</Typography>
-          {(safeReports.length ? safeReports : [{ id: 'current', title }]).map((item, index) => (
+          {safeReports.map((item, index) => (
             <button
               type="button"
               key={item.id || index}
-              className={(report.id || 'current') === (item.id || 'current') ? 'selected' : ''}
+              className={report.id === item.id ? 'selected' : ''}
               onClick={() => chooseReport(item.id)}
             >
               <span>{String(index + 1).padStart(2, '0')}</span>
               <Box>
                 <b>{item.title || item.name || item.incident_type || `Executive brief ${index + 1}`}</b>
-                <small>{item.status || 'Ready for review'} · {item.created_at || item.completed_at ? formatTime(item.created_at || item.completed_at) : 'current'}</small>
+                <small>{item.status || 'Ready for review'} · {item.created_at || item.completed_at ? formatTime(item.created_at || item.completed_at) : '—'}</small>
               </Box>
             </button>
           ))}
           <Box className="briefing-index-audit">
             <Typography className="product-kicker">AUDIT TRAIL</Typography>
-            <Typography><i />Evidence assembled</Typography>
-            <Typography><i />AI synthesis complete</Typography>
+            {opsDone ? <Typography><i />Evidence package present</Typography> : <Typography><i />Evidence package pending</Typography>}
+            {reliabilityDone ? <Typography><i />Recommendation published</Typography> : <Typography><i />Recommendation pending</Typography>}
             <Typography><i />{approval}</Typography>
           </Box>
         </Paper>
@@ -189,10 +238,10 @@ export function ExecutiveBriefing({ reports }) {
             {report.summary || report.executive_summary || 'No executive summary has been published for this brief yet.'}
           </Typography>
           <Box className="briefing-numbers">
-            <Metric label="Financial impact" value={report.financial_impact || '—'} />
-            <Metric label="Maintenance cost" value={report.maintenance_cost || '—'} />
-            <Metric label="Production impact" value={report.production_impact || '—'} />
-            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : '—'} />
+            <Metric label="Financial impact" value={report.financial_impact || '—'} provenance="live" />
+            <Metric label="Maintenance cost" value={report.maintenance_cost || '—'} provenance="live" />
+            <Metric label="Production impact" value={report.production_impact || '—'} provenance="live" />
+            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : '—'} provenance="live" />
           </Box>
           <Box className="briefing-section">
             <Typography className="product-kicker">INCIDENT REVIEW & ROOT CAUSE</Typography>
@@ -202,18 +251,15 @@ export function ExecutiveBriefing({ reports }) {
           </Box>
           <Box className="briefing-timeline">
             <Typography className="product-kicker">DECISION TIMELINE</Typography>
-            {[
-              ['Signal detected', 'Telemetry deviation corroborated'],
-              ['Investigation completed', 'AI evidence and maintenance history reconciled'],
-              ['Recommendation prepared', 'Target intervention window proposed'],
-              ['Board approval', approval],
-            ].map(([event, detail], index) => (
-              <Box key={event}>
+            {timeline.length ? timeline.map((row) => (
+              <Box key={`${row.event}-${row.when}`}>
                 <i />
-                <Typography><b>{event}</b><small>{detail}</small></Typography>
-                <span>{index === 3 ? 'Now' : `${index + 1}h ago`}</span>
+                <Typography><b>{row.event}</b><small>{row.detail}</small></Typography>
+                <span>{formatTime(row.when)}</span>
               </Box>
-            ))}
+            )) : (
+              <Typography variant="body2" color="text.secondary">No decision timeline recorded for this brief yet.</Typography>
+            )}
           </Box>
           <Box className="briefing-section recommendation">
             <Typography className="product-kicker">RECOMMENDATION</Typography>
@@ -239,9 +285,9 @@ export function ExecutiveBriefing({ reports }) {
           </Box>
           <Box className="briefing-approvals">
             <Typography className="product-kicker">APPROVAL WORKFLOW</Typography>
-            <Typography><i className="done" />Operations review <b>complete</b></Typography>
-            <Typography><i className="done" />Reliability review <b>complete</b></Typography>
-            <Typography><i />Board approval <b>pending</b></Typography>
+            <Typography><i className={opsDone ? 'done' : ''} />Operations review <b>{opsDone ? 'complete' : 'pending'}</b></Typography>
+            <Typography><i className={reliabilityDone ? 'done' : ''} />Reliability review <b>{reliabilityDone ? 'complete' : 'pending'}</b></Typography>
+            <Typography><i className={boardDone ? 'done' : ''} />Board approval <b>{boardDone ? 'recorded' : 'pending'}</b></Typography>
           </Box>
           <DecisionRail
             className="e5-decision-bar"

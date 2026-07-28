@@ -18,10 +18,39 @@ load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 LOCAL_DEMO_MODE = os.getenv("LOCAL_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _normalize_database_url(raw: str) -> str:
+    """Normalize provider-specific URLs into SQLAlchemy-compatible PostgreSQL DSNs."""
+    url = (raw or "").strip()
+    if not url:
+        return ""
+
+    if url.startswith("tcp://"):
+        # Pinggy / raw TCP tunnels publish host:port only — build a PostgreSQL DSN.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        user = os.getenv("POSTGRES_USER", os.getenv("PGUSER", "postgres"))
+        password = os.getenv("POSTGRES_PASSWORD", os.getenv("PGPASSWORD", ""))
+        database = os.getenv("POSTGRES_DB", os.getenv("PGDATABASE", "rigos"))
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 5432
+        auth = f"{user}:{password}@" if password else f"{user}@"
+        return f"postgresql+psycopg2://{auth}{host}:{port}/{database}"
+
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 # Keep database imports valid in isolated demo mode without contacting a real
 # provider. Persistence and database-backed reads are disabled elsewhere.
 if LOCAL_DEMO_MODE:
     DATABASE_URL = "postgresql+psycopg2://demo:demo@127.0.0.1:1/rigos_demo"
+else:
+    DATABASE_URL = _normalize_database_url(DATABASE_URL)
 
 # Some hosted PostgreSQL providers still publish the legacy postgres:// scheme.
 # SQLAlchemy 2 requires the explicit psycopg2 dialect for those URLs.
