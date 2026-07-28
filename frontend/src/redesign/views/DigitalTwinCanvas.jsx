@@ -5,11 +5,71 @@ import {
 } from '@mui/icons-material';
 import { assetRisk, label, round } from './shared';
 
-const NODE_SLOTS = [
-  { x: 14, y: 19 }, { x: 38, y: 19 }, { x: 62, y: 19 }, { x: 86, y: 19 },
-  { x: 14, y: 50 }, { x: 38, y: 50 }, { x: 62, y: 50 }, { x: 86, y: 50 },
-  { x: 14, y: 81 }, { x: 38, y: 81 }, { x: 62, y: 81 }, { x: 86, y: 81 },
+const NODE_LAYOUT = [
+  { x: 13, y: 10, equipmentY: 24 },
+  { x: 38, y: 10, equipmentY: 24 },
+  { x: 63, y: 10, equipmentY: 24 },
+  { x: 87, y: 10, equipmentY: 24 },
+  { x: 87, y: 42, equipmentY: 56 },
+  { x: 63, y: 42, equipmentY: 56 },
+  { x: 38, y: 42, equipmentY: 56 },
+  { x: 13, y: 42, equipmentY: 56 },
+  { x: 13, y: 74, equipmentY: 88 },
+  { x: 38, y: 74, equipmentY: 88 },
+  { x: 63, y: 74, equipmentY: 88 },
+  { x: 87, y: 74, equipmentY: 88 },
 ];
+
+function EquipmentGlyph({ row, slot, selected }) {
+  const type = String(row.asset.type || row.asset.asset_type || row.asset.name || '').toLowerCase();
+  const className = `assets-equipment ${selected ? 'is-selected' : ''} ${row.incident ? 'is-critical' : ''}`;
+  const common = { className, transform: `translate(${slot.x} ${slot.equipmentY})` };
+
+  if (type.includes('pump')) {
+    return (
+      <g {...common}>
+        <circle r="4.8" />
+        <path d="M0-4.8V4.8M-4.8 0H4.8M-3.4-3.4L3.4 3.4M3.4-3.4L-3.4 3.4" />
+      </g>
+    );
+  }
+  if (type.includes('compressor')) {
+    return (
+      <g {...common}>
+        <circle r="5.2" />
+        <path d="M-3.6-2.8L1 0l-4.6 2.8zM3.6-2.8L-1 0l4.6 2.8z" />
+      </g>
+    );
+  }
+  if (type.includes('boiler') || type.includes('heater')) {
+    return (
+      <g {...common}>
+        <rect x="-5.2" y="-5.6" width="10.4" height="11.2" rx="2" />
+        <path d="M-2.8-2.6c1.8 1.2-1.8 2.2 0 3.4s-1.8 2.2 0 3.4M1-2.6c1.8 1.2-1.8 2.2 0 3.4s-1.8 2.2 0 3.4" />
+      </g>
+    );
+  }
+  if (type.includes('valve')) {
+    return (
+      <g {...common}>
+        <path d="M-5-4L0 0l-5 4zM5-4L0 0l5 4zM0-5.5v11" />
+      </g>
+    );
+  }
+  if (type.includes('pipeline') || type.includes('pipe')) {
+    return (
+      <g {...common}>
+        <path d="M-6 0H6M-3-3v6M3-3v6" />
+      </g>
+    );
+  }
+  return (
+    <g {...common}>
+      <rect x="-5.2" y="-4.8" width="10.4" height="9.6" rx="2" />
+      <path d="M-2.8 0h5.6" />
+    </g>
+  );
+}
 
 /**
  * Part D + H + I — Digital Twin: selection coupling, no marketing chrome, context menu only on RMB.
@@ -41,7 +101,7 @@ export function DigitalTwinCanvas({
   const zoom = Number(camera?.zoom) || 1;
   const panX = Number(camera?.panX) || 0;
   const panY = Number(camera?.panY) || 0;
-  const twinNodes = rows.slice(0, NODE_SLOTS.length);
+  const twinNodes = rows.slice(0, NODE_LAYOUT.length);
   const selected = twinNodes.find((row) => row.asset.id === selectedId) || twinNodes[0];
   const heatmapMode = layers?.deviation ? 'deviation' : layers?.health ? 'health' : layers?.risk ? 'risk' : null;
 
@@ -101,6 +161,10 @@ export function DigitalTwinCanvas({
   };
 
   const flowSpeed = selected ? Math.max(0.4, Math.min(2.2, (Number(selected.asset.health) || 50) / 50)) : 1;
+  const processPath = NODE_LAYOUT
+    .slice(0, twinNodes.length)
+    .map((slot, index) => `${index ? 'L' : 'M'}${slot.x} ${slot.equipmentY}`)
+    .join(' ');
 
   return (
     <Box className="twin-canvas assets-twin" ref={viewportRef}>
@@ -158,21 +222,27 @@ export function DigitalTwinCanvas({
         >
           <div className="twin-grid-lines" />
           {layers?.process !== false && (
-            <svg viewBox="0 0 740 380" className="assets-topology" role="img" aria-label="Unit process topology">
-              <path className={`map-pipe ${layers?.maintenance ? 'is-maintenance' : ''}`} d="M80 200H205V115H355V200H495V115H655" />
-              <path className="map-pipe map-flow assets-flow" d="M80 200H205V115H355V200H495V115H655" />
-              <rect className="map-tank" x="35" y="130" width="82" height="140" rx="12" />
-              <path className="map-level" d="M42 232h68v31H42z" />
-              <circle className="map-pump" cx="280" cy="115" r="39" />
-              <path className="map-pump-spoke" d="M280 76v78M241 115h78M252 87l56 56M308 87l-56 56" />
-              <rect className="map-unit" x="420" y="155" width="95" height="90" rx="12" />
-              <path className="map-stack" d="M570 115v145M610 115v145" />
+            <svg viewBox="0 0 100 100" className="assets-topology" role="img" aria-label="Unit process topology">
+              {processPath && (
+                <>
+                  <path className={`map-pipe assets-process-path ${layers?.maintenance ? 'is-maintenance' : ''}`} d={processPath} />
+                  <path className="map-pipe map-flow assets-flow assets-process-path" d={processPath} />
+                </>
+              )}
+              {twinNodes.map((row, index) => (
+                <EquipmentGlyph
+                  key={`equipment-${row.asset.id}`}
+                  row={row}
+                  slot={NODE_LAYOUT[index]}
+                  selected={row.asset.id === selectedId}
+                />
+              ))}
             </svg>
           )}
 
           {twinNodes.map((row, index) => {
             const rowRisk = assetRisk(row.asset, row.incident);
-            const slot = NODE_SLOTS[index];
+            const slot = NODE_LAYOUT[index];
             const heat = nodeFill(row);
             const alarm = Boolean(row.incident) && layers?.alarms !== false;
             const isSelected = row.asset.id === selectedId;
@@ -231,7 +301,7 @@ export function DigitalTwinCanvas({
               <i
                 key={row.asset.id}
                 className={row.asset.id === selectedId ? 'is-selected' : ''}
-                style={{ left: `${NODE_SLOTS[index].x}%`, top: `${NODE_SLOTS[index].y}%` }}
+                style={{ left: `${NODE_LAYOUT[index].x}%`, top: `${NODE_LAYOUT[index].equipmentY}%` }}
               />
             ))}
           </button>

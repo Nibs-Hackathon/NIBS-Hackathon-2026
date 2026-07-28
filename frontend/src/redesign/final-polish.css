@@ -110,6 +110,192 @@ html[data-rigos-theme='light'] .twin-workspace-head {
   color: var(--rig-text) !important;
 }
 
+/* Complete light-mode coverage for the dense OS workspaces. Component styles
+   intentionally own their dark presentation; these selectors map their neutral
+   surfaces and copy back onto the shared theme tokens without muting status hues. */
+html[data-rigos-theme='light'] .product-page :where(
+  .mission-situation, .mission-executive
+) {
+  background: linear-gradient(100deg, rgba(37, 99, 235, 0.06), var(--rig-surface) 48%) !important;
+  color: var(--rig-text) !important;
+  border-color: var(--rig-line) !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .mission-twin-map, .mission-twin-core, .mission-twin-node,
+  .mission-agent-list > div,
+  .incident-queue .MuiOutlinedInput-root, .incident-queue-item,
+  .incident-summary-strip, .incident-event > span, .dependency-graph, .evidence-snapshot,
+  .maintenance-kpis .metric, .work-order, .maintenance-ai, .maintenance-checklist,
+  .ai-stage, .reasoning-branches > div, .evidence-graph, .ai-telemetry,
+  .scenario-control, .terminal-brush, .briefing-confidence,
+  .workspace-activity, .twin-empty, .product-empty-state,
+  .incident-facts .metric, .incident-index-v2 .MuiOutlinedInput-root,
+  .incident-operator-bar, .ai-workflow-map, .ai-workflow-node > div,
+  .forecast-canvas, .planning-lane, .planning-order, .report-card-v2,
+  .report-chart-v2, .report-loading-lines, .facility-map-core,
+  .asset-condition-card, .asset-card-readings > div, .asset-expanded-meta p,
+  .trace-agent-mark, .trace-console, .trace-metrics > div,
+  .twin-toolbar .MuiOutlinedInput-root, .twin-card, .twin-drawer-gauges,
+  .twin-drawer-telemetry, .twin-readings > div,
+  .inspector-status > div, .inspector-prediction
+) {
+  background: var(--rig-inset) !important;
+  color: var(--rig-text) !important;
+  border-color: var(--rig-line) !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .incident-index-v2, .incident-detail-v2,
+  .forecast-hero, .forecast-queue, .report-preview-v2,
+  .mission-facility, .mission-ai-summary, .mission-telemetry,
+  .mission-workforce, .mission-portfolio,
+  .refinery-twin, .twin-drawer
+) {
+  background: var(--rig-surface) !important;
+  color: var(--rig-text) !important;
+  border-color: var(--rig-line) !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .ai-stage:hover, .ai-stage.expanded,
+  .work-order:hover, .work-order.selected,
+  .incident-queue-item:hover, .incident-queue-item.selected,
+  .terminal-watchlist button:hover, .terminal-watchlist button.selected,
+  .briefing-index button:hover, .briefing-index button.selected,
+  .report-card-v2:hover, .report-card-v2.selected,
+  .twin-card:hover
+) {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+}
+
+html[data-rigos-theme='light'] .product-page .state {
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .mission-situation > div:first-child > p:last-child,
+  .mission-panel-head > div > p:last-child, .mission-twin-core span,
+  .mission-twin-footer p, .mission-chart-legend p,
+  .mission-decisions > p:nth-child(3), .mission-feed-row p,
+  .mission-empty-copy, .mission-agent-list small, .mission-risks small,
+  .mission-shift > p:not(:first-child),
+  .incident-queue-head > div > p:last-child,
+  .incident-evidence-head > div > p:last-child,
+  .incident-queue-item > div:first-child > p, .incident-queue-item > p,
+  .incident-summary-strip p, .investigation-head .MuiTypography-caption,
+  .incident-event small, .incident-event > div > p:nth-child(2),
+  .dependency-graph .MuiTypography-caption, .evidence-list small,
+  .operator-note, .decision-track > p:not(:first-child),
+  .maintenance-column > p, .work-order > p,
+  .maintenance-bottom > div > p:not(:first-child),
+  .ai-flagship-head > div:first-child > p:last-child,
+  .ai-panel-head > div > p:last-child,
+  .ai-stage > div:nth-child(2) > p:nth-child(2),
+  .ai-stage-state small, .ai-stage-expanded,
+  .reasoning-branches small, .ai-documents small,
+  .ai-confidence > p:last-child, .ai-execution > p:not(:first-child),
+  .ai-decisions > p:nth-child(2),
+  .terminal-watchlist-sub, .terminal-watchlist small,
+  .terminal-chart-head > div:first-child > p:last-child,
+  .terminal-chart-legend span, .terminal-axis,
+  .terminal-scenario > p:nth-child(3), .scenario-control > p,
+  .terminal-recommendation > p:last-child,
+  .terminal-bottom > div > p:nth-child(2), .sensitivity-bars p,
+  .briefing-head > div > p:last-child, .briefing-index small,
+  .briefing-index-audit > p:not(:first-child),
+  .briefing-document-top > p, .briefing-lede,
+  .briefing-section > p:last-child, .briefing-timeline small,
+  .briefing-timeline span, .briefing-confidence p,
+  .briefing-evidence > p:not(:first-child),
+  .briefing-approvals > p:not(:first-child)
+) {
+  color: var(--rig-muted) !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .mission-twin-node, .incident-queue-item, .work-order,
+  .terminal-watchlist button, .briefing-index button,
+  .ai-stage, .reasoning-branches p, .ai-documents span,
+  .incident-summary-strip b, .incident-event > div > p:first-child,
+  .maintenance-checklist b, .maintenance-bottom b,
+  .ai-execution b, .briefing-approvals b
+) {
+  color: var(--rig-text) !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .mission-panel-head .MuiButton-root, .mission-decisions .MuiButton-root,
+  .mission-shift .MuiButton-root, .incident-event .MuiButton-root,
+  .incident-evidence-head .MuiButton-root, .incident-bottom-body .MuiButton-root,
+  .maintenance-board-head > .MuiButton-root,
+  .scenario-control .MuiButton-root
+) {
+  color: #2563eb !important;
+}
+
+html[data-rigos-theme='light'] .product-page :where(
+  .maintenance-view-tabs .MuiButton-root.active,
+  .incident-bottom-tabs .MuiButton-root.active
+) {
+  color: #1d4ed8 !important;
+}
+
+html[data-rigos-theme='light'] .product-page .maintenance-view-tabs .MuiButton-root.active,
+html[data-rigos-theme='light'] .product-page .incident-bottom-tabs .MuiButton-root.active,
+html[data-rigos-theme='light'] .product-page .twin-bottom-tabs .MuiButton-root.active {
+  color: #1d4ed8 !important;
+}
+
+html[data-rigos-theme='light'] .product-page .mission-shift b {
+  color: var(--rig-text);
+}
+
+html[data-rigos-theme='light'] .product-page .empty-state-action {
+  color: var(--rig-muted);
+}
+
+html[data-rigos-theme='light'] .workspace-dock .MuiIconButton-root,
+html[data-rigos-theme='light'] .workspace-inspector-section > .MuiButton-root {
+  color: var(--rig-muted) !important;
+}
+
+html[data-rigos-theme='light'] .workspace-dock .MuiIconButton-root:hover,
+html[data-rigos-theme='light'] .workspace-inspector-section > .MuiButton-root:hover {
+  color: var(--rig-text) !important;
+  background: var(--rig-inset) !important;
+}
+
+html[data-rigos-theme='light'] .e5-audit-spine .rig-audit-spine {
+  background: transparent;
+  border-color: var(--rig-line);
+}
+
+html[data-rigos-theme='light'] .os-ambient p:first-child,
+html[data-rigos-theme='light'] .os-profile {
+  color: var(--rig-text) !important;
+}
+
+html[data-rigos-theme='light'] .os-ambient p:last-child,
+html[data-rigos-theme='light'] .os-profile p:last-child {
+  color: var(--rig-muted) !important;
+}
+
+html[data-rigos-theme='light'] .os-sync.is-ready {
+  color: #047857 !important;
+}
+
+html[data-rigos-theme='light'] .os-ai-status {
+  background: #eff6ff !important;
+  color: #475569 !important;
+}
+
+html[data-rigos-theme='light'] .os-nav a.is-active {
+  color: var(--rig-text);
+}
+
 .product-page { max-width: none !important; }
 .product-page :where(.MuiTypography-root) { text-wrap: pretty; }
 .product-page :where(.MuiPaper-root) { box-shadow: none; }

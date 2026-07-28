@@ -217,9 +217,45 @@
 
 .assets-topology {
   position: absolute;
-  inset: 5% 4%;
-  width: 92%;
-  height: 90%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.assets-process-path {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.assets-equipment {
+  color: #89a9d3;
+  transition: color 160ms ease, filter 160ms ease;
+}
+
+.assets-equipment > :not(path),
+.assets-equipment > path:first-child {
+  fill: #101924;
+  stroke: currentColor;
+  stroke-width: 0.55;
+}
+
+.assets-equipment path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.42;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.assets-equipment.is-selected {
+  color: #5c9dff;
+  filter: drop-shadow(0 0 2px rgba(92, 157, 255, 0.65));
+}
+
+.assets-equipment.is-critical {
+  color: #ef7373;
 }
 
 .assets-flow {
@@ -749,6 +785,216 @@
 
 .product-page.is-ops-os:not(.is-assets-os) {
   max-width: none;
+}
+
+/* The Assets workspace has denser, bespoke chrome than the shared product
+   surfaces, so its light palette needs to cover the pane interiors as well. */
+html[data-rigos-theme='light'] .assets-os {
+  color: #0f172a;
+}
+
+html[data-rigos-theme='light'] .assets-toolbar {
+  background: #f6f7f9;
+}
+
+html[data-rigos-theme='light'] .assets-layer-toggles .MuiFormControlLabel-label,
+html[data-rigos-theme='light'] .assets-twin-sync,
+html[data-rigos-theme='light'] .assets-causal-strip,
+html[data-rigos-theme='light'] .assets-last-reading {
+  color: #64748b !important;
+}
+
+html[data-rigos-theme='light'] .assets-os .rig-filter-chip {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-rigos-theme='light'] .assets-os .rig-filter-chip:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+html[data-rigos-theme='light'] .assets-os .rig-filter-chip.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+html[data-rigos-theme='light'] .assets-body > .assets-pane,
+html[data-rigos-theme='light'] .assets-body > .assets-twin {
+  border-color: #d8e0ea !important;
+  background: #ffffff !important;
+  box-shadow: 0 10px 26px rgba(51, 65, 85, 0.08) !important;
+}
+
+html[data-rigos-theme='light'] .assets-inspector-sticky,
+html[data-rigos-theme='light'] .assets-inspector-identity {
+  background: #ffffff;
+}
+
+html[data-rigos-theme='light'] .asset-explorer .MuiOutlinedInput-root,
+html[data-rigos-theme='light'] .assets-inspector .p8-inspector-state {
+  background: #f8fafc;
+}
+
+html[data-rigos-theme='light'] .asset-explorer .MuiOutlinedInput-notchedOutline {
+  border-color: #cbd5e1;
+}
+
+html[data-rigos-theme='light'] .asset-explorer .MuiInputBase-input,
+html[data-rigos-theme='light'] .asset-explorer .MuiSvgIcon-root,
+html[data-rigos-theme='light'] .asset-explorer-top .MuiTypography-caption,
+html[data-rigos-theme='light'] .assets-identity-meta .MuiTypography-root,
+html[data-rigos-theme='light'] .assets-health-value,
+html[data-rigos-theme='light'] .twin-inspector-title,
+html[data-rigos-theme='light'] .twin-bottom-title {
+  color: #0f172a !important;
+}
+
+html[data-rigos-theme='light'] .asset-tree-parent,
+html[data-rigos-theme='light'] .asset-tree-item small,
+html[data-rigos-theme='light'] .assets-identity-meta span,
+html[data-rigos-theme='light'] .assets-health-label,
+html[data-rigos-theme='light'] .assets-health-value span,
+html[data-rigos-theme='light'] .assets-risk-label {
+  color: #64748b !important;
+}
+
+html[data-rigos-theme='light'] .asset-tree-item {
+  color: #1e293b;
+}
+
+html[data-rigos-theme='light'] .asset-tree-item:hover,
+html[data-rigos-theme='light'] .assets-critical-queue .asset-tree-item:hover,
+html[data-rigos-theme='light'] .assets-tree-toggle:hover {
+  background: #f1f5f9;
+}
+
+html[data-rigos-theme='light'] .asset-tree-item.selected,
+html[data-rigos-theme='light'] .assets-critical-queue .asset-tree-item.selected {
+  border-color: #93c5fd;
+  background: linear-gradient(90deg, #dbeafe, #eff6ff);
+  box-shadow: inset 2px 0 #2563eb;
+}
+
+html[data-rigos-theme='light'] .assets-twin-chrome,
+html[data-rigos-theme='light'] .assets-causal-strip,
+html[data-rigos-theme='light'] .assets-critical-queue,
+html[data-rigos-theme='light'] .assets-accordion,
+html[data-rigos-theme='light'] .twin-bottom-tabs {
+  border-color: #e2e8f0;
+}
+
+html[data-rigos-theme='light'] .assets-causal-strip {
+  background: #f8fafc;
+}
+
+html[data-rigos-theme='light'] .assets-causal-strip b,
+html[data-rigos-theme='light'] .twin-bottom-events b,
+html[data-rigos-theme='light'] .assets-bottom-panel b {
+  color: #1e293b;
+}
+
+html[data-rigos-theme='light'] .assets-twin-tools .MuiButton-root {
+  color: #2563eb;
+}
+
+html[data-rigos-theme='light'] .assets-twin-viewport {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(59, 130, 246, 0.12), transparent 38%),
+    linear-gradient(180deg, #f8fafc, #eef3f8) !important;
+}
+
+html[data-rigos-theme='light'] .assets-os .map-pipe {
+  stroke: #cbd5e1;
+}
+
+html[data-rigos-theme='light'] .assets-os .map-flow {
+  stroke: #3b82f6;
+}
+
+html[data-rigos-theme='light'] .assets-os .map-tank,
+html[data-rigos-theme='light'] .assets-os .map-unit,
+html[data-rigos-theme='light'] .assets-os .map-pump {
+  fill: #ffffff;
+  stroke: #3b82f6;
+}
+
+html[data-rigos-theme='light'] .assets-os .map-pump-spoke,
+html[data-rigos-theme='light'] .assets-os .map-stack {
+  stroke: #64748b;
+}
+
+html[data-rigos-theme='light'] .assets-equipment {
+  color: #64748b;
+}
+
+html[data-rigos-theme='light'] .assets-equipment > :not(path),
+html[data-rigos-theme='light'] .assets-equipment > path:first-child {
+  fill: #ffffff;
+}
+
+html[data-rigos-theme='light'] .assets-equipment.is-selected {
+  color: #2563eb;
+  filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.35));
+}
+
+html[data-rigos-theme='light'] .assets-equipment.is-critical {
+  color: #dc2626;
+}
+
+html[data-rigos-theme='light'] .assets-os .twin-map-node {
+  border-color: #bfdbfe;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1e293b;
+  box-shadow: 0 7px 18px rgba(51, 65, 85, 0.14);
+}
+
+html[data-rigos-theme='light'] .assets-os .twin-map-node:hover,
+html[data-rigos-theme='light'] .assets-os .twin-map-node.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12), 0 10px 22px rgba(51, 65, 85, 0.16);
+}
+
+html[data-rigos-theme='light'] .assets-os .twin-map-node b {
+  color: #2563eb;
+}
+
+html[data-rigos-theme='light'] .assets-tag-overlay,
+html[data-rigos-theme='light'] .assets-minimap {
+  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+html[data-rigos-theme='light'] .assets-tag-overlay {
+  color: #2563eb;
+}
+
+html[data-rigos-theme='light'] .assets-inspector .p8-inspector-state {
+  border-color: #e2e8f0;
+}
+
+html[data-rigos-theme='light'] .assets-inspector-cta {
+  background: linear-gradient(180deg, transparent, #ffffff 28%);
+}
+
+html[data-rigos-theme='light'] .assets-os .rig-health-ring-inner {
+  background: #f8fafc;
+}
+
+html[data-rigos-theme='light'] .twin-bottom-tabs .MuiButton-root {
+  color: #64748b !important;
+}
+
+html[data-rigos-theme='light'] .twin-bottom-tabs .MuiButton-root.active {
+  color: #1d4ed8 !important;
+}
+
+html[data-rigos-theme='light'] .twin-bottom-events > p:not(:first-child),
+html[data-rigos-theme='light'] .assets-bottom-panel > .MuiTypography-root:not(.product-kicker) {
+  color: #475569;
 }
 
 @media (max-width: 1024px) {
