@@ -39,7 +39,7 @@ export function ProductPage() {
   const { pathname } = useLocation();
   const { operations, connected, ambient } = useOperations();
   const objectApi = useObjectContext();
-  const facility = objectApi.scope?.facility || 'Enterprise view';
+  const facility = 'Enterprise view';
   const auditEvents = useOperatorAudit(objectApi, operations);
   const syncAge = ambient?.lastUpdated
     ? Math.round((Date.now() - ambient.lastUpdated) / 1000)

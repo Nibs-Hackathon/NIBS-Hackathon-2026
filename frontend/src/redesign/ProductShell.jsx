@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import {
   ArticleOutlined, BuildOutlined, ChevronLeftOutlined, ChevronRightOutlined, CloseOutlined, DashboardOutlined,
-  DarkModeOutlined, DevicesOutlined, HistoryOutlined, LightModeOutlined, MemoryOutlined, MoreHorizOutlined,
+  DarkModeOutlined, DevicesOutlined, HistoryOutlined, LightModeOutlined, MemoryOutlined,
   NotificationsOutlined, PushPinOutlined, ScienceOutlined, SearchOutlined, SettingsOutlined, SmartToyOutlined,
   SyncOutlined, ViewSidebarOutlined, WarningAmberOutlined,
 } from '@mui/icons-material';
@@ -16,7 +16,6 @@ import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
 import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
 import { markNotificationsRead } from '../api/client';
-import { facilityOptionsFromRefineries } from '../api/resourceAdapters';
 import { AssistantPanel } from './AssistantPanel';
 import './sync-control.css';
 import './topbar-fixes.css';
@@ -46,7 +45,6 @@ export function ProductShell({ children }) {
   const objectApi = useObjectContext();
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('rigos-nav-collapsed') === 'true');
-  const [facilityAnchor, setFacilityAnchor] = useState(null);
   const [profileAnchor, setProfileAnchor] = useState(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandIndex, setCommandIndex] = useState(0);
@@ -59,19 +57,13 @@ export function ProductShell({ children }) {
   const workspacePanelRef = useRef(null);
   const navRefs = useRef([]);
 
-  const facilities = useMemo(
-    () => facilityOptionsFromRefineries(operations.refineries),
-    [operations.refineries],
-  );
-
-  const facility = objectApi.scope.facility || facilities[0] || 'Enterprise view';
+  const facility = 'Enterprise view';
 
   useEffect(() => {
-    if (!facilities.length) return;
-    if (!facilities.includes(objectApi.scope.facility)) {
-      objectApi.setFacility(facilities[0]);
+    if (objectApi.scope.facility !== facility) {
+      objectApi.setFacility(facility);
     }
-  }, [facilities, objectApi]);
+  }, [facility, objectApi.scope.facility, objectApi.setFacility]);
   const workspaceKey = pathToWorkspace(location.pathname);
   const current = nav.find((item) => item[1] === location.pathname) || nav[0];
   const workspacePanel = objectApi.ui.workspacePanelOpen;
@@ -323,11 +315,6 @@ export function ProductShell({ children }) {
     return !value;
   });
 
-  const selectFacility = (name) => {
-    objectApi.setFacility(name);
-    setFacilityAnchor(null);
-  };
-
   const openInbox = async () => {
     setInboxOpen(true);
     if (unread.length) {
@@ -366,15 +353,6 @@ export function ProductShell({ children }) {
               </IconButton>
             </Tooltip>
           </Box>
-          <Button className="os-workspace" onClick={(event) => setFacilityAnchor(event.currentTarget)}>
-            {!collapsed && (
-              <Box>
-                <Typography className="os-overline">FACILITY SCOPE</Typography>
-                <Typography>{facility}</Typography>
-              </Box>
-            )}
-            <MoreHorizOutlined />
-          </Button>
           <nav className="os-nav" aria-label="Primary navigation">
             {['Overview', 'Operations', 'Intelligence'].map((group) => (
               <Box key={group} className="os-nav-group">
@@ -508,11 +486,6 @@ export function ProductShell({ children }) {
         </Box>
       </Box>
 
-      <Menu anchorEl={facilityAnchor} open={Boolean(facilityAnchor)} onClose={() => setFacilityAnchor(null)} PaperProps={{ className: 'os-menu' }}>
-        {facilities.map((name) => (
-          <MenuItem key={name} selected={name === facility} onClick={() => selectFacility(name)}>{name}</MenuItem>
-        ))}
-      </Menu>
       <Menu anchorEl={profileAnchor} open={Boolean(profileAnchor)} onClose={() => setProfileAnchor(null)} PaperProps={{ className: 'os-menu' }}>
         <MenuItem onClick={toggle}>{mode === 'dark' ? <LightModeOutlined /> : <DarkModeOutlined />} {mode === 'dark' ? 'Use light mode' : 'Use dark mode'}</MenuItem>
         <MenuItem onClick={() => { setProfileAnchor(null); setAssistantOpen(true); }}><SmartToyOutlined /> Ask RigOS AI</MenuItem>

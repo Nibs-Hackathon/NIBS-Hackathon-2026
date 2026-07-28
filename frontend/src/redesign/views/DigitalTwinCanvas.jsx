@@ -6,9 +6,9 @@ import {
 import { assetRisk, label, round } from './shared';
 
 const NODE_SLOTS = [
-  { x: 12, y: 48 }, { x: 28, y: 28 }, { x: 46, y: 52 }, { x: 64, y: 28 },
-  { x: 82, y: 50 }, { x: 18, y: 72 }, { x: 38, y: 74 }, { x: 58, y: 70 },
-  { x: 76, y: 74 }, { x: 14, y: 18 }, { x: 50, y: 16 }, { x: 88, y: 18 },
+  { x: 14, y: 19 }, { x: 38, y: 19 }, { x: 62, y: 19 }, { x: 86, y: 19 },
+  { x: 14, y: 50 }, { x: 38, y: 50 }, { x: 62, y: 50 }, { x: 86, y: 50 },
+  { x: 14, y: 81 }, { x: 38, y: 81 }, { x: 62, y: 81 }, { x: 86, y: 81 },
 ];
 
 /**
@@ -56,20 +56,6 @@ export function DigitalTwinCanvas({
       window.removeEventListener('keyup', onKey);
     };
   }, []);
-
-  useEffect(() => {
-    if (!selectedId || !onCameraChange) return;
-    const index = twinNodes.findIndex((row) => row.asset.id === selectedId);
-    if (index < 0) return;
-    const slot = NODE_SLOTS[index];
-    onCameraChange({
-      fitMode: 'selection',
-      panX: (50 - slot.x) * 0.35,
-      panY: (50 - slot.y) * 0.35,
-    });
-  // Intentionally only when selection changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
 
   const setZoom = (next) => onCameraChange?.({ zoom: Math.min(2.2, Math.max(0.55, next)), fitMode: 'free' });
   const selectTwin = (id) => onSelect?.(id, 'twin');

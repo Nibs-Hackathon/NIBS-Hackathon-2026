@@ -25,11 +25,7 @@ class Supervisor:
         success = all(result.success for result in results)
 
         # Average confidence
-        confidence = round(
-            sum(result.confidence for result in results)
-            / len(results),
-            2,
-        )
+        confidence = context.execution_metrics["average_confidence"]
 
         # Remove duplicate recommendations
         recommendations = list(

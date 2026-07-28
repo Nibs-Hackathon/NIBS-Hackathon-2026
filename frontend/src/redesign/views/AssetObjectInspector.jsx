@@ -5,7 +5,7 @@ import { ProvenanceBadge } from '../accountability';
 import { StatusBadge, RiskBadge } from '../../design-system/catalog/status';
 import { HealthRing, SignalCard, Sparkline } from '../../design-system/catalog/data';
 import { searchKnowledge } from '../../api/client';
-import { Health, label, round } from './shared';
+import { formatTime, label, round } from './shared';
 
 function AccordionSection({ id, title, open, onToggle, children, count }) {
   return (
@@ -121,23 +121,33 @@ export function AssetObjectInspector({
         <Box className="p8-inspector-section assets-inspector-identity">
           <Typography className="product-kicker">IDENTITY</Typography>
           <Typography className="twin-inspector-title">{asset.name}</Typography>
-          <Typography variant="caption">
-            Tag {clean(asset.tag || asset.id)} · {clean(asset.location || asset.zone, 'Facility')} · {clean(label(asset.type || 'Process asset'), 'Asset')}
-          </Typography>
+          <Box className="assets-identity-meta">
+            <Typography variant="caption"><span>Tag</span>{clean(asset.tag || asset.id)}</Typography>
+            <Typography variant="caption"><span>Location</span>{clean(asset.location || asset.zone, 'Facility')}</Typography>
+            <Typography variant="caption"><span>Class</span>{clean(label(asset.type || 'Process asset'), 'Asset')}</Typography>
+          </Box>
         </Box>
 
         <Box className="p8-inspector-section p8-inspector-state">
-          <Typography className="product-kicker">CURRENT HEALTH</Typography>
-          <StatusBadge label={statusLabel} status={statusLabel} live={risk > 40} />
-          <RiskBadge value={risk} />
-          <HealthRing value={asset.health} size={72} />
-          <Box>
-            <Typography>Health</Typography>
-            <b>{health}%</b>
-            <Health value={asset.health} />
-            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-              Last reading {clean(asset.last_reading_at || asset.last_inspection, 'Pending')}
-            </Typography>
+          <Box className="assets-health-heading">
+            <Typography className="product-kicker">CURRENT CONDITION</Typography>
+            <Box className="assets-health-badges">
+              <StatusBadge label={statusLabel} status={statusLabel} live={risk > 40} />
+              <Typography component="span" className="assets-risk-label">Risk</Typography>
+              <RiskBadge value={risk} />
+            </Box>
+          </Box>
+          <Box className="assets-health-summary">
+            <HealthRing value={asset.health} size={84} />
+            <Box>
+              <Typography className="assets-health-label">Asset health</Typography>
+              <Typography className="assets-health-value">{health}<span>/100</span></Typography>
+              <Typography variant="caption" className="assets-last-reading">
+                Updated {asset.last_reading_at || asset.last_inspection
+                  ? formatTime(asset.last_reading_at || asset.last_inspection)
+                  : 'pending live reading'}
+              </Typography>
+            </Box>
           </Box>
         </Box>
 

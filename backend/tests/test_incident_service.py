@@ -1,8 +1,11 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from models.asset import Asset, AssetType
 from models.sensor import SensorType
+from services.computation_engine import ComputationEngine
 from services.incident_service import IncidentService
+from simulator.asset import SimulatedAsset
 from simulator.event_generator import EventGenerator
 
 
@@ -41,3 +44,28 @@ def test_pressure_sensor_enum_generates_pressure_spike_event():
     assert events[0].name == "PressureSpike"
     assert events[0].source == "asset-1"
     assert events[0].payload["pressure"] == 155
+
+
+def test_emergency_fault_changes_telemetry_and_asset_health():
+    asset = Asset(
+        id="compressor-1",
+        name="Compressor C-03",
+        asset_type=AssetType.COMPRESSOR,
+        refinery_id="refinery-1",
+        location="East Valley Refinery",
+    )
+    simulated = SimulatedAsset(asset)
+
+    telemetry = simulated.tick(
+        fault={"sensor": SensorType.VIBRATION, "value": 40},
+    )
+    vibration = next(
+        reading
+        for reading in telemetry
+        if reading.sensor_type == SensorType.VIBRATION
+    )
+    metrics = ComputationEngine().compute_asset(asset, telemetry)
+
+    assert vibration.value == 40
+    assert metrics["health"] < 100
+    assert metrics["status"] != "Running"
