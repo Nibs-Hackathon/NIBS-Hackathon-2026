@@ -39,3 +39,34 @@ def test_runtime_incident_includes_workflow_confidence(monkeypatch):
     assert incident["confidence"] == 0.94
     assert incident["execution_report"]["confidence"] == 0.94
     assert incident["ai_recommendation"] == "Inspect the pressure control loop."
+    assert incident["status"] == "resolved"
+
+
+def test_runtime_incident_tracks_live_simulator_state(monkeypatch):
+    event = SimpleNamespace(
+        id="incident-live",
+        timestamp=datetime(2026, 7, 28, 10, 0),
+        source="asset-1",
+        name="FlowRestriction",
+        payload={"flow": 15},
+    )
+    kernel = SimpleNamespace(
+        event_store=SimpleNamespace(all=lambda: [event]),
+        state=SimpleNamespace(execution_reports=[]),
+        asset_service=SimpleNamespace(
+            get=lambda _asset_id: SimpleNamespace(name="Boiler 003", health=95)
+        ),
+    )
+    simulator = SimpleNamespace(
+        active_incidents={"asset-1": {"event": event}},
+    )
+    monkeypatch.setattr(
+        operations_adapter,
+        "runtime",
+        SimpleNamespace(kernel=kernel, active_simulator=simulator),
+    )
+
+    incident = operations_adapter._runtime_incidents(limit=10)[0]
+
+    assert incident["status"] == "active"
+    assert operations_adapter._sensor_from_incident(incident["incident_type"]) == "Flow"

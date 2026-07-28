@@ -81,6 +81,9 @@ export function AssetConsole({
     [assets, twinAssets],
   );
   const safeIncidents = Array.isArray(incidents) ? incidents.filter((item) => item && typeof item === 'object') : [];
+  const openIncidents = safeIncidents.filter(
+    (item) => !['completed', 'resolved'].includes(String(item.status || '').toLowerCase()),
+  );
   const safeStreams = Array.isArray(telemetryStreams) ? telemetryStreams.filter((item) => item && typeof item === 'object') : [];
 
   const allRows = useMemo(() => safeAssets
@@ -90,9 +93,9 @@ export function AssetConsole({
         id: asset.id ?? `asset-${index}`,
         name: clean(asset.name || asset.asset_name, `Asset ${index + 1}`),
       },
-      incident: safeIncidents.find((item) => item.asset_id === asset.id),
+      incident: openIncidents.find((item) => item.asset_id === asset.id),
       telemetry: safeStreams.find((stream) => stream.asset_id === asset.id) || globalTelemetry,
-    })), [safeAssets, safeIncidents, safeStreams, globalTelemetry]);
+    })), [safeAssets, openIncidents, safeStreams, globalTelemetry]);
 
   const rows = useMemo(() => allRows
     .filter(({ asset }) => `${asset.name} ${asset.location || ''} ${asset.type || ''}`.toLowerCase().includes(query.toLowerCase()))

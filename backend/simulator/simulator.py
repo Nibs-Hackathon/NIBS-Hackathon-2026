@@ -90,6 +90,16 @@ class Simulator:
                 self.kernel.asset_service.update_health(asset.asset.id, metrics["health"])
                 self.kernel.asset_service.update_status(asset.asset.id, metrics["status"])
 
+        # EventGenerator emits each injected event once. Recheck every active
+        # incident on every tick so the operational state closes when its
+        # sensor has actually returned to a safe range.
+        for asset_id, incident in list(self.active_incidents.items()):
+            if self._check_values_normalized(asset_id):
+                asset = self.kernel.asset_service.get(asset_id)
+                asset_name = asset.name if asset else incident.get("asset_name", asset_id)
+                self._resolve_incident(asset_id, tick_number, asset_name)
+                self.resolved_incidents[asset_id] = tick_number
+
         # ✅ Add injected fault to generator if present
         if fault and target_asset_id:
             asset = self.kernel.asset_service.get(target_asset_id)
@@ -260,33 +270,40 @@ class Simulator:
     def _check_values_normalized(self, asset_id):
         """Check if telemetry values have returned to normal range."""
         history = self.state.get_history(asset_id)
-        if not history:
-            return True
-        
-        recent = history[-5:]
-        violations = 0
-        
-        for reading in recent:
-            asset = self.kernel.asset_service.get(asset_id)
-            asset_type = asset.asset_type.value if asset and hasattr(asset.asset_type, 'value') else "Pump"
-            thresholds = self.config.get_thresholds(asset_type)
-            
-            sensor_type = reading.sensor_type.value if hasattr(reading.sensor_type, 'value') else str(reading.sensor_type)
-            
-            if sensor_type == "Pressure":
-                if reading.value > thresholds.get("pressure_max", 150) * 0.85:
-                    violations += 1
-            elif sensor_type == "Temperature":
-                if reading.value > thresholds.get("temperature_max", 85) * 0.85:
-                    violations += 1
-            elif sensor_type == "Vibration":
-                if reading.value > thresholds.get("vibration_max", 8) * 0.85:
-                    violations += 1
-            elif sensor_type == "Gas":
-                if reading.value > thresholds.get("gas_max", 40) * 0.85:
-                    violations += 1
-            elif sensor_type == "Flow":
-                if reading.value < thresholds.get("flow_min", 25) * 1.15:
-                    violations += 1
-        
-        return violations < 2
+        incident = self.active_incidents.get(asset_id)
+        event = incident.get("event") if incident else None
+        payload = getattr(event, "payload", {}) or {}
+        sensor_name = next(
+            (
+                name
+                for name in ("pressure", "temperature", "vibration", "gas", "flow")
+                if name in payload
+            ),
+            None,
+        )
+        if not history or not sensor_name:
+            return False
+
+        relevant = [
+            reading
+            for reading in history
+            if str(
+                getattr(getattr(reading, "sensor_type", None), "value", "")
+            ).lower() == sensor_name
+        ][-3:]
+        if len(relevant) < 3:
+            return False
+
+        asset = self.kernel.asset_service.get(asset_id)
+        asset_type = (
+            asset.asset_type.value
+            if asset and hasattr(asset.asset_type, "value")
+            else "Pump"
+        )
+        thresholds = self.config.get_thresholds(asset_type)
+        if sensor_name == "flow":
+            limit = thresholds.get("flow_min", 25)
+            return all(reading.value >= limit for reading in relevant)
+
+        limit = thresholds.get(f"{sensor_name}_max")
+        return bool(limit) and all(reading.value <= limit for reading in relevant)

@@ -69,3 +69,31 @@ def test_emergency_fault_changes_telemetry_and_asset_health():
     assert vibration.value == 40
     assert metrics["health"] < 100
     assert metrics["status"] != "Running"
+
+
+def test_injected_fault_recovers_to_the_original_baseline():
+    asset = Asset(
+        id="boiler-1",
+        name="Boiler 003",
+        asset_type=AssetType.BOILER,
+        refinery_id="refinery-1",
+        location="West Port Refinery",
+    )
+    simulated = SimulatedAsset(asset)
+    original_flow = simulated.sensors[SensorType.FLOW]
+
+    first = simulated.tick(
+        fault={"sensor": SensorType.FLOW, "value": 15},
+    )
+    for _ in range(8):
+        recovered = simulated.tick()
+
+    first_flow = next(
+        reading for reading in first if reading.sensor_type == SensorType.FLOW
+    )
+    recovered_flow = next(
+        reading for reading in recovered if reading.sensor_type == SensorType.FLOW
+    )
+
+    assert first_flow.value == 15
+    assert recovered_flow.value == round(original_flow, 2)

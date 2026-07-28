@@ -43,6 +43,20 @@ def _severity_from_payload(payload: dict[str, Any]) -> str:
     return "Medium" if "flow" in payload else "Unknown"
 
 
+def _sensor_from_incident(incident_type: str | None) -> str | None:
+    normalized = str(incident_type or "").replace("_", "").replace("-", "").lower()
+    for marker, sensor in (
+        ("pressure", "Pressure"),
+        ("temperature", "Temperature"),
+        ("vibration", "Vibration"),
+        ("gas", "Gas"),
+        ("flow", "Flow"),
+    ):
+        if marker in normalized:
+            return sensor
+    return None
+
+
 def _agent_step(execution: Any) -> dict[str, Any]:
     metadata = execution.metadata or {}
     duration = metadata.get("execution_time")
@@ -96,6 +110,11 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
     # the event store because the kernel appends each pair once per workflow.
     for event, report in zip(events, reports):
         reports_by_incident.setdefault(event.id, report)
+    simulator = getattr(runtime, "active_simulator", None)
+    active_event_ids = {
+        getattr(item.get("event"), "id", None)
+        for item in getattr(simulator, "active_incidents", {}).values()
+    } if simulator else set()
 
     for event in reversed(events[-limit:]):
         payload = getattr(event, "payload", {}) or {}
@@ -126,7 +145,7 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
             "asset_id": event.source,
             "asset_name": getattr(asset, "name", event.source),
             "incident_type": event.name,
-            "status": "recorded",
+            "status": "active" if event.id in active_event_ids else "resolved",
             "confidence": confidence,
             "health_before": None,
             "health_after": getattr(asset, "health", None),
@@ -484,12 +503,40 @@ def get_operations_live() -> dict[str, Any]:
     reports = get_execution_reports(limit=100)
     from api.adapters.maintenance_adapter import get_maintenance_plan
     maintenance = get_maintenance_plan()
-    critical_assets = sorted(assets, key=lambda asset: float(asset.get("health", 100)))[:8]
+    open_audits = [
+        audit
+        for audit in audits
+        if audit.get("status") not in ("completed", "resolved")
+    ]
+    asset_by_id = {asset.get("id"): asset for asset in assets}
+    priority_ids = [
+        audit.get("asset_id")
+        for audit in open_audits
+        if audit.get("asset_id") in asset_by_id
+    ]
+    priority_ids.extend(
+        asset.get("id")
+        for asset in sorted(assets, key=lambda item: float(item.get("health", 100)))
+    )
+    critical_assets = []
+    for asset_id in priority_ids:
+        if asset_id and all(item.get("id") != asset_id for item in critical_assets):
+            critical_assets.append(asset_by_id[asset_id])
+        if len(critical_assets) == 8:
+            break
     critical_asset_telemetry = []
     for asset in critical_assets:
         asset_history = runtime.kernel.state.get_history(asset.get("id"))[-60:]
-        sensor = getattr(asset_history[-1], "sensor_type", None) if asset_history else None
-        sensor_value = getattr(sensor, "value", sensor)
+        active_audit = next(
+            (audit for audit in open_audits if audit.get("asset_id") == asset.get("id")),
+            None,
+        )
+        latest_sensor = getattr(asset_history[-1], "sensor_type", None) if asset_history else None
+        sensor_value = (
+            _sensor_from_incident(active_audit.get("incident_type"))
+            if active_audit
+            else getattr(latest_sensor, "value", latest_sensor)
+        )
         readings = [
             {"timestamp": _iso(reading.timestamp), "value": float(reading.value), "sensor_type": getattr(getattr(reading, "sensor_type", None), "value", str(getattr(reading, "sensor_type", ""))), "unit": getattr(reading, "unit", "")}
             for reading in asset_history
@@ -505,7 +552,6 @@ def get_operations_live() -> dict[str, Any]:
         observed_slope = (health_history[-1] - health_history[0]) / max(len(health_history) - 1, 1) if len(health_history) > 1 else 0
         projected_health = [round(max(0, min(100, current_health + observed_slope * period)), 1) for period in range(1, 8)] if current_health is not None and len(health_history) > 1 else []
         critical_asset_telemetry.append({"asset_id": asset.get("id"), "asset_name": asset.get("name"), "sensor_type": sensor_value, "unit": readings[-1].get("unit", "") if readings else "", "readings": readings, "health_history": health_history, "data_available": bool(readings or health_history), "forecast": {"method": "recent telemetry health slope" if projected_health else "unavailable: insufficient health history", "projected_health": projected_health, "slope_per_window": round(observed_slope, 2) if len(health_history) > 1 else None}})
-    asset_by_id = {asset.get("id"): asset for asset in assets}
     refinery_groups: dict[str, list[dict[str, Any]]] = {}
     for asset in assets:
         refinery_groups.setdefault(asset.get("location") or "Unassigned", []).append(asset)
@@ -544,12 +590,20 @@ def get_operations_live() -> dict[str, Any]:
             "readings": readings,
         })
     telemetry_asset_id = (
-        (audits[0].get("asset_id") if audits else None)
+        (open_audits[0].get("asset_id") if open_audits else None)
         or (critical_assets[0].get("id") if critical_assets else None)
     )
     history = runtime.kernel.state.get_history(telemetry_asset_id) if telemetry_asset_id else []
     latest_sensor = getattr(history[-1], "sensor_type", None) if history else None
-    latest_sensor_value = getattr(latest_sensor, "value", latest_sensor)
+    telemetry_audit = next(
+        (audit for audit in open_audits if audit.get("asset_id") == telemetry_asset_id),
+        None,
+    )
+    latest_sensor_value = (
+        _sensor_from_incident(telemetry_audit.get("incident_type"))
+        if telemetry_audit
+        else getattr(latest_sensor, "value", latest_sensor)
+    )
     telemetry_stream = [
         {
             "timestamp": _iso(reading.timestamp),
