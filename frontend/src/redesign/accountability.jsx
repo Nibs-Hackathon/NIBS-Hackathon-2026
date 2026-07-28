@@ -107,7 +107,7 @@ export function mapAuditEvents({ sessionDecisions = [], auditLogs = [], operator
   const fromActions = (operatorActions || []).map((action, index) => ({
     id: action.id || `action-${index}`,
     who: action.approved_by || action.operator || 'Operator',
-    what: action.title || action.action_type || action.status || 'Operator action',
+    what: action.note || action.title || action.action_type || action.status || 'Operator action',
     when: action.timestamp ? new Date(action.timestamp).toLocaleTimeString() : null,
     objectLabel: action.incident_id || action.asset_id,
   }));
@@ -120,7 +120,13 @@ export function mapAuditEvents({ sessionDecisions = [], auditLogs = [], operator
       : null,
     objectLabel: item.asset_name || item.asset_id,
   }));
-  return [...fromSession, ...fromActions, ...fromLogs].slice(0, 8);
+  const seen = new Set();
+  return [...fromSession, ...fromActions, ...fromLogs].filter((event) => {
+    const key = event.id || `${event.when}-${event.what}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
 }
 
 export function exportAuditLog({ events = [], facility = 'Facility', filename } = {}) {
@@ -272,10 +278,21 @@ export function useOperatorAudit(objectApi, operations = {}) {
   return useMemo(() => {
     const session = objectApi?.audit?.recentDecisions || [];
     const actions = [];
+    const seen = new Set();
+    const pushAction = (action) => {
+      const key = action.id || `${action.timestamp}-${action.action_type}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      actions.push(action);
+    };
     (operations.audit_logs || []).forEach((log) => {
-      (log.operator_actions || []).forEach((action) => actions.push({ ...action, incident_id: log.id }));
+      (log.operator_actions || []).forEach((action) => {
+        pushAction({ ...action, incident_id: action.incident_id || log.id });
+      });
     });
-    if (Array.isArray(operations.operator_actions)) actions.push(...operations.operator_actions);
+    if (Array.isArray(operations.operator_actions)) {
+      operations.operator_actions.forEach(pushAction);
+    }
     return mapAuditEvents({
       sessionDecisions: session,
       auditLogs: operations.audit_logs || [],

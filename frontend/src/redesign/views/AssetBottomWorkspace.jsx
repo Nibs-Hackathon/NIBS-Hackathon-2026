@@ -33,9 +33,16 @@ export function AssetBottomWorkspace({
   };
 
   const incidentCount = selected?.incident ? 1 : 0;
-  const hasForecast = asset?.remaining_life_days != null
+  const projected = Array.isArray(asset?.projected_health)
+    ? asset.projected_health.map(Number).filter(Number.isFinite)
+    : [];
+  const hasForecast = Boolean(
+    asset?.forecast_available
+    || projected.length > 1
+    || asset?.remaining_life_days != null
     || asset?.remaining_life != null
-    || asset?.health != null;
+    || asset?.failure_probability != null,
+  );
   const assetWOs = useMemo(
     () => workOrders.filter((wo) => wo.assetId === asset?.id || wo.asset_id === asset?.id || wo.asset === asset?.name),
     [workOrders, asset],
@@ -48,16 +55,16 @@ export function AssetBottomWorkspace({
     { id: 'telemetry', label: 'Telemetry', icon: <TimelineOutlined fontSize="small" />, show: true },
     { id: 'history', label: 'History', icon: <HistoryOutlined fontSize="small" />, show: true },
     { id: 'incidents', label: `Incidents${incidentCount ? ` (${incidentCount})` : ''}`, icon: <DeviceHubOutlined fontSize="small" />, show: incidentCount > 0 },
-    { id: 'forecast', label: 'Forecast', icon: <ScienceOutlined fontSize="small" />, show: hasForecast },
+    { id: 'forecast', label: 'Forecast', icon: <ScienceOutlined fontSize="small" />, show: true },
     { id: 'maintenance', label: 'Maintenance', icon: <BuildOutlined fontSize="small" />, show: hasMaint },
-    { id: 'relationships', label: 'Relationships', icon: <AccountTreeOutlined fontSize="small" />, show: true },
+    { id: 'relationships', label: 'Relationships', icon: <AccountTreeOutlined fontSize="small" />, show: Boolean(deps) },
     { id: 'documents', label: 'Documents', icon: <DescriptionOutlined fontSize="small" />, show: Number(asset?.documents_count) > 0 },
   ].filter((item) => item.show);
 
   const active = tabs.some((item) => item.id === tab) ? tab : 'telemetry';
-  const health = round(asset?.health ?? 78);
-  const rull = Number(asset?.remaining_life_days ?? asset?.remaining_life ?? Math.max(8, Math.round(health * 0.9)));
-  const failure = Math.min(94, Math.max(6, 100 - health));
+  const health = asset?.health != null ? round(asset.health) : null;
+  const rull = asset?.remaining_life_days ?? asset?.remaining_life;
+  const failure = asset?.failure_probability;
 
   return (
     <Paper className="twin-bottom assets-bottom">
@@ -99,7 +106,11 @@ export function AssetBottomWorkspace({
               <Typography className="product-kicker">DECISION CONTEXT</Typography>
               <Typography><i className="event-dot risk" />Severity <b>{statusLabel}</b></Typography>
               <Typography><i className="event-dot active" />Next action <b>{primaryLabel}</b></Typography>
-              <Typography><i className="event-dot" />Downstream <b>{clean?.(asset?.dependencies, 'Process train') || 'Process train'}</b></Typography>
+              {deps ? (
+                <Typography><i className="event-dot" />Downstream <b>{deps}</b></Typography>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No dependency map published for this asset.</Typography>
+              )}
             </Box>
           </>
         )}
@@ -107,8 +118,11 @@ export function AssetBottomWorkspace({
         {active === 'history' && (
           <Box className="assets-bottom-panel">
             <Typography className="product-kicker">STATE HISTORY</Typography>
-            <Typography><i className="event-dot active" />Selection updated</Typography>
-            <Typography><i className="event-dot" />Last inspection <b>{clean?.(asset?.last_inspection, 'Pending') || 'Pending'}</b></Typography>
+            {asset?.last_inspection ? (
+              <Typography><i className="event-dot" />Last inspection <b>{clean?.(asset.last_inspection, asset.last_inspection)}</b></Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary">No inspection history published for this asset yet.</Typography>
+            )}
             <Typography><i className="event-dot risk" />Condition band <b>{statusLabel}</b></Typography>
           </Box>
         )}
@@ -127,16 +141,33 @@ export function AssetBottomWorkspace({
         {active === 'forecast' && (
           <Box className="assets-bottom-panel">
             <Typography className="product-kicker">FORWARD RISK</Typography>
-            <Box className="assets-bottom-metrics">
-              <Typography>Failure probability <b>{failure}%</b></Typography>
-              <Typography>Remaining useful life <b>{rull} days</b></Typography>
-              <Typography>Health trajectory <b>{health}%</b></Typography>
-            </Box>
-            <MiniGraph
-              values={Array.from({ length: 12 }, (_, index) => Math.max(20, health - index * 2.2))}
-              area
-              label="Projected health curve"
-            />
+            {hasForecast ? (
+              <>
+                <Box className="assets-bottom-metrics">
+                  <Typography>
+                    Failure probability{' '}
+                    <b>{failure != null ? `${round(Number(failure) <= 1 ? Number(failure) * 100 : Number(failure))}%` : '—'}</b>
+                  </Typography>
+                  <Typography>
+                    Remaining useful life{' '}
+                    <b>{rull != null ? `${round(Number(rull))} days` : '—'}</b>
+                  </Typography>
+                  <Typography>
+                    Health{' '}
+                    <b>{health != null ? `${health}%` : '—'}</b>
+                  </Typography>
+                </Box>
+                <MiniGraph
+                  values={projected}
+                  area
+                  label={projected.length > 1 ? 'Projected health curve' : 'No projected health series published'}
+                />
+              </>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No forecast published for this asset yet. Open Health forecasting for stress scenarios.
+              </Typography>
+            )}
           </Box>
         )}
 
@@ -158,9 +189,8 @@ export function AssetBottomWorkspace({
         {active === 'relationships' && (
           <Box className="assets-bottom-panel">
             <Typography className="product-kicker">PROCESS RELATIONSHIPS</Typography>
-            <Typography><i className="event-dot" />Upstream <b>Feed / prior unit</b></Typography>
             <Typography><i className="event-dot active" />Selected <b>{asset?.name || '—'}</b></Typography>
-            <Typography><i className="event-dot risk" />Downstream <b>{deps || 'Process train'}</b></Typography>
+            <Typography><i className="event-dot risk" />Downstream <b>{deps}</b></Typography>
           </Box>
         )}
 

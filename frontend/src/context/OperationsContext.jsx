@@ -7,12 +7,13 @@ const OperationsContext = createContext(null);
 
 const emptySnapshot = {
   dashboard: {}, assets: [], refineries: [], telemetry_by_refinery: [], critical_incidents: [], audit_logs: [],
+  operator_actions: [],
   investigation: { status: 'waiting', stages: [] }, ai_activity: [],
   maintenance: { tasks: [] }, predicted_failures: [], notifications: [], reports: [],
   telemetry: { readings: [] }, critical_asset_telemetry: [],
 };
 
-const collectionKeys = ['assets', 'refineries', 'telemetry_by_refinery', 'critical_incidents', 'audit_logs', 'ai_activity', 'predicted_failures', 'notifications', 'reports', 'critical_asset_telemetry'];
+const collectionKeys = ['assets', 'refineries', 'telemetry_by_refinery', 'critical_incidents', 'audit_logs', 'operator_actions', 'ai_activity', 'predicted_failures', 'notifications', 'reports', 'critical_asset_telemetry'];
 const objectKeys = ['dashboard', 'investigation', 'maintenance', 'telemetry'];
 
 function mergeOperations(current, incoming) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import {
   ArticleOutlined, DevicesOutlined, ExpandMoreOutlined,
@@ -7,11 +7,18 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import toast from 'react-hot-toast';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useObjectContext } from '../../context/ObjectContext';
+import { useOperations } from '../../context/OperationsContext';
 import { navigateTo } from '../../context/objectNavigation';
-import { getIncidentAuditDetail } from '../../api/client';
-import { timelineFromAudit } from '../../api/resourceAdapters';
+import { getIncidentAuditDetail, getTelemetry, triggerIncident } from '../../api/client';
+import {
+  timelineFromAudit,
+  incidentTelemetryWindow,
+  normalizeTelemetryReadings,
+  decisionEntriesFromIncident,
+} from '../../api/resourceAdapters';
 import {
   OperatorDecisionBar, EvidenceLineage, buildEvidenceFacts, DecisionHistory, ProvenanceBadge,
 } from '../accountability';
@@ -30,9 +37,18 @@ function confidencePercent(incident) {
   return (value <= 1 ? value * 100 : value).toFixed(2);
 }
 
+const SIMULATOR_FAULTS = [
+  { type: 'pressure-spike', label: 'Pressure spike' },
+  { type: 'gas-leak', label: 'Gas leak' },
+  { type: 'high-vibration', label: 'High vibration' },
+  { type: 'high-temperature', label: 'High temperature' },
+  { type: 'flow-restriction', label: 'Flow restriction' },
+];
+
 export function IncidentManagement({ incidents, telemetry, provenance = 'live' }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
+  const { refresh } = useOperations();
   const timelineRef = useRef(null);
   const [query, setQuery] = useState('');
   const [severity, setSeverity] = useState('all');
@@ -45,6 +61,10 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
   const [reasoning, setReasoning] = useState(false);
   const [auditDetail, setAuditDetail] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [replayReadings, setReplayReadings] = useState([]);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [evidenceMode, setEvidenceMode] = useState('live');
+  const [simulating, setSimulating] = useState(false);
 
   const visible = incidents.filter(
     (item) => `${item.incident_type || ''} ${item.asset_name || ''} ${item.severity || ''}`.toLowerCase().includes(query.toLowerCase())
@@ -74,10 +94,46 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
   }, [incident?.id]);
 
   useEffect(() => {
+    const assetId = activeIncident?.asset_id;
+    const window = incidentTelemetryWindow(activeIncident);
+    if (!assetId || !window) {
+      setReplayReadings([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setReplayLoading(true);
+    getTelemetry(assetId, { limit: 120, since: window.since, until: window.until })
+      .then((response) => {
+        if (!cancelled) setReplayReadings(normalizeTelemetryReadings(response.data));
+      })
+      .catch(() => {
+        if (!cancelled) setReplayReadings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setReplayLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeIncident?.id, activeIncident?.asset_id, activeIncident?.timestamp, activeIncident?.created_at, activeIncident?.resolved_at]);
+
+  useEffect(() => {
     if (!incident?.id) return undefined;
     const timer = requestAnimationFrame(() => timelineRef.current?.querySelector?.('.incident-event')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }));
     return () => cancelAnimationFrame(timer);
   }, [incident?.id]);
+
+  const injectFault = useCallback(async (faultType) => {
+    setSimulating(true);
+    try {
+      await triggerIncident(faultType);
+      toast.success('Simulator fault injected — refreshing incident queue');
+      await refresh();
+    } catch (error) {
+      const detail = error.response?.data?.detail || error.response?.data?.error;
+      toast.error(typeof detail === 'string' ? detail : 'Could not inject simulator fault');
+    } finally {
+      setSimulating(false);
+    }
+  }, [refresh]);
 
   if (!incident) {
     return (
@@ -85,13 +141,27 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
         <WarningAmberOutlined fontSize="large" />
         <Typography fontWeight={800}>No incident records in this view</Typography>
         <Typography variant="body2">The live incident queue will populate when detection or operator escalation creates a case.</Typography>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 2 }}>
+          {SIMULATOR_FAULTS.map((fault) => (
+            <Button
+              key={fault.type}
+              size="small"
+              variant="outlined"
+              disabled={simulating}
+              onClick={() => injectFault(fault.type)}
+            >
+              {simulating ? 'Injecting…' : `Simulate ${fault.label.toLowerCase()}`}
+            </Button>
+          ))}
+        </Stack>
       </Box>
     );
   }
 
   const confidence = confidencePercent(activeIncident);
   const risk = riskScore(activeIncident.severity);
-  const readings = telemetry?.readings || [];
+  const liveReadings = telemetry?.readings || [];
+  const displayReadings = evidenceMode === 'replay' && replayReadings.length ? replayReadings : liveReadings;
   const auditTimeline = timelineFromAudit(activeIncident);
   const events = auditTimeline.length
     ? auditTimeline.map((step) => [step.title, step.time, step.detail, step.kind])
@@ -101,6 +171,11 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
     ];
   const pendingRec = Boolean(activeIncident.ai_recommendation || activeIncident.status !== 'closed');
   const operatorActions = Array.isArray(activeIncident.operator_actions) ? activeIncident.operator_actions : [];
+  const sessionDecisions = objectApi.audit?.recentDecisions?.filter(
+    (entry) => !incident?.id || entry.incidentId === incident.id,
+  ) || [];
+  const decisionEntries = decisionEntriesFromIncident(activeIncident, sessionDecisions);
+  const persistedNotes = operatorActions.filter((action) => action.note);
 
   return (
     <Box className="incident-os">
@@ -112,6 +187,19 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
             <Typography variant="caption" color="text.secondary">Loading audit record…</Typography>
           )}
         </Box>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {SIMULATOR_FAULTS.map((fault) => (
+            <Button
+              key={fault.type}
+              size="small"
+              variant="outlined"
+              disabled={simulating}
+              onClick={() => injectFault(fault.type)}
+            >
+              {simulating ? 'Injecting…' : `Simulate ${fault.label.toLowerCase()}`}
+            </Button>
+          ))}
+        </Stack>
       </Box>
 
       <Box className="incident-os-grid">
@@ -147,7 +235,7 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
                 <b>{label(item.incident_type || 'Operational event')}</b>
                 <Typography>{item.asset_name || item.asset_id || 'Asset identification pending'}</Typography>
                 <Box>
-                  <span>Risk {riskScore(item.severity)}</span>
+                  <span>Severity risk {riskScore(item.severity)}</span>
                   <span>{confidencePercent(item) != null ? `${confidencePercent(item)}% confidence` : 'Confidence pending'}</span>
                 </Box>
               </button>
@@ -176,7 +264,7 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
           </Box>
           <Box className="incident-summary-strip">
             <Box><Typography>Severity</Typography><b>{label(activeIncident.severity || 'Medium')}</b><ProvenanceBadge value={provenance} /></Box>
-            <Box><Typography>Risk</Typography><b className="risk-text">{risk}/100</b></Box>
+            <Box><Typography>Severity risk</Typography><b className="risk-text">{risk}/100</b><Typography variant="caption" color="text.secondary">Derived from severity</Typography></Box>
             <Box><Typography>Impact</Typography><b>{activeIncident.impact || 'Production exposure'}</b></Box>
             <Box><Typography>Confidence</Typography><b>{confidence != null ? `${confidence}%` : '—'}</b></Box>
           </Box>
@@ -213,9 +301,38 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
           <Box className="evidence-snapshot">
             <Box>
               <Typography className="product-kicker">SENSOR SNAPSHOT</Typography>
-              <Typography>{readings.length ? 'Current historian window' : 'No telemetry samples attached'}</Typography>
+              <Typography>
+                {displayReadings.length
+                  ? (evidenceMode === 'replay' ? 'Incident window replay' : 'Current historian window')
+                  : 'No telemetry samples attached'}
+              </Typography>
+              {replayReadings.length > 0 && (
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <Button
+                    size="small"
+                    variant={evidenceMode === 'live' ? 'contained' : 'outlined'}
+                    onClick={() => setEvidenceMode('live')}
+                  >
+                    Live
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={evidenceMode === 'replay' ? 'contained' : 'outlined'}
+                    onClick={() => setEvidenceMode('replay')}
+                    disabled={replayLoading}
+                  >
+                    {replayLoading ? 'Loading replay…' : `Replay (${replayReadings.length})`}
+                  </Button>
+                </Stack>
+              )}
             </Box>
-            <MiniGraph values={readings.map((reading) => reading.value)} area label={readings.length ? `${readings.length} captured samples` : 'No telemetry samples attached'} />
+            <MiniGraph
+              values={displayReadings.map((reading) => reading.value)}
+              area
+              label={displayReadings.length
+                ? `${displayReadings.length} captured samples`
+                : 'No telemetry samples attached'}
+            />
           </Box>
           <Box className="evidence-list">
             <EvidenceItem icon={<DevicesOutlined />} label="Sensor snapshots" detail={activeIncident.evidence ? 'Evidence packet attached' : 'Awaiting historian attachment'} />
@@ -234,7 +351,18 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
         <Box className="incident-bottom-body">
           <Box>
             <Typography className="product-kicker">OPERATOR NOTES</Typography>
-            <Typography className="operator-note">Operator notes are not persisted yet. Use the decision bar to record an auditable action.</Typography>
+            {persistedNotes.length ? persistedNotes.map((action, index) => (
+              <Typography key={action.id || index} className="operator-note" variant="body2">
+                <b>{action.approved_by || action.operator || 'Operator'}</b>
+                {action.timestamp ? ` · ${formatTime(action.timestamp)}` : ''}
+                {' — '}
+                {action.note}
+              </Typography>
+            )) : (
+              <Typography className="operator-note" variant="body2" color="text.secondary">
+                No free-form notes yet. Use the decision bar below to record an auditable action with rationale.
+              </Typography>
+            )}
           </Box>
           <Box className="decision-track">
             <Typography className="product-kicker">DECISION TIMELINE</Typography>
@@ -246,7 +374,7 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
               <Typography variant="body2" color="text.secondary">No operator actions recorded for this case yet.</Typography>
             )}
           </Box>
-          <DecisionHistory entries={objectApi.audit?.recentDecisions?.filter((entry) => !incident?.id || entry.incidentId === incident.id) || []} />
+          <DecisionHistory entries={decisionEntries} />
         </Box>
       </Paper>
 

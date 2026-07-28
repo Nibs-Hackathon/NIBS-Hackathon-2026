@@ -16,7 +16,7 @@ import os
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-print(f"📁 Backend root: {BACKEND_ROOT}")
+print(f"Backend root: {BACKEND_ROOT}")
 
 # ============================================
 # FORCE LOAD REAL SERVICES
@@ -244,6 +244,30 @@ async def record_operator_action(payload: OperatorActionRequest):
             detail={
                 "code": "OPERATOR_ACTION_STORAGE_UNAVAILABLE",
                 "message": "The operator decision could not be persisted. Check PostgreSQL connectivity.",
+                "error_type": type(error).__name__,
+            },
+        ) from error
+
+@app.get("/api/operator-actions")
+async def list_operator_actions(
+    limit: int = 50,
+    incident_id: str | None = None,
+    asset_id: str | None = None,
+):
+    """List persisted operator decisions for audit spine and incident detail."""
+    try:
+        from api.adapters.operations_adapter import get_operator_actions
+        return get_operator_actions(
+            limit=max(1, min(limit, 200)),
+            incident_id=incident_id,
+            asset_id=asset_id,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPERATOR_ACTIONS_UNAVAILABLE",
+                "message": "Operator actions could not be loaded.",
                 "error_type": type(error).__name__,
             },
         ) from error

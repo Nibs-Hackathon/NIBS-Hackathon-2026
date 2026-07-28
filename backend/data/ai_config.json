@@ -47,19 +47,19 @@
       "weight": {
         "pressure_weight": 40,
         "temperature_weight": 15,
-        "gas_weight": 35,
+        "gas_weight": 30,
         "vibration_weight": 5,
-        "flow_weight": 5
+        "flow_weight": 10
       },
       "degradation_rate": 0.2,
-      "critical_health": 50
+      "critical_health": 45
     },
     "Valve": {
       "thresholds": {
         "pressure_max": 200,
         "temperature_max": 120,
         "gas_max": 30,
-        "vibration_max": 6,
+        "vibration_max": 5,
         "flow_min": 10
       },
       "weight": {
@@ -77,8 +77,8 @@
         "pressure_max": 180,
         "temperature_max": 100,
         "gas_max": 45,
-        "vibration_max": 5,
-        "flow_min": 40
+        "vibration_max": 4,
+        "flow_min": 50
       },
       "weight": {
         "pressure_weight": 40,
@@ -88,15 +88,15 @@
         "flow_weight": 10
       },
       "degradation_rate": 0.3,
-      "critical_health": 50
+      "critical_health": 45
     },
     "Heat Exchanger": {
       "thresholds": {
         "pressure_max": 120,
-        "temperature_max": 200,
+        "temperature_max": 250,
         "gas_max": 25,
         "vibration_max": 4,
-        "flow_min": 35
+        "flow_min": 40
       },
       "weight": {
         "pressure_weight": 25,
@@ -105,34 +105,34 @@
         "vibration_weight": 5,
         "flow_weight": 10
       },
-      "degradation_rate": 0.45,
+      "degradation_rate": 0.4,
       "critical_health": 50
     },
     "Reactor": {
       "thresholds": {
-        "pressure_max": 220,
+        "pressure_max": 250,
         "temperature_max": 350,
         "gas_max": 60,
-        "vibration_max": 7,
-        "flow_min": 50
+        "vibration_max": 6,
+        "flow_min": 20
       },
       "weight": {
-        "pressure_weight": 30,
+        "pressure_weight": 35,
         "temperature_weight": 35,
         "gas_weight": 20,
         "vibration_weight": 5,
-        "flow_weight": 10
+        "flow_weight": 5
       },
-      "degradation_rate": 0.7,
-      "critical_health": 50
+      "degradation_rate": 0.8,
+      "critical_health": 60
     },
     "Boiler": {
       "thresholds": {
-        "pressure_max": 250,
+        "pressure_max": 220,
         "temperature_max": 450,
-        "gas_max": 35,
-        "vibration_max": 6,
-        "flow_min": 45
+        "gas_max": 40,
+        "vibration_max": 5,
+        "flow_min": 30
       },
       "weight": {
         "pressure_weight": 35,
@@ -141,34 +141,34 @@
         "vibration_weight": 5,
         "flow_weight": 5
       },
-      "degradation_rate": 0.65,
-      "critical_health": 50
+      "degradation_rate": 0.7,
+      "critical_health": 55
     },
     "Turbine": {
       "thresholds": {
-        "pressure_max": 190,
-        "temperature_max": 400,
+        "pressure_max": 180,
+        "temperature_max": 500,
         "gas_max": 20,
         "vibration_max": 12,
-        "flow_min": 60
+        "flow_min": 45
       },
       "weight": {
-        "pressure_weight": 25,
+        "pressure_weight": 20,
         "temperature_weight": 30,
         "gas_weight": 10,
-        "vibration_weight": 30,
+        "vibration_weight": 35,
         "flow_weight": 5
       },
-      "degradation_rate": 0.8,
-      "critical_health": 50
+      "degradation_rate": 0.75,
+      "critical_health": 55
     },
     "Motor": {
       "thresholds": {
-        "pressure_max": 80,
-        "temperature_max": 95,
+        "pressure_max": 30,
+        "temperature_max": 110,
         "gas_max": 15,
         "vibration_max": 9,
-        "flow_min": 15
+        "flow_min": 10
       },
       "weight": {
         "pressure_weight": 10,
@@ -177,44 +177,44 @@
         "vibration_weight": 35,
         "flow_weight": 5
       },
-      "degradation_rate": 0.5,
+      "degradation_rate": 0.45,
       "critical_health": 50
     },
     "Generator": {
       "thresholds": {
-        "pressure_max": 90,
-        "temperature_max": 105,
+        "pressure_max": 40,
+        "temperature_max": 120,
         "gas_max": 20,
-        "vibration_max": 8,
-        "flow_min": 20
+        "vibration_max": 10,
+        "flow_min": 15
       },
       "weight": {
-        "pressure_weight": 15,
+        "pressure_weight": 10,
         "temperature_weight": 35,
         "gas_weight": 15,
-        "vibration_weight": 30,
+        "vibration_weight": 35,
         "flow_weight": 5
       },
-      "degradation_rate": 0.55,
+      "degradation_rate": 0.5,
       "critical_health": 50
     },
     "Distillation Column": {
       "thresholds": {
-        "pressure_max": 140,
-        "temperature_max": 280,
-        "gas_max": 50,
+        "pressure_max": 90,
+        "temperature_max": 300,
+        "gas_max": 45,
         "vibration_max": 5,
-        "flow_min": 70
+        "flow_min": 60
       },
       "weight": {
         "pressure_weight": 30,
         "temperature_weight": 35,
-        "gas_weight": 25,
+        "gas_weight": 20,
         "vibration_weight": 5,
-        "flow_weight": 5
+        "flow_weight": 10
       },
-      "degradation_rate": 0.4,
-      "critical_health": 50
+      "degradation_rate": 0.35,
+      "critical_health": 45
     }
   },
   "workflow_sequences": {
@@ -222,9 +222,9 @@
       "sensor",
       "safety",
       "diagnostic",
-      "knowledge",
       "maintenance",
       "planning",
+      "knowledge",
       "prediction",
       "notification",
       "report"
@@ -233,9 +233,9 @@
       "sensor",
       "safety",
       "diagnostic",
-      "knowledge",
       "maintenance",
       "planning",
+      "knowledge",
       "prediction",
       "notification",
       "report"
@@ -244,9 +244,9 @@
       "sensor",
       "safety",
       "diagnostic",
-      "knowledge",
       "maintenance",
       "planning",
+      "knowledge",
       "prediction",
       "notification",
       "report"
@@ -255,9 +255,9 @@
       "sensor",
       "safety",
       "diagnostic",
-      "knowledge",
       "maintenance",
       "planning",
+      "knowledge",
       "prediction",
       "notification",
       "report"
@@ -266,9 +266,9 @@
       "sensor",
       "safety",
       "diagnostic",
-      "knowledge",
       "maintenance",
       "planning",
+      "knowledge",
       "prediction",
       "notification",
       "report"

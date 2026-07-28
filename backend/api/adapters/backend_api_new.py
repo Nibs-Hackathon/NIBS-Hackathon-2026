@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,12 +14,21 @@ if str(PROJECT_ROOT) not in sys.path:
 from services.config_services import ConfigService
 
 
+def _as_naive_utc(value):
+    """Normalize timestamps so since/until filters never mix aware and naive datetimes."""
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None) is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
 def _parse_iso(value: str | None):
     if not value:
         return None
     text = str(value).strip().replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(text)
+        return _as_naive_utc(datetime.fromisoformat(text))
     except ValueError:
         return None
 
@@ -171,13 +180,14 @@ class BackendAPI:
             until_dt = _parse_iso(until) if until else None
             rows = []
             for reading in readings:
-                ts = getattr(reading, "timestamp", None)
+                ts = _as_naive_utc(getattr(reading, "timestamp", None))
                 if since_dt and ts and ts < since_dt:
                     continue
                 if until_dt and ts and ts > until_dt:
                     continue
                 rows.append({
-                    "timestamp": ts.isoformat() if ts else datetime.now().isoformat(),
+                    "timestamp": getattr(reading, "timestamp", None).isoformat()
+                    if getattr(reading, "timestamp", None) else datetime.now().isoformat(),
                     "sensor_type": reading.sensor_type.value if hasattr(reading.sensor_type, "value") else str(reading.sensor_type),
                     "value": float(reading.value) if hasattr(reading, "value") else 0,
                     "unit": getattr(reading, "unit", ""),

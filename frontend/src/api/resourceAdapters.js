@@ -97,3 +97,78 @@ export function timelineFromAudit(incident) {
     kind: step.kind || 'event',
   }));
 }
+
+/** ISO since/until for incident-scoped telemetry replay (1h before detection through resolution). */
+export function incidentTelemetryWindow(incident) {
+  if (!incident) return null;
+  const start = incident.timestamp || incident.created_at;
+  if (!start) return null;
+  const since = new Date(new Date(start).getTime() - 60 * 60 * 1000).toISOString();
+  const until = incident.resolved_at || new Date().toISOString();
+  return { since, until };
+}
+
+/** Normalize telemetry API payloads to a flat readings array. */
+export function normalizeTelemetryReadings(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.readings)) return payload.readings;
+  if (Array.isArray(payload?.history)) {
+    return payload.history.map((row) => ({
+      timestamp: row.Timestamp || row.timestamp,
+      value: row.Value ?? row.value,
+      sensor_type: row.Sensor || row.sensor_type,
+      unit: row.Unit || row.unit,
+    }));
+  }
+  return [];
+}
+
+/** Merge session decisions with persisted operator actions for incident decision history. */
+export function decisionEntriesFromIncident(incident, sessionEntries = []) {
+  const fromActions = (incident?.operator_actions || []).map((action) => ({
+    id: action.id,
+    decision: action.decision || action.title || action.action_type,
+    what: action.note || action.title || action.action_type,
+    who: action.approved_by || action.operator || 'Operator',
+    at: action.timestamp,
+    rationale: action.note,
+  }));
+  const seen = new Set();
+  return [...sessionEntries, ...fromActions].filter((entry) => {
+    const key = entry.id || `${entry.at || entry.when}-${entry.what || entry.decision}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function normalizeAgentActivityRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  const confidence = row.confidence;
+  const parsedConfidence = typeof confidence === 'string'
+    ? parseFloat(confidence.replace('%', ''))
+    : confidence;
+  return {
+    agent: row.agent || row.agent_name || 'Agent',
+    action: row.action || row.finding || row.summary || 'Activity recorded',
+    state: row.state || (row.success === false ? 'Failed' : row.success ? 'Completed' : 'Recorded'),
+    time: row.time || row.timestamp,
+    confidence: parsedConfidence,
+  };
+}
+
+export function normalizeAgentRegistryRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  return {
+    name: row.Agent || row.name || 'Agent',
+    specialty: row.Specialty || row.specialty || '',
+    state: row.State || row.state || 'Ready',
+    confidence: row.Confidence || row.confidence,
+    task: row['Current task'] || row.current_task || 'Awaiting task',
+  };
+}
+
+export function normalizeAgentMetricRow(row) {
+  if (!Array.isArray(row) || row.length < 2) return null;
+  return { label: row[0], value: row[1], detail: row[2] || '', tone: row[3] || 'cyan' };
+}

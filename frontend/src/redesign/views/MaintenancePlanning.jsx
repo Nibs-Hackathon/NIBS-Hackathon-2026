@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
 import { approveWorkOrder, createWorkOrder, getMaintenancePlan } from '../../api/client';
-import { Metric, MaintenanceSchedule, Status, Empty } from './shared';
+import { Metric, Status, Empty } from './shared';
 
 function normalizeTask(task, index) {
   return {
@@ -14,7 +14,7 @@ function normalizeTask(task, index) {
     id: task.id || `task-${index}`,
     title: task.title || task['Work order'] || task.Task || task.name || `Work order ${index + 1}`,
     priority: task.priority || task.Priority || 'P2',
-    owner: task.owner || task.Owner || 'Mechanical crew',
+    owner: task.owner || task.Owner || '—',
     status: task.status || task.State || task.Status || 'Ready',
     cost: task.estimated_cost ?? task.cost ?? null,
     downtime: task.estimated_downtime || task.downtime || task['Estimated downtime'] || null,
@@ -27,7 +27,6 @@ export function MaintenancePlanning({ maintenance }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
   const [plan, setPlan] = useState(maintenance);
-  const [lane, setLane] = useState('kanban');
   const [busy, setBusy] = useState(false);
   const draft = objectApi.draft?.workOrder;
 
@@ -74,7 +73,7 @@ export function MaintenancePlanning({ maintenance }) {
         asset_id: objectApi.selection.assetId || null,
         title: 'New reliability work order',
         priority: 'P2',
-        owner: 'Mechanical crew',
+        owner: 'Control operator',
         note: 'Created from maintenance planning board.',
       });
       const created = response.data || {};
@@ -83,7 +82,7 @@ export function MaintenancePlanning({ maintenance }) {
         title: created.title,
         status: 'Ready',
         priority: created.priority || 'P2',
-        owner: created.owner || 'Mechanical crew',
+        owner: created.owner || 'Control operator',
         cost: created.estimated_cost,
         downtime: created.downtime,
         assetId: created.asset_id,
@@ -165,15 +164,19 @@ export function MaintenancePlanning({ maintenance }) {
         <Paper className="maintenance-board">
           <Box className="maintenance-board-head">
             <Box className="maintenance-view-tabs">
-              {['kanban', 'calendar', 'timeline', 'gantt'].map((view) => (
-                <Button key={view} className={lane === view ? 'active' : ''} onClick={() => setLane(view)}>
+              <Button className="active">kanban</Button>
+              {['calendar', 'timeline', 'gantt'].map((view) => (
+                <Button key={view} disabled title="Calendar views are not connected to a scheduling backend">
                   {view}
                 </Button>
               ))}
             </Box>
+            <Typography variant="caption" color="text.secondary">
+              Calendar / timeline / gantt are not available yet — board is kanban only.
+            </Typography>
           </Box>
-          <Box className={`maintenance-${lane}`}>
-            {lane === 'kanban' ? columns.map((column) => {
+          <Box className="maintenance-kanban">
+            {columns.map((column) => {
               const columnWork = work.filter((item) => String(item.status).toLowerCase().includes(column.toLowerCase().split(' ')[0]));
               return (
                 <Box key={column} className="maintenance-column">
@@ -198,19 +201,11 @@ export function MaintenancePlanning({ maintenance }) {
                         <span>{item.downtime || '—'} downtime</span>
                         <span>{item.cost != null ? `$${Number(item.cost).toLocaleString()}` : '—'}</span>
                       </Box>
-                      <i>
-                        <span style={{
-                          width: `${item.status === 'Complete' ? 100 : item.status === 'In progress' ? 62 : item.status === 'Scheduled' ? 34 : 12}%`,
-                        }}
-                        />
-                      </i>
                     </button>
                   ))}
                 </Box>
               );
-            }) : (
-              <MaintenanceSchedule work={work} lane={lane} onSelect={chooseWork} />
-            )}
+            })}
           </Box>
         </Paper>
 
@@ -229,7 +224,7 @@ export function MaintenancePlanning({ maintenance }) {
               <Box className="maintenance-ai">
                 <Typography className="product-kicker">AI SUGGESTED SCHEDULE</Typography>
                 <Typography>
-                  {plan?.rationale?.[0] || 'Schedule after upstream isolation is confirmed. Reserve mechanical crew capacity.'}
+                  {plan?.rationale?.[0] || 'No AI schedule rationale published for this work order yet.'}
                 </Typography>
               </Box>
               <Box className="maintenance-checklist">
