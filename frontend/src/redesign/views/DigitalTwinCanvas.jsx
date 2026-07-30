@@ -291,21 +291,6 @@ export function DigitalTwinCanvas({
           })}
         </div>
 
-        <Box className="assets-minimap" aria-label="Minimap">
-          <button
-            type="button"
-            className="assets-minimap-frame"
-            onClick={() => onCameraChange?.({ panX: 0, panY: 0, zoom: 1, fitMode: 'unit' })}
-          >
-            {twinNodes.map((row, index) => (
-              <i
-                key={row.asset.id}
-                className={row.asset.id === selectedId ? 'is-selected' : ''}
-                style={{ left: `${NODE_LAYOUT[index].x}%`, top: `${NODE_LAYOUT[index].equipmentY}%` }}
-              />
-            ))}
-          </button>
-        </Box>
       </Box>
 
       <Menu

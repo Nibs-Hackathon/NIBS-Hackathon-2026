@@ -139,7 +139,7 @@ export function AssetObjectInspector({
           </Box>
           <Box className="assets-health-summary">
             <HealthRing value={asset.health} size={84} />
-            <Box>
+            <Box className="assets-health-copy">
               <Typography className="assets-health-label">Asset health</Typography>
               <Typography className="assets-health-value">{health}<span>/100</span></Typography>
               <Typography variant="caption" className="assets-last-reading">

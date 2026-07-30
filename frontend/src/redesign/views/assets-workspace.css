@@ -368,42 +368,6 @@
   font-family: 'DM Mono', ui-monospace, monospace;
 }
 
-.assets-minimap {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 5;
-  width: 120px;
-  height: 72px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(9, 11, 15, 0.88);
-  overflow: hidden;
-}
-
-.assets-minimap-frame {
-  all: unset;
-  display: block;
-  position: relative;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-}
-
-.assets-minimap-frame i {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #64748b;
-  transform: translate(-50%, -50%);
-}
-
-.assets-minimap-frame i.is-selected {
-  background: #4f8cff;
-  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.35);
-}
-
 .assets-critical-queue {
   display: grid;
   gap: 3px;
@@ -618,7 +582,33 @@
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+.assets-health-summary > .rig-health-ring {
+  flex: none;
+}
+
+.assets-health-summary .rig-health-ring-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.assets-health-summary .rig-health-ring-inner .rig-kpi,
+.assets-health-summary .rig-health-ring-inner .rig-label {
+  margin: 0;
+  line-height: 1 !important;
+}
+
+.assets-health-summary .rig-health-ring-inner .rig-label {
+  font-size: 8px !important;
+}
+
+.assets-health-copy {
+  min-width: 0;
 }
 
 .assets-health-label {
@@ -630,17 +620,23 @@
 }
 
 .assets-health-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
   margin-top: 3px !important;
   color: #eef5ff;
-  font: 800 1.65rem/1 'DM Mono', ui-monospace, monospace !important;
-  letter-spacing: -0.05em !important;
+  font: 800 1.5rem/1 'DM Mono', ui-monospace, monospace !important;
+  letter-spacing: -0.025em !important;
+  white-space: nowrap;
 }
 
 .assets-health-value span {
-  margin-left: 3px;
+  margin-left: 0;
   color: #718096;
   font-size: 0.7rem;
   letter-spacing: 0;
+  line-height: 1;
 }
 
 .assets-last-reading {
@@ -962,8 +958,7 @@ html[data-rigos-theme='light'] .assets-os .twin-map-node b {
   color: #2563eb;
 }
 
-html[data-rigos-theme='light'] .assets-tag-overlay,
-html[data-rigos-theme='light'] .assets-minimap {
+html[data-rigos-theme='light'] .assets-tag-overlay {
   border-color: #cbd5e1;
   background: rgba(255, 255, 255, 0.96);
 }

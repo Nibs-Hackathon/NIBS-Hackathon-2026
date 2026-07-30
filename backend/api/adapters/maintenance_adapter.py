@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+from threading import Lock
 from typing import Any
 
 
@@ -15,6 +16,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # ✅ FIXED - Use runtime proxy
 from services.runtime import runtime
+from services.local_mode import local_demo_mode
+
+
+_DEMO_WORK_ORDERS: list[dict[str, Any]] = []
+_DEMO_WORK_ORDERS_LOCK = Lock()
 
 
 def _result_index() -> dict[tuple[str, str], Any]:
@@ -161,6 +167,10 @@ def get_maintenance_plan() -> dict:
 
 def _persisted_work_orders() -> list[dict[str, Any]]:
     """Load operator-created work orders from ActionDB."""
+    if local_demo_mode():
+        with _DEMO_WORK_ORDERS_LOCK:
+            return [dict(row) for row in _DEMO_WORK_ORDERS]
+
     try:
         from database.connection import get_session
         from database.models import ActionDB
@@ -220,14 +230,55 @@ def create_work_order(
 ) -> dict[str, Any]:
     """Persist a new work-order request as an ActionDB audit row."""
     from uuid import uuid4
+
+    asset = runtime.kernel.asset_service.get(asset_id) if asset_id else None
+    action_id = str(uuid4())
+
+    if local_demo_mode():
+        row = {
+            "id": action_id,
+            "Priority": priority,
+            "Asset": getattr(asset, "name", asset_id) or "Not specified",
+            "asset_id": asset_id,
+            "Refinery": getattr(asset, "location", "Unassigned"),
+            "Work order": title,
+            "title": title,
+            "Owner": owner,
+            "Service provider": _service_provider(
+                getattr(getattr(asset, "asset_type", None), "value", "")
+            ),
+            "Scheduled date": None,
+            "Estimated downtime": downtime or "To be assessed",
+            "estimated_cost": estimated_cost,
+            "cost": estimated_cost,
+            "State": "Ready",
+            "status": "pending_approval",
+            "Confidence": "Operator requested",
+            "source": "local_demo",
+            "incident_id": incident_id,
+            "note": note,
+        }
+        with _DEMO_WORK_ORDERS_LOCK:
+            _DEMO_WORK_ORDERS.insert(0, row)
+        return {
+            "id": action_id,
+            "asset_id": asset_id,
+            "title": title,
+            "priority": priority,
+            "status": "pending_approval",
+            "owner": owner,
+            "downtime": downtime,
+            "estimated_cost": estimated_cost,
+            "message": "Work order recorded in the local demo session for approval.",
+        }
+
     from database.connection import get_session
     from database.models import ActionDB
 
-    asset = runtime.kernel.asset_service.get(asset_id) if asset_id else None
     session = get_session()
     try:
         action = ActionDB(
-            id=str(uuid4()),
+            id=action_id,
             incident_id=incident_id,
             asset_id=asset_id,
             action_type="work_order",
@@ -266,6 +317,26 @@ def create_work_order(
 
 def approve_work_order(work_order_id: str, *, operator: str = "Maintenance lead", note: str | None = None) -> dict[str, Any]:
     """Approve a pending work-order ActionDB row."""
+    if local_demo_mode():
+        with _DEMO_WORK_ORDERS_LOCK:
+            action = next(
+                (row for row in _DEMO_WORK_ORDERS if row.get("id") == work_order_id),
+                None,
+            )
+            if action is None:
+                raise LookupError(f"Work order {work_order_id} not found")
+            action["State"] = "Scheduled"
+            action["status"] = "approved"
+            action["approved_by"] = operator
+            if note:
+                action["approval_note"] = note
+        return {
+            "id": work_order_id,
+            "status": "approved",
+            "approved_by": operator,
+            "message": "Work order approved in the local demo session.",
+        }
+
     from datetime import datetime
     from database.connection import get_session
     from database.models import ActionDB
