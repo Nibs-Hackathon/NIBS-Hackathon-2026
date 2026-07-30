@@ -49,7 +49,7 @@ class DiagnosticAgent(Agent):
         temperature = telemetry.get("temperature", 0)
         gas = telemetry.get("gas_level", telemetry.get("gas", 0))
         vibration = telemetry.get("vibration", 0)
-        flow = telemetry.get("flow_rate", 0)
+        flow = telemetry.get("flow", telemetry.get("flow_rate"))
 
         diagnosis = []
         evidence = []
@@ -71,7 +71,7 @@ class DiagnosticAgent(Agent):
             diagnosis.append("Mechanical wear")
             evidence.append("High vibration suggests bearing or shaft wear.")
 
-        if flow and flow <= thresholds.get("flow_min", 25):
+        if flow is not None and flow <= thresholds.get("flow_min", 25):
             diagnosis.append("Flow restriction")
             evidence.append("Low flow rate indicates blockage or valve restriction.")
 

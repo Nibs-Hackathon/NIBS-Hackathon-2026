@@ -30,6 +30,24 @@ def test_pressure_spike_api_name_targets_a_live_asset():
     }
 
 
+def test_manual_scenario_stays_on_the_requested_facility_asset():
+    simulator = MagicMock()
+    simulator.active_incidents = {}
+    simulator.facility.assets = [
+        SimpleNamespace(asset=SimpleNamespace(id="texas-asset")),
+        SimpleNamespace(asset=SimpleNamespace(id="mumbai-asset")),
+    ]
+    simulator.tick.return_value = (["reading"], ["report"])
+
+    result = IncidentService(simulator).trigger_incident(
+        "high_temperature",
+        asset_id="mumbai-asset",
+    )
+
+    assert simulator.tick.call_args.kwargs["target_asset_id"] == "mumbai-asset"
+    assert result["asset_id"] == "mumbai-asset"
+
+
 def test_pressure_sensor_enum_generates_pressure_spike_event():
     generator = EventGenerator()
     generator.add_fault(

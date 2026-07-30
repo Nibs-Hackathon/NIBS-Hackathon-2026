@@ -107,29 +107,42 @@ class RevenueService:
     
     def calculate_incident_impact(self, incident_type: str, asset_type: str, 
                                    duration_hours: float = 4) -> Dict:
-        """Calculate revenue impact of a specific incident."""
+        """Calculate a transparent, deterministic incident economics estimate."""
         daily_revenue = self.get_asset_revenue(asset_type)
         
         # Incident severity multipliers
         severity_multipliers = {
-            "Pressure Spike": 0.3,
-            "High Temperature": 0.25,
-            "Gas Leak": 0.5,
-            "High Vibration": 0.2,
-            "Flow Restriction": 0.15,
+            "pressurespike": 0.3,
+            "hightemperature": 0.25,
+            "gasleak": 0.5,
+            "highvibration": 0.2,
+            "flowrestriction": 0.15,
         }
-        
-        multiplier = severity_multipliers.get(incident_type, 0.2)
+        normalized_incident = "".join(
+            character for character in str(incident_type or "").lower()
+            if character.isalnum()
+        )
+        multiplier = severity_multipliers.get(normalized_incident, 0.2)
         
         # Revenue loss = daily_revenue * (duration/24) * multiplier
         revenue_loss = daily_revenue * (duration_hours / 24) * multiplier
+        # Planning estimates, not booked finance values. Keeping these in the
+        # same service ensures reports, forecasting, and Copilot use one model.
+        maintenance_cost = max(
+            750,
+            daily_revenue * (0.08 + multiplier * 0.22) + duration_hours * 175,
+        )
+        production_impact_pct = min(100, multiplier * 20)
         
         return {
             "incident_type": incident_type,
             "duration_hours": duration_hours,
             "daily_revenue": daily_revenue,
             "revenue_loss": round(revenue_loss, 2),
+            "maintenance_cost": round(maintenance_cost, 2),
+            "production_impact_pct": round(production_impact_pct, 1),
             "severity_multiplier": multiplier,
+            "provenance": "modeled_estimate",
         }
 
 

@@ -4,7 +4,7 @@ import { ExpandMoreOutlined } from '@mui/icons-material';
 import { ProvenanceBadge } from '../accountability';
 import { StatusBadge, RiskBadge } from '../../design-system/catalog/status';
 import { HealthRing, SignalCard, Sparkline } from '../../design-system/catalog/data';
-import { searchKnowledge } from '../../api/client';
+import { getKnowledgeDocuments, searchKnowledge } from '../../api/client';
 import { formatTime, label, round } from './shared';
 
 function AccordionSection({ id, title, open, onToggle, children, count }) {
@@ -46,8 +46,13 @@ export function AssetObjectInspector({
   const [openSections, setOpenSections] = useState(() => new Set());
   const [knowledge, setKnowledge] = useState([]);
   const [knowledgeStatus, setKnowledgeStatus] = useState('idle');
+  const [referenceDocuments, setReferenceDocuments] = useState([]);
+  const [documentsStatus, setDocumentsStatus] = useState('idle');
 
   const toggle = (id) => {
+    const willOpen = !openSections.has(id);
+    if (willOpen && id === 'knowledge' && knowledgeQuery) setKnowledgeStatus('loading');
+    if (willOpen && id === 'documents' && documentsStatus === 'idle') setDocumentsStatus('loading');
     setOpenSections((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -59,7 +64,6 @@ export function AssetObjectInspector({
   useEffect(() => {
     if (!openSections.has('knowledge') || !knowledgeQuery) return undefined;
     let cancelled = false;
-    setKnowledgeStatus('loading');
     searchKnowledge(knowledgeQuery)
       .then((response) => {
         if (cancelled) return;
@@ -73,6 +77,22 @@ export function AssetObjectInspector({
       });
     return () => { cancelled = true; };
   }, [openSections, knowledgeQuery, asset?.id]);
+
+  useEffect(() => {
+    if (!openSections.has('documents') || documentsStatus !== 'loading') return undefined;
+    let cancelled = false;
+    getKnowledgeDocuments()
+      .then((response) => {
+        if (cancelled) return;
+        setReferenceDocuments(Array.isArray(response.data?.documents) ? response.data.documents : []);
+        setDocumentsStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDocumentsStatus('unavailable');
+      });
+    return () => { cancelled = true; };
+  }, [openSections, documentsStatus]);
 
   if (!asset) {
     return (
@@ -95,7 +115,7 @@ export function AssetObjectInspector({
   const assetWOs = workOrders.filter(
     (wo) => wo.assetId === asset.id || wo.asset_id === asset.id || wo.asset === asset.name || wo.Asset === asset.name,
   );
-  const docs = Number(asset.documents_count) || 0;
+  const controlledDocs = Number(asset.documents_count) || 0;
   const aiText = selected?.incident?.reasoning
     || asset.ai_recommendation
     || asset.recommendation
@@ -223,10 +243,58 @@ export function AssetObjectInspector({
           ))}
         </AccordionSection>
 
-        <AccordionSection id="documents" title="DOCUMENTS" open={openSections.has('documents')} onToggle={toggle} count={docs}>
-          <Typography variant="body2">
-            {docs > 0 ? `${docs} controlled records linked.` : 'No controlled documents linked yet.'}
-          </Typography>
+        <AccordionSection
+          id="documents"
+          title="DOCUMENTS"
+          open={openSections.has('documents')}
+          onToggle={toggle}
+          count={controlledDocs + referenceDocuments.length || undefined}
+        >
+          {controlledDocs > 0 && (
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              {controlledDocs} controlled {controlledDocs === 1 ? 'record' : 'records'} linked to this asset.
+            </Typography>
+          )}
+          {documentsStatus === 'loading' && (
+            <Typography variant="body2" color="text.secondary">Loading refinery reference corpus...</Typography>
+          )}
+          {documentsStatus === 'unavailable' && (
+            <Typography variant="body2" color="text.secondary">
+              Reference catalog is available when the backend reconnects.
+            </Typography>
+          )}
+          {documentsStatus === 'ready' && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {referenceDocuments.length} local refinery references are searchable for every asset.
+                Site-controlled manuals and procedures remain authoritative.
+              </Typography>
+              <Stack spacing={0.75}>
+                {referenceDocuments.slice(0, 6).map((document) => (
+                  <Box
+                    key={document.id}
+                    sx={{
+                      px: 1,
+                      py: 0.75,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Typography variant="caption" fontWeight={750}>{document.title}</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {document.section_count} sections
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+              {referenceDocuments.length > 6 && (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                  +{referenceDocuments.length - 6} additional references available through Knowledge search
+                </Typography>
+              )}
+            </>
+          )}
         </AccordionSection>
 
         <AccordionSection id="notes" title="OPERATOR NOTES" open={openSections.has('notes')} onToggle={toggle}>

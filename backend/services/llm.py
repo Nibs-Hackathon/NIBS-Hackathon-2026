@@ -38,7 +38,7 @@ SUPPORTED_GEMINI_ENV_VARS = (
 
 MULTI_KEY_ENV_VARS = ("GEMINI_API_KEYS", "GOOGLE_API_KEYS")
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 _PROXY_ENV_VARS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
@@ -305,7 +305,6 @@ class LLMManager:
             model=self.model_name,
             google_api_key=key,
             client_args=client_args,
-            temperature=0.3,
         )
 
     def generate(self, prompt: str, max_retries_per_key: int = 2, use_cache: bool = True) -> str:

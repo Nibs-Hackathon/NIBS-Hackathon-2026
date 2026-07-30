@@ -1,5 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
+import {
+  AccessTimeOutlined,
+  AutoAwesomeOutlined,
+  BuildOutlined,
+  FavoriteBorderOutlined,
+  TrendingDownOutlined,
+  TuneOutlined,
+  VerifiedOutlined,
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
@@ -7,19 +16,43 @@ import { navigateTo } from '../../context/objectNavigation';
 import { ProvenanceBadge } from '../accountability';
 import { createWorkOrder, getPredictions } from '../../api/client';
 import { normalizePredictionResponse } from '../../api/resourceAdapters';
-import { MiniGraph, Empty, Metric, round } from './shared';
+import {
+  ChartTooltip,
+  Grid,
+  Line,
+  LineChart,
+  LineChartLoading,
+  LineSeriesTerminalMarker,
+  projectedHealthToChartRows,
+  XAxis,
+} from '@/components/charts';
+import { Empty, round } from './shared';
 
 function formatMetric(value, suffix = '') {
   if (value == null || Number.isNaN(Number(value))) return '—';
   return `${round(Number(value))}${suffix}`;
 }
 
-/** Part 8 — Forecast in-place select + draft WO navigate. Phase 3: stress scenarios. */
-export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenance = 'estimated' }) {
+function ForecastMetric({ icon: Icon, label, value, detail, tone = 'blue' }) {
+  return (
+    <Box className={`forecast-os-metric tone-${tone}`}>
+      <Box className="forecast-os-metric-icon"><Icon /></Box>
+      <Box>
+        <Typography>{label}</Typography>
+        <b>{value}</b>
+        <small>{detail}</small>
+      </Box>
+    </Box>
+  );
+}
+
+export function ForecastTerminal({ assets, provenance = 'estimated' }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
-  const scenarioRef = useRef(null);
-  const safeAssets = Array.isArray(assets) ? assets.filter(Boolean) : [];
+  const safeAssets = useMemo(
+    () => (Array.isArray(assets) ? assets.filter(Boolean) : []),
+    [assets],
+  );
   const [selectedId, setSelectedId] = useState(objectApi.selection.assetId);
   const [prediction, setPrediction] = useState(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
@@ -31,61 +64,63 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
     objectApi.setSelection({ assetId: id });
   };
 
-  const baseFocus = safeAssets.find((asset) => asset.id === (selectedId || objectApi.selection.assetId)) || safeAssets[0];
+  const baseFocus = safeAssets.find(
+    (asset) => asset.id === (selectedId || objectApi.selection.assetId),
+  ) || safeAssets[0];
+  const baseFocusRef = useRef(baseFocus);
+  const baseFocusId = baseFocus?.id;
   const focus = prediction && baseFocus && prediction.id === baseFocus.id
     ? { ...baseFocus, ...prediction }
     : baseFocus;
-  const stream = (Array.isArray(telemetryStreams) ? telemetryStreams : []).find((item) => item?.asset_id === focus?.id) || telemetry;
-  const raw = Array.isArray(stream?.readings)
-    ? stream.readings.map((item) => Number(item.value)).filter(Number.isFinite)
-    : [];
   const health = focus?.health != null ? round(focus.health) : null;
-
-  const hasForecastPayload = focus && (
-    focus.remaining_life_days != null
-    || focus.remaining_life != null
-    || focus.failure_probability != null
-    || focus.risk_score != null
-    || focus.forecast_available
-    || (Array.isArray(focus.projected_health) && focus.projected_health.length > 0)
-  );
-
   const rull = focus?.remaining_life_days ?? focus?.remaining_life ?? null;
-  const failure = focus?.failure_probability ?? focus?.risk_score ?? null;
+  const failure = focus?.failure_probability ?? null;
   const projected = Array.isArray(focus?.projected_health) && focus.projected_health.length > 1
     ? focus.projected_health.map(Number).filter(Number.isFinite)
-    : raw.length > 3
-      ? raw
-      : [];
+    : [];
+  const { chartData, projectionStartIndex } = useMemo(
+    () => projectedHealthToChartRows(focus?.historical_health, focus?.predicted_health),
+    [focus?.historical_health, focus?.predicted_health],
+  );
   const scenario = focus?.scenario;
+  const hasForecastPayload = Boolean(
+    focus
+    && (
+      focus.forecast_available
+      || projected.length > 1
+      || rull != null
+      || (failure != null && focus.forecast_method)
+    ),
+  );
 
   useEffect(() => {
-    if (!baseFocus?.id) {
-      setPrediction(null);
-      return undefined;
-    }
+    baseFocusRef.current = baseFocus;
+  }, [baseFocus]);
+
+  useEffect(() => {
+    if (!baseFocusId) return undefined;
     let cancelled = false;
-    setPredictionLoading(true);
-    getPredictions(baseFocus.id, 14, stress)
-      .then((response) => {
-        if (!cancelled) {
-          setPrediction(normalizePredictionResponse(response.data, baseFocus));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setPrediction(null);
-      })
-      .finally(() => {
-        if (!cancelled) setPredictionLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [baseFocus?.id, stress]);
-
-  useEffect(() => {
-    if (!focus?.id) return undefined;
-    const timer = requestAnimationFrame(() => scenarioRef.current?.focus?.({ preventScroll: true }));
-    return () => cancelAnimationFrame(timer);
-  }, [focus?.id]);
+    const timer = window.setTimeout(() => {
+      if (!cancelled) setPredictionLoading(true);
+      getPredictions(baseFocusId, 14, stress)
+        .then((response) => {
+          const requestedFocus = baseFocusRef.current;
+          if (!cancelled && requestedFocus?.id === baseFocusId) {
+            setPrediction(normalizePredictionResponse(response.data, requestedFocus));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setPrediction(null);
+        })
+        .finally(() => {
+          if (!cancelled) setPredictionLoading(false);
+        });
+    }, 140);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [baseFocusId, stress]);
 
   const createWorkOrderAction = async () => {
     if (!focus) return;
@@ -128,205 +163,224 @@ export function ForecastTerminal({ assets, telemetry, telemetryStreams, provenan
     }
   };
 
-  const watchlist = safeAssets.slice().sort((a, b) => Number(a.health ?? 100) - Number(b.health ?? 100));
+  const watchlist = useMemo(
+    () => safeAssets.slice().sort(
+      (a, b) => Number(a.health ?? 100) - Number(b.health ?? 100),
+    ),
+    [safeAssets],
+  );
 
   return (
-    <Box className="forecast-terminal">
-      <Box className="forecast-terminal-head">
+    <Box className="forecast-os">
+      <Box className="forecast-os-head">
         <Box>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography className="product-kicker">FORECASTING TERMINAL</Typography>
+            <Typography className="product-kicker">FORECASTING</Typography>
             <ProvenanceBadge value={provenance} />
           </Stack>
-          <Typography className="forecast-terminal-title">Asset risk curve · forward operating model</Typography>
+          <Typography className="forecast-os-title">Forward reliability model</Typography>
+          <Typography className="forecast-os-subtitle">
+            Compare asset degradation, test operating stress, and stage intervention work.
+          </Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" variant="outlined" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
-            Create work order
-          </Button>
-        </Stack>
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={<BuildOutlined />}
+          disabled={!focus || creatingWo}
+          onClick={createWorkOrderAction}
+        >
+          Create work order
+        </Button>
       </Box>
 
-      <Box className="forecast-terminal-grid">
-        <Paper className="terminal-watchlist">
-          <Typography className="product-kicker">ASSET WATCHLIST</Typography>
-          <Typography className="terminal-watchlist-sub">Sort: highest forward risk</Typography>
+      <Box className="forecast-os-layout">
+        <Paper className="forecast-os-watchlist">
+          <Box className="forecast-os-watchlist-head">
+            <Box>
+              <Typography className="product-kicker">ASSET RISK QUEUE</Typography>
+              <Typography>Lowest health first</Typography>
+            </Box>
+            <b>{watchlist.length}</b>
+          </Box>
           <Box
+            className="forecast-os-watchlist-body"
             tabIndex={0}
             onKeyDown={(event) => {
               if (!watchlist.length) return;
               const ids = watchlist.map((asset) => asset.id);
-              const idx = Math.max(0, ids.indexOf(focus?.id));
+              const index = Math.max(0, ids.indexOf(focus?.id));
               if (event.key === 'ArrowDown') {
                 event.preventDefault();
-                chooseAsset(ids[Math.min(ids.length - 1, idx + 1)]);
+                chooseAsset(ids[Math.min(ids.length - 1, index + 1)]);
               }
               if (event.key === 'ArrowUp') {
                 event.preventDefault();
-                chooseAsset(ids[Math.max(0, idx - 1)]);
+                chooseAsset(ids[Math.max(0, index - 1)]);
               }
             }}
           >
-            {watchlist.length
-              ? watchlist.map((asset, index) => (
+            {watchlist.length ? watchlist.map((asset, index) => {
+              const assetHealth = round(asset.health);
+              const risk = asset.risk_score != null
+                ? round(asset.risk_score)
+                : asset.failure_probability != null
+                  ? round(asset.failure_probability)
+                  : Math.max(0, 100 - assetHealth);
+              return (
                 <button
                   type="button"
                   key={asset.id || index}
                   onClick={() => chooseAsset(asset.id)}
-                  className={focus?.id === asset.id ? 'selected' : ''}
+                  className={`forecast-os-asset ${focus?.id === asset.id ? 'selected' : ''}`}
                 >
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <Box>
+                  <span className="forecast-os-rank">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="forecast-os-asset-copy">
                     <b>{asset.name || `Asset ${index + 1}`}</b>
-                    <small>{asset.location || asset.zone || 'Process train'} · {round(asset.health)}% health</small>
-                  </Box>
-                  <em>
-                    {asset.risk_score != null
-                      ? `${round(asset.risk_score)}%`
-                      : asset.failure_probability != null
-                        ? `${round(asset.failure_probability)}%`
-                        : '—'}
-                  </em>
+                    <small>{asset.location || asset.zone || 'Process train'}</small>
+                    <i><span style={{ width: `${Math.max(2, Math.min(100, risk))}%` }} /></i>
+                  </span>
+                  <span className="forecast-os-risk">
+                    <b>{risk}%</b>
+                    <small>risk</small>
+                  </span>
                 </button>
-              ))
-              : <Empty text="health forecasts" />}
+              );
+            }) : <Empty text="health forecasts" />}
           </Box>
         </Paper>
 
-        <Paper className="terminal-chart p8-inspector-swap" key={focus?.id || 'chart'}>
-          <Box className="terminal-chart-head">
-            <Box>
-              <Typography className="product-kicker">HEALTH FORECAST · {focus?.name || 'Awaiting asset'}</Typography>
-              <Typography>Observed + predicted trajectory with uncertainty</Typography>
-              {predictionLoading && (
-                <Typography variant="caption" color="text.secondary">Loading prediction model…</Typography>
-              )}
-            </Box>
-            {projected.length > 1 && (
-              <Box className="terminal-chart-legend">
+        <Box className="forecast-os-main">
+          <Paper className="forecast-os-model" key={focus?.id || 'forecast-model'}>
+            <Box className="forecast-os-model-head">
+              <Box>
+                <Typography className="product-kicker">HEALTH FORECAST</Typography>
+                <Typography className="forecast-os-model-title">
+                  {focus?.name || 'Select an asset'}
+                </Typography>
+                <Typography>
+                  {focus?.location || focus?.zone || 'Observed and projected operating condition'}
+                </Typography>
+              </Box>
+              <Box className="forecast-os-legend">
                 <span><i className="observed" />Observed</span>
-                <span><i className="model" />Forecast</span>
-                <span><i className="band" />80% confidence band</span>
+                <span><i />Projected</span>
               </Box>
-            )}
-          </Box>
-          {projected.length > 1 ? (
-            <>
-              <Box className="terminal-graph">
-                <svg viewBox="0 0 760 285" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="uncertainty" x1="0" x2="0" y1="0" y2="1">
-                      <stop stopColor="#5f9eff" stopOpacity=".25" />
-                      <stop offset="1" stopColor="#5f9eff" stopOpacity=".02" />
-                    </linearGradient>
-                  </defs>
-                  {[55, 115, 175, 235].map((y) => <line key={y} x1="0" x2="760" y1={y} y2={y} />)}
-                  <rect x="0" y="195" width="760" height="40" className="terminal-watch-zone" />
-                  <rect x="0" y="235" width="760" height="50" className="terminal-critical-zone" />
-                  <polyline
-                    points={projected.map((value, index) => `${index * (760 / (projected.length - 1))},${48 + (100 - value) * 1.9}`).join(' ')}
-                    className="terminal-line"
+            </Box>
+
+            <Box className="forecast-os-metrics">
+              <ForecastMetric icon={TrendingDownOutlined} label="Failure probability" value={formatMetric(failure, '%')} detail="Model horizon" tone="amber" />
+              <ForecastMetric icon={AccessTimeOutlined} label="Useful life" value={rull != null ? `${round(rull)} days` : '—'} detail="Remaining estimate" tone="violet" />
+              <ForecastMetric icon={FavoriteBorderOutlined} label="Current health" value={health != null ? `${health}%` : '—'} detail="Latest condition" tone="green" />
+              <ForecastMetric icon={VerifiedOutlined} label="Confidence" value={focus?.prediction_confidence != null ? `${round(focus.prediction_confidence)}%` : '—'} detail={focus?.forecast_method || 'Model pending'} />
+            </Box>
+
+            <Box className="forecast-os-chart">
+              {predictionLoading && !chartData.length ? (
+                <LineChartLoading loadingStyle="sweep" />
+              ) : chartData.length > 1 ? (
+                <LineChart
+                  data={chartData}
+                  aspectRatio={null}
+                  margin={{ top: 18, right: 24, bottom: 34, left: 24 }}
+                  style={{ height: '100%' }}
+                >
+                  <Grid horizontal numTicksRows={5} strokeOpacity={0.26} hideHorizontalEdgeLines />
+                  <Line
+                    dataKey="value"
+                    strokeWidth={2.2}
+                    stroke="var(--chart-line-primary, #55d6ff)"
+                    dashFromIndex={projectionStartIndex}
+                    animate
                   />
-                </svg>
-                <Box className="terminal-axis"><span>Now</span><span>7d</span><span>14d</span><span>21d</span><span>30d</span></Box>
-              </Box>
-              <Box className="terminal-stats">
-                <Metric label="Failure probability" value={formatMetric(failure, '%')} />
-                <Metric label="Remaining useful life" value={rull != null ? `${round(rull)} days` : '—'} />
-                <Metric label="Current health" value={health != null ? `${health}%` : '—'} />
-                <Metric label="Model confidence" value={focus?.prediction_confidence != null ? `${round(focus.prediction_confidence)}%` : '—'} />
-              </Box>
-            </>
-          ) : (
-            <Box sx={{ p: 3 }}>
-              <Empty text="health forecasts" />
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {focus
-                  ? 'No forecast series is available for this asset yet. Predictions appear when the backend publishes projected health or enough telemetry history exists.'
-                  : 'Select an asset from the watchlist to view forecasts.'}
-              </Typography>
+                  <LineSeriesTerminalMarker dataKey="value" />
+                  <XAxis />
+                  <ChartTooltip />
+                </LineChart>
+              ) : (
+                <Box className="forecast-os-chart-empty">
+                  <Empty text="health forecasts" />
+                  <Typography>
+                    {focus
+                      ? 'A verified projected-health series has not been published for this asset.'
+                      : 'Select an asset from the risk queue.'}
+                  </Typography>
+                </Box>
+              )}
+              {predictionLoading && chartData.length ? (
+                <Box className="forecast-os-chart-updating">Recalculating stress scenario…</Box>
+              ) : null}
             </Box>
-          )}
-        </Paper>
+          </Paper>
 
-        <Paper className="terminal-scenario">
-          <Typography className="product-kicker">WHAT IF SIMULATION</Typography>
-          <Typography className="terminal-scenario-title">Operating stress</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Stress scales degradation in the prediction API (0 = baseline, 1 = high load).
-          </Typography>
-          <Box sx={{ mt: 2 }}>
-            <input
-              ref={scenarioRef}
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={stress}
-              disabled={!focus}
-              onChange={(event) => setStress(Number(event.target.value))}
-              style={{ width: '100%' }}
-              aria-label="Operating stress"
-            />
-            <Typography variant="caption" color="text.secondary">
-              Stress {stress.toFixed(2)} · multiplier {focus?.stress_multiplier != null ? `${focus.stress_multiplier}×` : '—'}
-            </Typography>
-          </Box>
-          {scenario ? (
-            <Box className="terminal-stats" sx={{ mt: 2 }}>
-              <Metric label="Intervention cost" value={`$${Number(scenario.estimated_intervention_cost_usd || 0).toLocaleString()}`} />
-              <Metric label="Downtime" value={`${scenario.estimated_downtime_hours ?? '—'}h`} />
-              <Metric label="Prod. impact" value={`${scenario.estimated_production_impact_pct ?? '—'}%`} />
+          <Paper className="forecast-os-scenario">
+            <Box className="forecast-os-stress">
+              <Box className="forecast-os-scenario-title">
+                <TuneOutlined />
+                <Box>
+                  <Typography className="product-kicker">WHAT-IF MODEL</Typography>
+                  <Typography>Operating stress</Typography>
+                </Box>
+                <b>{Math.round(stress * 100)}%</b>
+              </Box>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={stress}
+                disabled={!focus}
+                onChange={(event) => setStress(Number(event.target.value))}
+                aria-label="Operating stress"
+              />
+              <Box className="forecast-os-stress-scale">
+                <span>Baseline</span>
+                <span>High load</span>
+              </Box>
             </Box>
-          ) : (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Scenario estimates appear once a forecast is available.
-            </Typography>
-          )}
-          <Box className="terminal-recommendation" sx={{ mt: 2 }}>
-            <Typography className="product-kicker">MODEL RECOMMENDATION</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {hasForecastPayload
-                ? 'Review the published forecast and open maintenance planning when intervention is warranted.'
-                : 'Awaiting a verified forecast before recommending intervention timing.'}
-            </Typography>
-            <Button size="small" sx={{ mt: 1 }} variant="contained" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
-              Create work order
-            </Button>
-          </Box>
-        </Paper>
-      </Box>
 
-      <Paper className="terminal-bottom">
-        <Box>
-          <Typography className="product-kicker">HISTORICAL COMPARISON</Typography>
-          {projected.length > 1 ? (
-            <>
+            <Box className="forecast-os-outcomes">
+              <Box><span>Intervention cost</span><b>{scenario ? `$${Number(scenario.estimated_intervention_cost_usd || 0).toLocaleString()}` : '—'}</b></Box>
+              <Box><span>Downtime</span><b>{scenario ? `${scenario.estimated_downtime_hours ?? '—'}h` : '—'}</b></Box>
+              <Box><span>Production impact</span><b>{scenario ? `${scenario.estimated_production_impact_pct ?? '—'}%` : '—'}</b></Box>
+            </Box>
+
+            <Box className="forecast-os-recommendation">
+              <AutoAwesomeOutlined />
+              <Box>
+                <Typography className="product-kicker">MODEL RECOMMENDATION</Typography>
+                <Typography>
+                  {hasForecastPayload
+                    ? 'Review the forecast horizon and stage maintenance before the modeled risk window.'
+                    : 'Awaiting a verified forecast before recommending intervention timing.'}
+                </Typography>
+              </Box>
+              <Button size="small" disabled={!focus || creatingWo} onClick={createWorkOrderAction}>
+                Stage work
+              </Button>
+            </Box>
+          </Paper>
+
+          <Paper className="forecast-os-context">
+            <Box>
+              <Typography className="product-kicker">MODEL EVIDENCE</Typography>
               <Typography>
-                Showing {projected.length} points from {focus?.forecast_method ? 'published forecast' : 'telemetry history'}.
+                {chartData.length > 1
+                  ? `${focus?.predicted_health?.length || projected.length} projected points${focus?.forecast_method ? ` · ${focus.forecast_method}` : ''}. The dashed tail is the stress-adjusted model horizon.`
+                  : 'Historical comparison begins when the backend publishes a projected-health series.'}
               </Typography>
-              <MiniGraph values={projected} label="Forecast / telemetry series" />
-            </>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Historical comparison requires a forecast or telemetry series from the backend.
-            </Typography>
-          )}
+            </Box>
+            <Box>
+              <Typography className="product-kicker">SENSITIVITY</Typography>
+              <Typography>
+                {scenario
+                  ? `Stress multiplier ${focus?.stress_multiplier ?? '—'}×. Higher stress steepens projected health decline and increases modeled exposure.`
+                  : 'Scenario impacts appear after the prediction service publishes a stress response.'}
+              </Typography>
+            </Box>
+          </Paper>
         </Box>
-        <Box>
-          <Typography className="product-kicker">RISK & IMPACT SENSITIVITY</Typography>
-          {scenario ? (
-            <Typography variant="body2">
-              Method: {scenario.method || focus?.forecast_method || 'stress-scaled forecast'}.
-              Higher stress increases failure probability and estimated intervention cost.
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Sensitivity drivers will appear when the prediction service publishes scenario data.
-            </Typography>
-          )}
-        </Box>
-      </Paper>
+      </Box>
     </Box>
   );
 }

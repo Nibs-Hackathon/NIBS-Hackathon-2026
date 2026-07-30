@@ -28,14 +28,9 @@ class KnowledgeAgent(Agent):
     def _initialize_services(self, require_llm: bool) -> None:
         """Lazily load the persisted retrieval index and, for chat, Gemini."""
         if self.retriever is None:
-            from rag.embedder import Embedder
+            from rag.local_knowledge_store import LocalKnowledgeStore
             from rag.retriever import Retriever
-            from rag.vector_store import VectorStore
-
-            embedder = Embedder()
-            store = VectorStore(embedder.get_model())
-            store.load(str(FAISS_INDEX_PATH))
-            self.retriever = Retriever(store.db)
+            self.retriever = Retriever(LocalKnowledgeStore())
 
         if require_llm and self.llm is None:
             from services.llm import LLMManager
@@ -129,8 +124,14 @@ class KnowledgeAgent(Agent):
         return f"""
 You are Command Nexus, an experienced refinery operations engineer.
 
-Deliver a confident, concise, professional operational response using ONLY the
-technical reference material supplied below. Do not copy passages verbatim.
+Deliver a confident, concise, professional operational response using the live
+observations in the operator context and ONLY the technical reference material
+supplied below for procedural guidance. Do not copy passages verbatim.
+Treat the operator context as authoritative for current asset identity, active
+incident type, telemetry, and RigOS modeled financial exposure. Use those
+numbers directly when asked, clearly labeling modeled exposure as an estimate
+and never calling it booked revenue loss. Correct an operator assumption when
+the requested incident type does not match the active incident.
 Do not invent operating limits, causes, actions, or citations that the material
 does not support. Never mention implementation details such as retrieval,
 documents, a knowledge base, databases, RAG, prompts, models, or internal

@@ -11,6 +11,7 @@ import './redesign/ai-investigation.css';
 import './redesign/forecast-terminal.css';
 import './redesign/executive-briefing.css';
 import './redesign/mission-control-os.css';
+import './redesign/mission-control-visuals.css';
 import './redesign/polish.css';
 import './redesign/ambient.css';
 import './redesign/copilot.css';

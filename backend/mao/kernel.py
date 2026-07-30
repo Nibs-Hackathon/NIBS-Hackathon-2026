@@ -18,6 +18,8 @@ from mao.workflows.workflow_engine import WorkflowEngine
 from services.asset import AssetService
 from services.health import HealthService
 from services.persistence import PersistenceService
+from datetime import datetime
+from mao.models.execution_report import ExecutionReport
 
 
 
@@ -116,10 +118,35 @@ class MAOKernel:
 
 
     def handle_event(self, event):
-
-        # Run MAO pipeline
-
-        report = self.orchestrator.run(event)
+        try:
+            report = self.orchestrator.run(event)
+        except Exception as error:
+            # Preserve a one-to-one incident/report audit trail even if an
+            # agent or provider fails mid-workflow.
+            if not any(getattr(item, "id", None) == event.id for item in self.state.events):
+                self.state.add_event(event)
+            report = ExecutionReport(
+                execution_id=f"fallback-{event.id}",
+                workflow_name="incident_fallback",
+                success=False,
+                started_at=getattr(event, "timestamp", datetime.now()),
+                completed_at=datetime.now(),
+                agent_results=[],
+                final_summary=(
+                    f"{event.name} was detected for asset {event.source}. "
+                    "The automated investigation could not complete; operator review is required."
+                ),
+                recommendations=["Open the incident evidence and perform an operator-led safety review."],
+                approval_required=True,
+                incident_severity="Unknown",
+                metadata={
+                    "incident_id": event.id,
+                    "incident_type": event.name,
+                    "asset_id": event.source,
+                    "fallback_reason": type(error).__name__,
+                },
+            )
+            self.state.add_report(report)
 
 
 

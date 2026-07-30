@@ -139,6 +139,7 @@ class BackendAPI:
                 "health": asset.health,
                 "status": asset.status,
                 "refinery_id": getattr(asset, "refinery_id", None),
+                "metadata": getattr(asset, "metadata", {}) or {},
             }
             for asset in assets
         ]
@@ -230,11 +231,11 @@ class BackendAPI:
             self._invalidate_cache("get_incidents")
         return list(self._get_incidents_cached())
 
-    def trigger_incident(self, incident_type: str) -> Dict:
+    def trigger_incident(self, incident_type: str, asset_id: str | None = None) -> Dict:
         """Trigger a simulated incident."""
         from services.incident_service import IncidentService
         service = IncidentService(self.simulator)
-        result = service.trigger_incident(incident_type)
+        result = service.trigger_incident(incident_type, asset_id=asset_id)
         self._invalidate_cache("get_incidents")
         self._invalidate_cache("get_agent_activity")
         return result
@@ -264,8 +265,12 @@ class BackendAPI:
     def _get_agent_activity_cached(self, limit: int = 50) -> tuple:
         """Cached version of get_agent_activity."""
         results = self.kernel.state.agent_results[-limit:]
-        return tuple([
-            {
+        rows = []
+        for r in results:
+            metadata = r.metadata or {}
+            asset_id = metadata.get("asset_id")
+            asset = self.kernel.asset_service.get(asset_id) if asset_id else None
+            rows.append({
                 "agent_name": r.agent_name,
                 "finding": r.finding,
                 "confidence": r.confidence,
@@ -273,9 +278,11 @@ class BackendAPI:
                 "timestamp": r.timestamp.isoformat(),
                 "summary": r.summary,
                 "recommendations": r.recommendations,
-            }
-            for r in results
-        ])
+                "asset_id": asset_id,
+                "incident_id": metadata.get("incident_id"),
+                "facility": getattr(asset, "location", None),
+            })
+        return tuple(rows)
 
     def get_agent_activity(self, limit: int = 50, force_refresh: bool = False) -> List[Dict]:
         """Get recent agent activity with caching."""
@@ -287,19 +294,63 @@ class BackendAPI:
     def _get_reports_cached(self) -> tuple:
         """Cached version of get_reports."""
         reports = self.kernel.state.execution_reports
-        return tuple([
-            {
+        rows = []
+        for r in reports:
+            metadata = r.metadata or {}
+            asset_id = metadata.get("asset_id")
+            asset = self.kernel.asset_service.get(asset_id) if asset_id else None
+            diagnostic = next(
+                (result for result in r.agent_results if result.agent_name == "diagnostic"),
+                None,
+            )
+            economics = {}
+            if asset is not None:
+                try:
+                    from services.revenue_impact_calculator import revenue_service
+                    asset_type = getattr(
+                        getattr(asset, "asset_type", None),
+                        "value",
+                        getattr(asset, "asset_type", "Unknown"),
+                    )
+                    economics = revenue_service.calculate_incident_impact(
+                        metadata.get("incident_type"),
+                        str(asset_type),
+                        duration_hours=2,
+                    )
+                except Exception:
+                    economics = {}
+            rows.append({
                 "id": r.id,
                 "workflow": r.workflow_name,
                 "success": r.success,
+                "status": "completed" if r.success else "requires_review",
                 "summary": r.final_summary,
+                "executive_summary": r.final_summary,
+                "recommendations": r.recommendations,
+                "recommendation": r.recommendations[0] if r.recommendations else None,
                 "started_at": r.started_at.isoformat(),
                 "completed_at": r.completed_at.isoformat(),
                 "confidence": r.average_confidence,
+                "root_cause": getattr(diagnostic, "finding", None),
+                "financial_impact": economics.get("revenue_loss"),
+                "maintenance_cost": economics.get("maintenance_cost"),
+                "production_impact": economics.get("production_impact_pct"),
+                "economics_provenance": economics.get("provenance"),
                 "agent_results": len(r.agent_results),
-            }
-            for r in reports
-        ])
+                "agents": [result.agent_name for result in r.agent_results],
+                "failed_agents": [
+                    result.agent_name for result in r.agent_results if not result.success
+                ],
+                "incident_id": metadata.get("incident_id"),
+                "incident_type": metadata.get("incident_type"),
+                "asset_id": asset_id,
+                "asset_name": getattr(asset, "name", asset_id),
+                "facility": getattr(asset, "location", None),
+                "severity": r.incident_severity,
+                "approval_required": r.approval_required,
+                "source": "live_mao",
+            })
+        return tuple(rows)
 
     def get_reports(self, force_refresh: bool = False) -> List[Dict]:
         """Get execution reports with caching."""

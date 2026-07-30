@@ -1,4 +1,4 @@
-"""Read-only Knowledge Base access through the shared MAO kernel."""
+"""Read-only knowledge access with an always-available local fallback."""
 
 from __future__ import annotations
 
@@ -10,38 +10,55 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# ✅ FIXED - Use runtime proxy
-from services.runtime import runtime
-
 
 class KnowledgeSearchError(RuntimeError):
-    """Raised when the registered knowledge retrieval path is unavailable."""
+    """Raised when no knowledge retrieval path is available."""
 
 
-__all__ = ["KnowledgeSearchError", "search_knowledge"]
+__all__ = ["KnowledgeSearchError", "list_knowledge_documents", "search_knowledge"]
+
+
+def list_knowledge_documents() -> list[dict[str, object]]:
+    """Return the local corpus catalog without requiring Neon or the simulator."""
+    from rag.local_knowledge_store import LocalKnowledgeStore
+
+    return LocalKnowledgeStore().catalog()
+
 
 def search_knowledge(query: str) -> list[dict[str, str]]:
-    """Return normalized Neon retrieval results from the registered KnowledgeAgent."""
+    """Search configured retrieval first, then the always-available local corpus."""
     normalized_query = query.strip()
     if not normalized_query:
         return []
 
+    documents = []
+    retrieval_source = "local_refinery_corpus"
     try:
+        from services.runtime import runtime
+
         kernel = runtime.kernel
         agent = kernel.registry.get("knowledge")
-        if agent is None:
-            raise KnowledgeSearchError("Knowledge Agent is not available. Please ensure the knowledge base is loaded.")
-        if agent.retriever is None:
-            raise KnowledgeSearchError("Knowledge retriever is not initialized. Please build the knowledge base first.")
-    except KnowledgeSearchError:
-        raise
-    except Exception as error:
-        raise KnowledgeSearchError(f"Knowledge service unavailable: {str(error)[:100]}") from error
+        if agent is not None and agent.retriever is not None:
+            documents = agent.retriever.retrieve(normalized_query)
+            if documents:
+                retrieval_source = "configured_hybrid_retriever"
+    except Exception:
+        # Runtime, Neon, or the agent may be unavailable during startup. Local
+        # refinery references are intentionally independent of those services.
+        documents = []
 
-    try:
-        documents = agent.retriever.retrieve(normalized_query)
-    except Exception as error:
-        raise KnowledgeSearchError(f"Retrieval failed: {str(error)[:100]}") from error
+    if not documents:
+        try:
+            from rag.local_knowledge_store import LocalKnowledgeStore
+
+            local_store = LocalKnowledgeStore()
+            if local_store.count() == 0:
+                raise KnowledgeSearchError("The local refinery knowledge corpus is empty.")
+            documents = local_store.similarity_search(normalized_query, k=5)
+        except KnowledgeSearchError:
+            raise
+        except Exception as error:
+            raise KnowledgeSearchError(f"Local knowledge retrieval failed: {str(error)[:100]}") from error
 
     results = []
     for document in documents:
@@ -52,6 +69,7 @@ def search_knowledge(query: str) -> list[dict[str, str]]:
                 "content": document.page_content,
                 "source": source,
                 "filename": Path(source).name or source,
+                "retrieval": retrieval_source,
             }
         )
     return results

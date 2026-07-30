@@ -7,18 +7,50 @@ records.  It does not alter agent, simulator, or database behaviour.
 from __future__ import annotations
 
 from datetime import datetime
+import logging
+import os
+from threading import Lock
 import time
 from typing import Any
 
 from api.adapters.backend_api_new import api
 from services.runtime import runtime
 from services.local_mode import local_demo_mode
+from services.refinery_geo import refinery_geo_payload
+
+logger = logging.getLogger(__name__)
 
 # A database outage must not serially delay every HTTP poll and WebSocket tick.
 # After one failed durable-store attempt, serve the runtime audit fallback briefly
 # before probing persistence again.
 _PERSISTENCE_RETRY_AFTER = 0.0
+_REPORTS_RETRY_AFTER = 0.0
+_REPORTS_CACHE: dict[str, Any] = {"rows": [], "limit": 0, "expires_at": 0.0}
+_REPORTS_CACHE_LOCK = Lock()
+_REPORTS_CACHE_SECONDS = max(
+    5.0,
+    float(os.getenv("RIGOS_REPORTS_CACHE_SECONDS", "20")),
+)
 _PERSISTENCE_BACKOFF_SECONDS = 30.0
+_SNAPSHOT_CACHE: dict[str, Any] = {"value": None, "expires_at": 0.0}
+_SNAPSHOT_LOCK = Lock()
+_SNAPSHOT_CACHE_SECONDS = max(
+    1.0,
+    float(os.getenv("RIGOS_SNAPSHOT_CACHE_SECONDS", "4")),
+)
+
+
+def _average_asset_health(assets: list[dict[str, Any]]) -> float | None:
+    """Average only health readings actually present in the live snapshot."""
+    readings = []
+    for asset in assets:
+        try:
+            value = float(asset.get("health"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= value <= 100:
+            readings.append(value)
+    return round(sum(readings) / len(readings), 1) if readings else None
 
 
 def _iso(value: Any) -> str | None:
@@ -115,6 +147,7 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
         getattr(item.get("event"), "id", None)
         for item in getattr(simulator, "active_incidents", {}).values()
     } if simulator else set()
+    resolution_history = getattr(simulator, "incident_resolutions", {}) if simulator else {}
 
     for event in reversed(events[-limit:]):
         payload = getattr(event, "payload", {}) or {}
@@ -138,12 +171,36 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
             "requires_human_approval": False,
         }]
         timeline.extend(_agent_step(result) for result in report_results)
+        resolution = resolution_history.get(str(event.id))
+        if resolution:
+            timeline.append({
+                "id": f"{event.id}-resolved",
+                "kind": "resolution",
+                "agent": "simulator",
+                "title": "Field condition normalized",
+                "status": "resolved",
+                "timestamp": _iso(resolution.get("resolved_at")),
+                "reasoning": (
+                    "Safe telemetry or completed linked field work resolved the "
+                    "simulated operating condition."
+                ),
+                "evidence": [],
+                "confidence": None,
+                "duration_seconds": resolution.get("resolution_seconds"),
+                "output": {
+                    "health_after": resolution.get("health_after"),
+                    "resolution_seconds": resolution.get("resolution_seconds"),
+                },
+                "recommendations": [],
+                "requires_human_approval": False,
+            })
         incidents.append({
             "id": event.id,
             "timestamp": _iso(event.timestamp),
             "severity": _severity_from_payload(payload),
             "asset_id": event.source,
             "asset_name": getattr(asset, "name", event.source),
+            "facility": getattr(asset, "location", None),
             "incident_type": event.name,
             "status": "active" if event.id in active_event_ids else "resolved",
             "confidence": confidence,
@@ -163,7 +220,8 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
                 "recommendations": report.recommendations or [],
                 "confidence": confidence,
             } if report else None,
-            "resolution_seconds": None,
+            "resolution_seconds": resolution.get("resolution_seconds") if resolution else None,
+            "resolved_at": _iso(resolution.get("resolved_at")) if resolution else None,
             "timeline": timeline,
         })
     return incidents
@@ -184,7 +242,7 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
     session = None
     try:
         from database.connection import get_session
-        from database.models import ActionDB, AgentExecutionDB, ExecutionReportDB, IncidentDB
+        from database.models import ActionDB, AgentExecutionDB, AssetDB, ExecutionReportDB, IncidentDB
 
         session = get_session()
         records = (
@@ -214,6 +272,8 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 .all()
             )
             asset = runtime.kernel.asset_service.get(incident.asset_id)
+            if asset is None:
+                asset = session.query(AssetDB).filter(AssetDB.id == incident.asset_id).first()
             timeline = [{
                 "id": incident.id,
                 "kind": "incident",
@@ -247,6 +307,28 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                     "recommendations": report.recommendations or [],
                     "requires_human_approval": False,
                 })
+            if incident.resolved_at:
+                timeline.append({
+                    "id": f"{incident.id}-resolved",
+                    "kind": "resolution",
+                    "agent": "simulator",
+                    "title": "Field condition normalized",
+                    "status": "resolved",
+                    "timestamp": _iso(incident.resolved_at),
+                    "reasoning": (
+                        "The simulator confirmed safe telemetry or an operator-completed "
+                        "linked field-work order."
+                    ),
+                    "evidence": [],
+                    "confidence": None,
+                    "duration_seconds": incident.resolution_seconds,
+                    "output": {
+                        "health_after": incident.health_after,
+                        "resolution_seconds": incident.resolution_seconds,
+                    },
+                    "recommendations": [],
+                    "requires_human_approval": False,
+                })
             timeline.sort(key=lambda item: item["timestamp"] or "")
             confidence_values = [
                 float(execution.confidence)
@@ -264,6 +346,7 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 "severity": incident.severity,
                 "asset_id": incident.asset_id,
                 "asset_name": getattr(asset, "name", incident.asset_id),
+                "facility": getattr(asset, "location", None),
                 "incident_type": incident.event,
                 "status": incident.status,
                 "confidence": confidence,
@@ -420,20 +503,40 @@ def _notifications() -> list[dict[str, Any]]:
         "metadata": notification.metadata,
         "read": notification.read,
         "human_approval_required": notification.human_approval_required,
-    } for notification in notification_service.get_notifications(limit=10)]
+    } for notification in notification_service.get_notifications(limit=50)]
 
 
 def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
-    """Prefer persisted reports; live MAO state remains an outage fallback."""
-    global _PERSISTENCE_RETRY_AFTER
+    """Merge persisted and live reports so a generated brief is never hidden."""
+    global _REPORTS_RETRY_AFTER
     if local_demo_mode():
-        return api.get_reports()[-limit:]
-    if time.monotonic() < _PERSISTENCE_RETRY_AFTER:
-        return api.get_reports()[-limit:]
+        return api.get_reports(force_refresh=True)[-limit:]
+    now = time.monotonic()
+    with _REPORTS_CACHE_LOCK:
+        cached_rows = list(_REPORTS_CACHE["rows"])
+        cached_limit = int(_REPORTS_CACHE["limit"])
+        cache_valid = (
+            cached_rows
+            and cached_limit >= limit
+            and now < float(_REPORTS_CACHE["expires_at"])
+        )
+    if cache_valid:
+        live_reports = api.get_reports(force_refresh=True)
+        merged = {str(row.get("id")): row for row in cached_rows if row.get("id")}
+        for row in live_reports:
+            report_id = str(row.get("id") or "")
+            if report_id:
+                merged[report_id] = {**row, **merged.get(report_id, {})}
+        return sorted(
+            merged.values(),
+            key=lambda row: str(row.get("completed_at") or row.get("created_at") or row.get("started_at") or ""),
+        )[-limit:]
+    if time.monotonic() < _REPORTS_RETRY_AFTER:
+        return api.get_reports(force_refresh=True)[-limit:]
     session = None
     try:
         from database.connection import get_session
-        from database.models import ActionDB, AgentExecutionDB, ExecutionReportDB, IncidentDB
+        from database.models import ActionDB, AgentExecutionDB, AssetDB, ExecutionReportDB, IncidentDB
 
         session = get_session()
         records = (
@@ -442,44 +545,216 @@ def get_execution_reports(limit: int = 100) -> list[dict[str, Any]]:
             .limit(limit)
             .all()
         )
+        reports = []
         if records:
-            reports = []
-            for report in records:
-                incident = session.query(IncidentDB).filter(IncidentDB.id == report.incident_id).first()
-                executions = session.query(AgentExecutionDB).filter(AgentExecutionDB.incident_id == report.incident_id).all()
-                actions = session.query(ActionDB).filter(ActionDB.incident_id == report.incident_id).all()
+            # Batch the remote PostgreSQL reads. The old per-report lookup made
+            # roughly four tunnel round trips for every brief, which was slow
+            # enough to trigger the live-memory fallback on a TCP tunnel.
+            incident_ids = {
+                report.incident_id for report in records if report.incident_id
+            }
+            incident_rows = (
+                session.query(IncidentDB)
+                .filter(IncidentDB.id.in_(incident_ids))
+                .all()
+                if incident_ids else []
+            )
+            incidents_by_id = {incident.id: incident for incident in incident_rows}
+            execution_rows = (
+                session.query(AgentExecutionDB)
+                .filter(AgentExecutionDB.incident_id.in_(incident_ids))
+                .all()
+                if incident_ids else []
+            )
+            action_rows = (
+                session.query(ActionDB)
+                .filter(ActionDB.incident_id.in_(incident_ids))
+                .all()
+                if incident_ids else []
+            )
+            executions_by_incident: dict[str, list[Any]] = {}
+            for execution in execution_rows:
+                executions_by_incident.setdefault(execution.incident_id, []).append(execution)
+            actions_by_incident: dict[str, list[Any]] = {}
+            for action in action_rows:
+                actions_by_incident.setdefault(action.incident_id, []).append(action)
+            asset_ids = {
+                incident.asset_id for incident in incident_rows if incident.asset_id
+            }
+            database_assets = (
+                session.query(AssetDB)
+                .filter(AssetDB.id.in_(asset_ids))
+                .all()
+                if asset_ids else []
+            )
+            database_assets_by_id = {asset.id: asset for asset in database_assets}
+
+            # Normalize to the same oldest-to-newest order as live MAO state.
+            for report in reversed(records):
+                incident = incidents_by_id.get(report.incident_id)
+                executions = executions_by_incident.get(report.incident_id, [])
+                actions = actions_by_incident.get(report.incident_id, [])
                 asset = runtime.kernel.asset_service.get(incident.asset_id) if incident else None
+                if asset is None and incident:
+                    asset = database_assets_by_id.get(incident.asset_id)
+                confidence_values = [
+                    float(execution.confidence)
+                    for execution in executions
+                    if execution.confidence is not None
+                ]
+                confidence = (
+                    round(sum(confidence_values) / len(confidence_values), 4)
+                    if confidence_values
+                    else None
+                )
+                diagnostic = next(
+                    (execution for execution in executions if execution.agent_name == "diagnostic"),
+                    None,
+                )
+                economics = {}
+                if incident and asset:
+                    try:
+                        from services.revenue_impact_calculator import revenue_service
+                        asset_type = getattr(
+                            getattr(asset, "asset_type", None),
+                            "value",
+                            getattr(asset, "asset_type", "Unknown"),
+                        )
+                        economics = revenue_service.calculate_incident_impact(
+                            incident.event,
+                            str(asset_type),
+                            duration_hours=2,
+                        )
+                    except Exception:
+                        economics = {}
+                board_actions = [
+                    action for action in actions
+                    if action.action_type in {"board_approve", "board_defer", "board_escalate"}
+                    and (
+                        not (action.payload or {}).get("report_id")
+                        or str((action.payload or {}).get("report_id")) == str(report.id)
+                    )
+                ]
+                board_action = max(
+                    board_actions,
+                    key=lambda action: action.created_at or datetime.min,
+                    default=None,
+                )
+                board_payload = (board_action.payload or {}) if board_action else {}
+                board_labels = {
+                    "approved": "Approved for publication",
+                    "deferred": "Deferred pending revision",
+                    "escalated": "Escalated to operating committee",
+                }
+                board_decision = board_payload.get("decision") if board_action else None
+                board_status = board_labels.get(board_decision, "Awaiting board approval")
+                recommendation = (report.recommendations or [None])[0]
+                timeline = [
+                    {
+                        "event": "Signal detected",
+                        "detail": "Case opened in the operating record",
+                        "when": _iso(report.started_at),
+                    },
+                    {
+                        "event": "Investigation completed",
+                        "detail": "AI evidence package closed",
+                        "when": _iso(report.completed_at),
+                    },
+                ]
+                if recommendation:
+                    timeline.append({
+                        "event": "Recommendation prepared",
+                        "detail": str(recommendation)[:120],
+                        "when": _iso(report.completed_at),
+                    })
+                if board_action:
+                    timeline.append({
+                        "event": "Board decision",
+                        "detail": board_status,
+                        "when": _iso(board_action.executed_at or board_action.created_at),
+                    })
                 reports.append({
                     "id": report.id,
                     "incident_id": report.incident_id,
+                    "title": f"{incident.event} executive brief" if incident else "Operational executive brief",
                     "workflow": report.workflow,
                     "success": report.success,
                     "status": "completed" if report.success else "requires_review",
                     "summary": report.summary,
+                    "executive_summary": report.summary,
+                    "confidence": confidence,
+                    "root_cause": (
+                        getattr(diagnostic, "output", None)
+                        or getattr(diagnostic, "summary", None)
+                    ),
+                    "financial_impact": economics.get("revenue_loss"),
+                    "maintenance_cost": economics.get("maintenance_cost"),
+                    "production_impact": economics.get("production_impact_pct"),
+                    "economics_provenance": economics.get("provenance"),
                     "recommendations": report.recommendations or [],
+                    "recommendation": recommendation,
+                    "timeline": timeline,
                     "started_at": _iso(report.started_at),
                     "completed_at": _iso(report.completed_at),
                     "duration_seconds": _seconds_between(report.started_at, report.completed_at),
                     "asset_id": incident.asset_id if incident else None,
                     "asset_name": getattr(asset, "name", incident.asset_id) if incident else None,
+                    "facility": getattr(asset, "location", None),
                     "incident_type": incident.event if incident else None,
                     "incident_status": incident.status if incident else "unlinked",
                     "agent_results": len(executions),
                     "agents": [execution.agent_name for execution in executions],
                     "failed_agents": [execution.agent_name for execution in executions if not execution.success],
                     "operator_actions": len(actions),
+                    "board_decision": board_decision,
+                    "board_status": board_status,
+                    "board_decision_at": (
+                        _iso(board_action.executed_at or board_action.created_at)
+                        if board_action else None
+                    ),
+                    "board_decision_by": (
+                        board_action.approved_by
+                        or board_action.requested_by
+                        if board_action else None
+                    ),
+                    "board_rationale": board_payload.get("note"),
                     "source": "persistent_audit",
                 })
-            _PERSISTENCE_RETRY_AFTER = 0.0
-            return reports
-    except Exception:
-        _PERSISTENCE_RETRY_AFTER = time.monotonic() + _PERSISTENCE_BACKOFF_SECONDS
-        pass
+        live_reports = api.get_reports(force_refresh=True)
+        merged = {str(row.get("id")): row for row in reports if row.get("id")}
+        for row in live_reports:
+            report_id = str(row.get("id") or "")
+            if not report_id:
+                continue
+            merged[report_id] = {**row, **merged.get(report_id, {})}
+        with _REPORTS_CACHE_LOCK:
+            _REPORTS_CACHE.update({
+                "rows": list(reports),
+                "limit": limit,
+                "expires_at": time.monotonic() + _REPORTS_CACHE_SECONDS,
+            })
+        _REPORTS_RETRY_AFTER = 0.0
+        return sorted(
+            merged.values(),
+            key=lambda row: str(row.get("completed_at") or row.get("created_at") or row.get("started_at") or ""),
+        )[-limit:]
+    except Exception as error:
+        _REPORTS_RETRY_AFTER = time.monotonic() + _PERSISTENCE_BACKOFF_SECONDS
+        logger.warning(
+            "Persistent execution reports unavailable; serving live runtime reports: %s",
+            error,
+        )
     finally:
         if session is not None:
             session.close()
 
-    return api.get_reports()[-limit:]
+    return api.get_reports(force_refresh=True)[-limit:]
+
+
+def invalidate_execution_report_cache() -> None:
+    """Make a persisted board action visible on the next report read."""
+    with _REPORTS_CACHE_LOCK:
+        _REPORTS_CACHE.update({"rows": [], "limit": 0, "expires_at": 0.0})
 
 
 def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[str, Any]:
@@ -500,6 +775,12 @@ def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[s
     recommendations = report.get("recommendations") or []
     if isinstance(recommendations, str):
         recommendations = [recommendations]
+    production_impact = report.get("production_impact")
+    production_impact_display = (
+        f"{production_impact}%"
+        if production_impact is not None
+        else "not available"
+    )
 
     markdown_lines = [
         f"# {title}",
@@ -513,6 +794,12 @@ def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[s
         "## Executive summary",
         summary,
         "",
+        "## Operating impact",
+        f"- Modeled exposure: {report.get('financial_impact') if report.get('financial_impact') is not None else 'not available'}",
+        f"- Estimated maintenance cost: {report.get('maintenance_cost') if report.get('maintenance_cost') is not None else 'not available'}",
+        f"- Estimated production impact: {production_impact_display}",
+        f"- Root cause: {report.get('root_cause') or 'not established'}",
+        "",
         "## Recommendations",
     ]
     if recommendations:
@@ -525,6 +812,8 @@ def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[s
         f"- Source: {report.get('source') or 'operations'}",
         f"- Agents: {', '.join(report.get('agents') or []) or 'n/a'}",
         f"- Operator actions: {report.get('operator_actions', 0)}",
+        f"- Board status: {report.get('board_status') or 'Awaiting board approval'}",
+        f"- Board decision at: {report.get('board_decision_at') or 'not recorded'}",
         "",
         "_Export package generated by RigOS. This is markdown/JSON — not a rendered PDF._",
     ])
@@ -540,7 +829,7 @@ def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[s
     }
 
 
-def get_operations_live() -> dict[str, Any]:
+def _build_operations_live() -> dict[str, Any]:
     """One snapshot for all Operations Center views and WebSocket updates."""
     # Asset health changes continuously in the simulator.  The generic adapter
     # has a cache for list endpoints, but a live control-room snapshot must
@@ -608,13 +897,14 @@ def get_operations_live() -> dict[str, Any]:
     telemetry_by_refinery = []
     for refinery_name, refinery_assets in sorted(refinery_groups.items()):
         refinery_asset_ids = {asset.get("id") for asset in refinery_assets}
-        health = round(sum(float(asset.get("health", 0)) for asset in refinery_assets) / len(refinery_assets), 1)
+        health = _average_asset_health(refinery_assets)
         at_risk = [asset for asset in refinery_assets if float(asset.get("health", 100)) < 80]
         refinery_incidents = [audit for audit in audits if audit.get("asset_id") in refinery_asset_ids]
         focus_asset = min(refinery_assets, key=lambda asset: float(asset.get("health", 100)))
         refinery_history = runtime.kernel.state.get_history(focus_asset.get("id"))[-20:]
-        latest_sensor = getattr(refinery_history[-1], "sensor_type", None) if refinery_history else None
-        latest_sensor_value = getattr(latest_sensor, "value", latest_sensor)
+        # Temperature is the default portfolio series; incident-specific
+        # endpoints still select the affected sensor.
+        latest_sensor_value = "Temperature" if refinery_history else None
         readings = [
             {"timestamp": _iso(reading.timestamp), "value": float(reading.value), "sensor_type": getattr(getattr(reading, "sensor_type", None), "value", str(getattr(reading, "sensor_type", ""))), "unit": getattr(reading, "unit", "")}
             for reading in refinery_history
@@ -628,6 +918,8 @@ def get_operations_live() -> dict[str, Any]:
             "open_incidents": sum(audit.get("status") not in ("completed", "resolved") for audit in refinery_incidents),
             "critical_incidents": sum(audit.get("severity") in ("Critical", "High") for audit in refinery_incidents),
             "focus_asset": {"id": focus_asset.get("id"), "name": focus_asset.get("name"), "health": focus_asset.get("health")},
+            "sensor_profile_source": (focus_asset.get("metadata") or {}).get("sensor_profile_source"),
+            **refinery_geo_payload(refinery_name),
         })
         telemetry_by_refinery.append({
             "refinery": refinery_name,
@@ -650,7 +942,7 @@ def get_operations_live() -> dict[str, Any]:
     latest_sensor_value = (
         _sensor_from_incident(telemetry_audit.get("incident_type"))
         if telemetry_audit
-        else getattr(latest_sensor, "value", latest_sensor)
+        else ("Temperature" if history else getattr(latest_sensor, "value", latest_sensor))
     )
     telemetry_stream = [
         {
@@ -662,11 +954,11 @@ def get_operations_live() -> dict[str, Any]:
         for reading in history
         if getattr(getattr(reading, "sensor_type", None), "value", getattr(reading, "sensor_type", None)) == latest_sensor_value
     ][-60:]
-    fleet_health = round(sum(asset.get("health", 0) for asset in assets) / len(assets), 1) if assets else 0
+    fleet_health = _average_asset_health(assets)
     # This is intentionally a modelled operating-value projection, not booked revenue.
     # The simple health/availability model can later be replaced by a finance feed.
     value_per_asset = 420_000
-    base_value = len(assets) * value_per_asset * max(fleet_health, 0) / 100
+    base_value = len(assets) * value_per_asset * max(fleet_health or 0, 0) / 100
     revenue_projection = [
         {
             "period": f"P{index + 1}",
@@ -694,6 +986,16 @@ def get_operations_live() -> dict[str, Any]:
             "healthy_assets": sum(asset.get("status") == "Running" for asset in assets),
             "fleet_health": fleet_health,
             "active_incidents": sum(audit["status"] not in ("completed", "resolved") for audit in audits),
+            "knowledge_documents": getattr(runtime.kernel, "_knowledge_document_count", 0),
+            "knowledge_source": getattr(runtime.kernel, "_knowledge_source", "unavailable"),
+            "sensor_profile_source": next(
+                (
+                    (asset.get("metadata") or {}).get("sensor_profile_source")
+                    for asset in assets
+                    if (asset.get("metadata") or {}).get("sensor_profile_source")
+                ),
+                "unknown",
+            ),
         },
         "assets": assets,
         "refineries": refinery_portfolio,
@@ -714,7 +1016,8 @@ def get_operations_live() -> dict[str, Any]:
         "maintenance": maintenance,
         "predicted_failures": predicted_failures,
         "notifications": _notifications(),
-        "reports": reports[-10:],
+        "reports": reports,
+        "simulation": dict(getattr(runtime.kernel, "_simulation_stats", {}) or {}),
         "revenue_projection": {
             "kind": "modelled_production_value",
             "currency": "USD",
@@ -722,3 +1025,28 @@ def get_operations_live() -> dict[str, Any]:
             "periods": revenue_projection,
         },
     }
+
+
+def get_operations_live() -> dict[str, Any]:
+    """Share one bounded snapshot build across REST and all WebSocket clients."""
+    now = time.monotonic()
+    cached = _SNAPSHOT_CACHE["value"]
+    if cached is not None and now < _SNAPSHOT_CACHE["expires_at"]:
+        return cached
+
+    with _SNAPSHOT_LOCK:
+        now = time.monotonic()
+        cached = _SNAPSHOT_CACHE["value"]
+        if cached is not None and now < _SNAPSHOT_CACHE["expires_at"]:
+            return cached
+        snapshot = _build_operations_live()
+        _SNAPSHOT_CACHE["value"] = snapshot
+        _SNAPSHOT_CACHE["expires_at"] = now + _SNAPSHOT_CACHE_SECONDS
+        return snapshot
+
+
+def invalidate_operations_snapshot() -> None:
+    """Make the next read rebuild immediately after an operator mutation."""
+    with _SNAPSHOT_LOCK:
+        _SNAPSHOT_CACHE["value"] = None
+        _SNAPSHOT_CACHE["expires_at"] = 0.0

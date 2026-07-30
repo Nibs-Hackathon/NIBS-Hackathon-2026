@@ -5,16 +5,32 @@ from models.sensor import Sensor, SensorType
 
 
 class SimulatedAsset:
-    def __init__(self, asset: Asset):
+    def __init__(self, asset: Asset, operating_thresholds=None):
         self.asset = asset
+        thresholds = operating_thresholds or {}
+        rng = random.Random(asset.id)
 
-        # Stable baseline values used outside injected incident windows.
+        pressure_max = float(thresholds.get("pressure_max", 150))
+        temperature_max = float(thresholds.get("temperature_max", 90))
+        flow_min = float(thresholds.get("flow_min", 25))
+        vibration_max = float(thresholds.get("vibration_max", 8))
+        gas_max = float(thresholds.get("gas_max", 40))
+
+        # Stable, asset-specific baselines derived from the cached Gemini
+        # operating envelope. No network call occurs inside tick().
         self.sensors = {
-            SensorType.PRESSURE: 105.0 + random.uniform(-5, 5),
-            SensorType.TEMPERATURE: 72.0 + random.uniform(-3, 3),
-            SensorType.FLOW: 55.0 + random.uniform(-5, 5),
-            SensorType.VIBRATION: 3.0 + random.uniform(-0.5, 0.5),
-            SensorType.GAS: 2.0 + random.uniform(-0.3, 0.3),
+            SensorType.PRESSURE: pressure_max * rng.uniform(0.62, 0.74),
+            SensorType.TEMPERATURE: temperature_max * rng.uniform(0.70, 0.82),
+            SensorType.FLOW: flow_min * rng.uniform(1.8, 2.35),
+            SensorType.VIBRATION: vibration_max * rng.uniform(0.28, 0.46),
+            SensorType.GAS: max(1.0, gas_max * rng.uniform(0.045, 0.09)),
+        }
+        self.ranges = {
+            SensorType.PRESSURE: (pressure_max * 0.55, pressure_max * 0.96),
+            SensorType.TEMPERATURE: (temperature_max * 0.62, temperature_max * 0.96),
+            SensorType.FLOW: (flow_min, flow_min * 3.0),
+            SensorType.VIBRATION: (max(0.2, vibration_max * 0.12), vibration_max * 0.92),
+            SensorType.GAS: (max(0.1, gas_max * 0.02), gas_max * 0.35),
         }
 
         self.trends = {
@@ -38,9 +54,15 @@ class SimulatedAsset:
         telemetry = []
 
         if fault and not self._fault_active:
+            raw_sensor = fault["sensor"]
+            fault_sensor = (
+                raw_sensor
+                if isinstance(raw_sensor, SensorType)
+                else SensorType(str(raw_sensor).strip().capitalize())
+            )
             self._fault_active = True
-            self._fault_sensor = fault["sensor"]
-            self._fault_original_value = self.sensors.get(fault["sensor"], 100)
+            self._fault_sensor = fault_sensor
+            self._fault_original_value = self.sensors.get(fault_sensor, 100)
             self._fault_target_value = float(fault["value"])
             self._fault_ticks = 0
 
@@ -73,14 +95,7 @@ class SimulatedAsset:
                 value += self.trends[sensor_type] * random.uniform(0.02, 0.08)
                 value += random.gauss(0, 0.2)
 
-                ranges = {
-                    SensorType.PRESSURE: (90, 150),
-                    SensorType.TEMPERATURE: (60, 90),
-                    SensorType.FLOW: (30, 80),
-                    SensorType.VIBRATION: (1, 8),
-                    SensorType.GAS: (1, 5),
-                }
-                min_val, max_val = ranges.get(sensor_type, (0, 100))
+                min_val, max_val = self.ranges.get(sensor_type, (0, 100))
                 value = max(min_val, min(max_val, value))
 
             self.sensors[sensor_type] = value

@@ -54,6 +54,7 @@ class SafetyAgent(Agent):
         temperature = telemetry.get("temperature", 0)
         gas = telemetry.get("gas_level", telemetry.get("gas", 0))
         vibration = telemetry.get("vibration", 0)
+        flow = telemetry.get("flow", telemetry.get("flow_rate"))
 
         alerts = []
         risk_score = 0
@@ -74,6 +75,10 @@ class SafetyAgent(Agent):
         if vibration >= thresholds.get("vibration_max", 8):
             alerts.append(f"Abnormal vibration detected ({vibration})")
             risk_score += weights.get("vibration_weight", 20)
+
+        if flow is not None and flow < thresholds.get("flow_min", 25):
+            alerts.append(f"Restricted flow detected ({flow})")
+            risk_score += weights.get("flow_weight", 25)
 
         risk_score = min(risk_score, 100)
 
@@ -103,6 +108,7 @@ class SafetyAgent(Agent):
 
         metadata = {
             "status": status,
+            "incident_type": getattr(getattr(context, "event", None), "name", "Unknown"),
             "risk_score": risk_score,
             "alerts": alerts,
             "telemetry": telemetry,

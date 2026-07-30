@@ -1,10 +1,18 @@
 /* Epic 6 — thin product page: facility scope + lazy workspace views */
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useMemo } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
-import { filterByFacility, assetLocation, incidentLocation, taskLocation } from '../context/objectNavigation';
+import {
+  filterByFacility, assetLocation, incidentLocation, taskLocation, reportLocation, activityLocation,
+} from '../context/objectNavigation';
+import {
+  enrichRefineryGeo,
+  fleetHealthForScope,
+  refineriesForFacility,
+  telemetryForFacility,
+} from '../api/resourceAdapters';
 import { inferProvenance, useOperatorAudit } from './accountability';
 import { PageMotion } from './motion';
 
@@ -37,13 +45,14 @@ function WorkspaceFallback() {
 
 export function ProductPage() {
   const { pathname } = useLocation();
-  const { operations, connected, ambient } = useOperations();
+  const { operations, connected } = useOperations();
   const objectApi = useObjectContext();
-  const facility = 'Enterprise view';
+  const facility = objectApi.scope.facility || 'Enterprise view';
+  const enterpriseScope = facility === 'Enterprise view'
+    || facility === 'portfolio'
+    || facility === 'North Sea Portfolio';
   const auditEvents = useOperatorAudit(objectApi, operations);
-  const syncAge = ambient?.lastUpdated
-    ? Math.round((Date.now() - ambient.lastUpdated) / 1000)
-    : (connected ? 0 : 60);
+  const syncAge = connected ? 0 : 60;
   const dataProvenance = inferProvenance({ connected, syncAge });
   const [title, description] = config[pathname] || config['/'];
   useEffect(() => {
@@ -77,11 +86,43 @@ export function ProductPage() {
     facility,
     assetLocation,
   );
+  const predictedById = new Map(predicted.map((asset) => [asset.id, asset]));
+  const forecastAssets = assets.map((asset) => ({
+    ...asset,
+    ...(predictedById.get(asset.id) || {}),
+  }));
+  const currentInvestigationIncident = operations.investigation?.incident;
+  const currentInvestigationMatchesScope = enterpriseScope
+    || incidentLocation(currentInvestigationIncident, assetsAll) === facility;
   const activeInvestigationIncident = auditLogs.find(
     (item) => item.id === operations.investigation?.incident?.id || item.id === objectApi.selection.incidentId,
-  ) || operations.investigation?.incident || incidents[0] || auditLogs[0];
-  const stages = operations.investigation?.stages || [];
-  const telemetry = operations.telemetry || { readings: [] };
+  ) || incidents[0] || auditLogs[0] || (currentInvestigationMatchesScope ? currentInvestigationIncident : null);
+  const stages = currentInvestigationMatchesScope ? (operations.investigation?.stages || []) : [];
+  const scopedInvestigation = currentInvestigationMatchesScope ? (operations.investigation || {}) : {};
+  const sourceRefineries = operations.refineries;
+  const refineriesAll = useMemo(
+    () => enrichRefineryGeo(sourceRefineries || []),
+    [sourceRefineries],
+  );
+  const reports = filterByFacility(
+    operations.reports || [],
+    facility,
+    (item) => reportLocation(item, assetsAll),
+  );
+  const aiActivity = filterByFacility(
+    operations.ai_activity || [],
+    facility,
+    (item) => activityLocation(item, assetsAll),
+  );
+  const refineries = refineriesForFacility(refineriesAll, facility);
+  const telemetry = telemetryForFacility(operations, facility);
+  const dashboard = {
+    ...(operations.dashboard || {}),
+    fleet_health: fleetHealthForScope(
+      { refineries: refineriesAll, assets, dashboard: operations.dashboard || {} },
+      facility,
+    ),
+  };
   const maintenance = { ...(operations.maintenance || {}), tasks };
   const hideHero = ['/assets', '/incident-simulator', '/agent-monitor', '/maintenance', '/health-prediction'].includes(pathname);
   const opsClass = hideHero ? ' is-ops-os' : '';
@@ -103,14 +144,17 @@ export function ProductPage() {
               assets={assets}
               incidents={incidents}
               stages={stages}
-              aiActivity={operations.ai_activity || []}
-              dashboard={operations.dashboard || {}}
-              refineries={operations.refineries || []}
+              aiActivity={aiActivity}
+              dashboard={dashboard}
+              refineries={refineries}
+              refineriesAll={refineriesAll}
               telemetry={telemetry}
               maintenance={maintenance}
+              simulation={operations.simulation}
               facility={facility}
               auditEvents={auditEvents}
               provenance={dataProvenance}
+              connected={connected}
             />
           )}
           {pathname === '/assets' && (
@@ -124,28 +168,37 @@ export function ProductPage() {
             />
           )}
           {pathname === '/incident-simulator' && (
-            <IncidentManagement incidents={auditLogs} telemetry={telemetry} provenance={dataProvenance} />
+            <IncidentManagement
+              assets={assets}
+              incidents={auditLogs}
+              telemetry={telemetry}
+              simulation={operations.simulation}
+              provenance={dataProvenance}
+            />
           )}
           {pathname === '/agent-monitor' && (
             <AIInvestigationOS
               stages={stages}
-              investigation={operations.investigation || {}}
+              investigation={scopedInvestigation}
               incident={activeInvestigationIncident}
               telemetry={telemetry}
-              aiActivity={operations.ai_activity || []}
+              aiActivity={aiActivity}
               provenance={dataProvenance}
             />
           )}
           {pathname === '/maintenance' && <MaintenancePlanning maintenance={maintenance} />}
           {pathname === '/health-prediction' && (
             <ForecastTerminal
-              assets={predicted}
-              telemetry={telemetry}
-              telemetryStreams={operations.critical_asset_telemetry || []}
+              assets={forecastAssets}
               provenance={dataProvenance}
             />
           )}
-          {pathname === '/reports' && <ExecutiveBriefing reports={operations.reports || []} />}
+          {pathname === '/reports' && (
+            <ExecutiveBriefing
+              reports={reports}
+              operatorActions={operations.operator_actions || []}
+            />
+          )}
         </Suspense>
       </Box>
     </PageMotion>

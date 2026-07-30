@@ -43,6 +43,8 @@ class SensorAgent(Agent):
                 anomalies.append(f"Gas exceeds threshold: {value} > {thresholds.get('gas_max')}")
             elif "vibration" in signal_lower and value > thresholds.get("vibration_max", 8):
                 anomalies.append(f"Vibration exceeds threshold: {value} > {thresholds.get('vibration_max')}")
+            elif signal_lower == "flow" and value < thresholds.get("flow_min", 25):
+                anomalies.append(f"Flow below threshold: {value} < {thresholds.get('flow_min')}")
         
         metadata = {
             "asset_id": asset_id,
@@ -58,7 +60,7 @@ class SensorAgent(Agent):
 
         finding = (
             f"Observed {len(signals)} telemetry signal(s) for the incoming event."
-            + (f" Found {len(anomalies)} anomalies." if anomalies else " No anomalies detected.")
+            + (f" Found {len(anomalies)} threshold violation(s)." if anomalies else " No threshold violations detected.")
         )
         
         recommendations = []

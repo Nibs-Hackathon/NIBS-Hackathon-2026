@@ -16,6 +16,8 @@ import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
 import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
 import { markNotificationsRead } from '../api/client';
+import { normalizeRefineryOptions } from '../api/resourceAdapters';
+import { ScopeSwitcher } from '../design-system/catalog/shell';
 import { AssistantPanel } from './AssistantPanel';
 import './sync-control.css';
 import './topbar-fixes.css';
@@ -49,6 +51,7 @@ export function ProductShell({ children }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandIndex, setCommandIndex] = useState(0);
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState('all');
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [clock, setClock] = useState(() => new Date());
@@ -57,13 +60,20 @@ export function ProductShell({ children }) {
   const workspacePanelRef = useRef(null);
   const navRefs = useRef([]);
 
-  const facility = 'Enterprise view';
+  const facility = objectApi.scope.facility || 'Enterprise view';
+  const facilityOptions = useMemo(
+    () => normalizeRefineryOptions(operations.refineries || []),
+    [operations.refineries],
+  );
 
   useEffect(() => {
-    if (objectApi.scope.facility !== facility) {
-      objectApi.setFacility(facility);
+    const liveRefineries = Array.isArray(operations.refineries) ? operations.refineries : [];
+    if (!liveRefineries.length) return;
+    if (!facilityOptions.some((option) => option.value === facility)) {
+      objectApi.setFacility('Enterprise view');
     }
-  }, [facility, objectApi.scope.facility, objectApi.setFacility]);
+  }, [facility, facilityOptions, objectApi, operations.refineries]);
+
   const workspaceKey = pathToWorkspace(location.pathname);
   const current = nav.find((item) => item[1] === location.pathname) || nav[0];
   const workspacePanel = objectApi.ui.workspacePanelOpen;
@@ -209,7 +219,8 @@ export function ProductShell({ children }) {
   ));
 
   useEffect(() => {
-    setCommandIndex(0);
+    const reset = window.setTimeout(() => setCommandIndex(0), 0);
+    return () => window.clearTimeout(reset);
   }, [query, commandOpen]);
 
   useEffect(() => {
@@ -296,7 +307,7 @@ export function ProductShell({ children }) {
   };
 
   useEffect(() => {
-    setSyncAge(0);
+    const reset = window.setTimeout(() => setSyncAge(0), 0);
     const timer = setInterval(() => {
       setClock(new Date());
       // Derive sync age from the OperationsContext lastUpdated timestamp when available
@@ -307,7 +318,10 @@ export function ProductShell({ children }) {
         setSyncAge((value) => Math.min(value + 1, 59));
       }
     }, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      window.clearTimeout(reset);
+      clearInterval(timer);
+    };
   }, [connected, operations.generated_at, ambient?.lastUpdated]);
 
   const updateCollapse = () => setCollapsed((value) => {
@@ -315,17 +329,17 @@ export function ProductShell({ children }) {
     return !value;
   });
 
-  const openInbox = async () => {
+  const openInbox = () => {
     setInboxOpen(true);
-    if (unread.length) {
-      try {
-        await markNotificationsRead({ mark_all: true });
-        await refresh();
-      } catch (error) {
-        const detail = error?.response?.data?.detail;
-        const msg = typeof detail === 'string' ? detail : detail?.message;
-        toast.error(msg || 'Notifications could not be marked as read. Check backend connectivity.');
-      }
+  };
+
+  const markInboxRead = async (notificationIds = [], markAll = false) => {
+    try {
+      await markNotificationsRead({ notification_ids: notificationIds, mark_all: markAll });
+      await refresh();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error((typeof detail === 'string' ? detail : detail?.message) || 'Notification state could not be saved.');
     }
   };
 
@@ -418,9 +432,15 @@ export function ProductShell({ children }) {
             <Button className="os-command-trigger" onClick={() => setCommandOpen(true)} startIcon={<SearchOutlined />} endIcon={<kbd>⌘ K</kbd>} aria-label="Open command palette">
               <span className="os-command-label">Search assets, incidents, work orders…</span>
             </Button>
+            <ScopeSwitcher
+              className="os-facility-switcher"
+              value={facility}
+              options={facilityOptions}
+              onChange={objectApi.setFacility}
+            />
             <Box className="os-top-context">
               <Typography>{WORKSPACE_LABELS[workspaceKey] || current[0]}</Typography>
-              <Typography>{facility}</Typography>
+              <Typography>{facilityOptions.find((row) => row.value === facility)?.detail || facility}</Typography>
             </Box>
           </Stack>
           <Stack className="os-topbar-actions" direction="row" alignItems="center" spacing={0.5}>
@@ -531,21 +551,71 @@ export function ProductShell({ children }) {
         </Box>
       </Dialog>
 
-      <Dialog open={inboxOpen} onClose={() => setInboxOpen(false)} fullWidth maxWidth="sm" PaperProps={{ className: 'product-dialog product-notification-dialog' }}>
+      <Dialog open={inboxOpen} onClose={() => setInboxOpen(false)} fullWidth maxWidth="md" PaperProps={{ className: 'product-dialog product-notification-dialog' }}>
         <Box className="product-inbox">
-          <Stack direction="row" justifyContent="space-between">
+          <Stack className="notification-inbox-head" direction="row" justifyContent="space-between">
             <Box>
               <Typography className="product-dialog-label">OPERATOR INBOX</Typography>
-              <Typography variant="h6">Live notifications</Typography>
+              <Typography variant="h6">Operations signal center</Typography>
+              <Typography variant="body2" color="text.secondary">{unread.length} unread · {notifications.length} recent events</Typography>
             </Box>
-            <IconButton onClick={() => setInboxOpen(false)}><CloseOutlined /></IconButton>
+            <Stack direction="row" spacing={1} alignItems="center">
+              {unread.length ? <Button size="small" onClick={() => markInboxRead([], true)}>Mark all read</Button> : null}
+              <IconButton onClick={() => setInboxOpen(false)}><CloseOutlined /></IconButton>
+            </Stack>
           </Stack>
-          <Divider sx={{ my: 2 }} />
-          {notifications.length ? notifications.map((item, index) => (
-            <Box className="product-notification" key={item.id || index}>
-              <Typography fontWeight={800}>{item.title}</Typography>
-              <Typography variant="body2">{item.message}</Typography>
-              <Typography variant="caption" color="text.secondary">{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'Live event'}</Typography>
+          <Box className="notification-inbox-filters">
+            {['all', 'unread', 'critical'].map((filter) => (
+              <Button key={filter} className={inboxFilter === filter ? 'active' : ''} onClick={() => setInboxFilter(filter)}>
+                {label(filter)}
+              </Button>
+            ))}
+          </Box>
+          <Divider />
+          {notifications.filter((item) => (
+            inboxFilter === 'unread' ? !item.read
+              : inboxFilter === 'critical' ? /critical|warning/i.test(item.severity || '')
+                : true
+          )).length ? notifications.filter((item) => (
+            inboxFilter === 'unread' ? !item.read
+              : inboxFilter === 'critical' ? /critical|warning/i.test(item.severity || '')
+                : true
+          )).map((item, index) => (
+            <Box className={`product-notification severity-${item.severity || 'info'} ${item.read ? 'is-read' : 'is-unread'}`} key={item.id || index}>
+              <Box className="notification-signal-icon">
+                {/critical|warning/i.test(item.severity || '') ? <WarningAmberOutlined /> : item.severity === 'success' ? <SyncOutlined /> : <NotificationsOutlined />}
+              </Box>
+              <Box className="notification-signal-copy">
+                <Stack direction="row" justifyContent="space-between" gap={1}>
+                  <Typography fontWeight={800}>{item.title}</Typography>
+                  <Typography className={`notification-severity ${item.severity || 'info'}`}>{label(item.severity || 'info')}</Typography>
+                </Stack>
+                <Typography variant="body2">{item.message}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {[item.asset_name, item.incident_type, formatTime(item.timestamp)].filter(Boolean).join(' · ')}
+                </Typography>
+              </Box>
+              <Stack className="notification-signal-actions" direction="row" spacing={0.5}>
+                {item.metadata?.work_order_id && (
+                  <Button size="small" onClick={() => {
+                    navigateTo(objectApi, navigate, 'maintenance', { workOrderId: item.metadata.work_order_id, assetId: item.asset_id || null });
+                    setInboxOpen(false);
+                  }}>Open work</Button>
+                )}
+                {item.metadata?.incident_id && (
+                  <Button size="small" onClick={() => {
+                    navigateTo(objectApi, navigate, 'incidents', { incidentId: item.metadata.incident_id, assetId: item.asset_id || null });
+                    setInboxOpen(false);
+                  }}>Open case</Button>
+                )}
+                {item.asset_id && (
+                  <Button size="small" onClick={() => {
+                    navigateTo(objectApi, navigate, 'assets', { assetId: item.asset_id });
+                    setInboxOpen(false);
+                  }}>Open asset</Button>
+                )}
+                {!item.read && <Button size="small" onClick={() => markInboxRead([item.id])}>Mark read</Button>}
+              </Stack>
             </Box>
           )) : (
             <Box className="product-inbox-empty">

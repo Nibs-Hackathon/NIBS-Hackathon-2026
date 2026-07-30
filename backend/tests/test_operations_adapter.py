@@ -25,7 +25,11 @@ def test_runtime_incident_includes_workflow_confidence(monkeypatch):
         event_store=SimpleNamespace(all=lambda: [event]),
         state=SimpleNamespace(execution_reports=[report]),
         asset_service=SimpleNamespace(
-            get=lambda _asset_id: SimpleNamespace(name="Pipeline P-002", health=92)
+            get=lambda _asset_id: SimpleNamespace(
+                name="Pipeline P-002",
+                health=92,
+                location="Mumbai Coastal Refinery",
+            )
         ),
     )
     monkeypatch.setattr(
@@ -40,6 +44,7 @@ def test_runtime_incident_includes_workflow_confidence(monkeypatch):
     assert incident["execution_report"]["confidence"] == 0.94
     assert incident["ai_recommendation"] == "Inspect the pressure control loop."
     assert incident["status"] == "resolved"
+    assert incident["facility"] == "Mumbai Coastal Refinery"
 
 
 def test_runtime_incident_tracks_live_simulator_state(monkeypatch):

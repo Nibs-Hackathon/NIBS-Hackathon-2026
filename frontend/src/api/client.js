@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const errorLogTimes = new Map();
+const ERROR_LOG_WINDOW_MS = 30000;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -8,16 +10,18 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Add response interceptor for debugging
 api.interceptors.response.use(
-  (response) => {
-    console.log(`✅ API Response [${response.config.url}]:`, response.data);
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error(`❌ API Error [${error.config?.url}]:`, error.message);
+    const endpoint = error.config?.url || 'unknown endpoint';
+    const now = Date.now();
+    const lastLogged = errorLogTimes.get(endpoint) || 0;
+    if (import.meta.env.DEV && now - lastLogged >= ERROR_LOG_WINDOW_MS) {
+      errorLogTimes.set(endpoint, now);
+      console.warn(`API unavailable [${endpoint}]: ${error.message}`);
+    }
     return Promise.reject(error);
-  }
+  },
 );
 
 // ============================================
@@ -46,8 +50,12 @@ export const getTelemetry = (assetId, { limit = 30, since = null, until = null }
 /** Runtime event list; incident center uses `operations.audit_logs` from live snapshot. */
 export const getIncidents = () => api.get('/incidents');
 /** Inject a simulator fault (pressure spike, gas leak, etc.) for demos. */
-export const triggerIncident = (type) =>
-  api.post(`/incidents/${encodeURIComponent(type)}`);
+export const triggerIncident = (type, assetId = null) =>
+  api.post(
+    `/incidents/${encodeURIComponent(type)}`,
+    null,
+    { params: assetId ? { asset_id: assetId } : undefined },
+  );
 
 // ============================================
 // AGENTS
@@ -63,6 +71,8 @@ export const getMaintenancePlan = () => api.get('/maintenance');
 export const createWorkOrder = (payload) => api.post('/maintenance/work-orders', payload);
 export const approveWorkOrder = (workOrderId, payload = {}) =>
   api.post(`/maintenance/work-orders/${encodeURIComponent(workOrderId)}/approve`, payload);
+export const transitionWorkOrder = (workOrderId, payload) =>
+  api.post(`/maintenance/work-orders/${encodeURIComponent(workOrderId)}/status`, payload);
 
 // ============================================
 // PREDICTIONS
@@ -98,11 +108,14 @@ export const askAssistant = (question, context = {}) => api.post(
     asset_id: context.asset_id || context.assetId || null,
     incident_id: context.incident_id || context.incidentId || null,
     facility: context.facility || null,
+    history: Array.isArray(context.history) ? context.history.slice(-8) : [],
   },
   { timeout: 60000 },
 );
 export const searchKnowledge = (query) =>
   api.get(`/knowledge/search?q=${encodeURIComponent(query || '')}`, { timeout: 30000 });
+export const getKnowledgeDocuments = () =>
+  api.get('/knowledge/documents');
 
 // Persistent operator supervision; this records a decision but does not command equipment.
 export const recordOperatorAction = (payload) => api.post('/operator-actions', payload);

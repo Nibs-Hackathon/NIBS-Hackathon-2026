@@ -74,8 +74,9 @@ class StateManager:
     # -------------------------
 
     def add_event(self, event):
-
         self.events.append(event)
+        if len(self.events) > 1000:
+            del self.events[:-1000]
 
 
 
@@ -84,8 +85,10 @@ class StateManager:
     # -------------------------
 
     def add_report(self, report):
-
-        self.execution_reports.append(report)
+        if not any(existing.id == report.id for existing in self.execution_reports):
+            self.execution_reports.append(report)
+        if len(self.execution_reports) > 500:
+            del self.execution_reports[:-500]
 
 
 
@@ -94,8 +97,14 @@ class StateManager:
     # -------------------------
 
     def add_agent_result(self, result):
-
-        self.agent_results.append(result)
+        result_id = getattr(result, "id", None)
+        if result_id is None or not any(
+            getattr(existing, "id", None) == result_id
+            for existing in self.agent_results
+        ):
+            self.agent_results.append(result)
+        if len(self.agent_results) > 5000:
+            del self.agent_results[:-5000]
 
 
 
@@ -104,8 +113,9 @@ class StateManager:
     # -------------------------
 
     def add_task(self, task):
-
         self.tasks.append(task)
+        if len(self.tasks) > 5000:
+            del self.tasks[:-5000]
 
 
     def get_tasks(self):
@@ -144,6 +154,8 @@ class StateManager:
     def add_memory(self, item):
 
         self.memory.append(item)
+        if len(self.memory) > 1000:
+            del self.memory[:-1000]
 
 
     def get_memory(self):

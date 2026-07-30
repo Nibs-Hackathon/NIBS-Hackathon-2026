@@ -13,6 +13,7 @@ class AIConfigGenerator:
     
     _instance = None
     _config = None
+    _source = "not_initialized"
     
     def __new__(cls):
         if cls._instance is None:
@@ -24,6 +25,7 @@ class AIConfigGenerator:
             if local_demo_mode():
                 self.llm = None
                 AIConfigGenerator._config = self._get_default_config()
+                AIConfigGenerator._source = "deterministic_fallback"
                 print("Local demo mode: using deterministic operational configuration")
                 return
             self.llm = LLMManager()
@@ -42,11 +44,13 @@ class AIConfigGenerator:
             response = self.llm.generate(prompt, use_cache=True)
             config = self._parse_response(response)
             AIConfigGenerator._config = config
+            AIConfigGenerator._source = "gemini"
             self._save_to_file(config)
             print("✅ AI configuration generated successfully!")
         except Exception as e:
             print(f"⚠️ AI config generation failed: {e}")
             AIConfigGenerator._config = self._get_default_config()
+            AIConfigGenerator._source = "deterministic_fallback"
             print("✅ Using default configuration as fallback")
         
         print("="*60 + "\n")
@@ -251,6 +255,10 @@ Use realistic industrial values. Respond with ONLY valid JSON, no other text.
     def get_config(self) -> Dict:
         """Get the generated configuration."""
         return AIConfigGenerator._config or self._get_default_config()
+
+    def get_source(self) -> str:
+        """Describe whether the cached operating profile came from Gemini."""
+        return AIConfigGenerator._source
     
     def get_asset_config(self, asset_type: str) -> Dict:
         """Get config for a specific asset type."""

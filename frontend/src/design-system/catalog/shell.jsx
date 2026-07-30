@@ -10,7 +10,8 @@ import { MetricCard } from './data';
 import { StatusBadge, normalizeStatus } from './status';
 import { AuditEvent } from './time';
 import { ObjectRow, IncidentQueueItem } from './objects';
-import { resolveTone } from '../tokens';
+import WorkspaceDock from '../../components/react-bits/Dock/Dock';
+import '../../components/react-bits/Dock/Dock.css';
 
 /** WorkspaceHeader — title + breadcrumbs + ambient ops chrome */
 export function WorkspaceHeader({
@@ -79,13 +80,42 @@ export function WorkspaceHeader({
 }
 
 /** ScopeSwitcher */
-export function ScopeSwitcher({ value, onChange, options = ['Alpha Refinery', 'North Sea Portfolio', 'Enterprise view'], className = '', sx }) {
+export function ScopeSwitcher({
+  value,
+  onChange,
+  options = ['Alpha Refinery', 'North Sea Portfolio', 'Enterprise view'],
+  className = '',
+  sx,
+}) {
+  const normalized = options.map((opt) => (
+    typeof opt === 'string' ? { value: opt, label: opt, detail: null } : opt
+  ));
+  const safeValue = normalized.some((opt) => opt.value === value)
+    ? value
+    : (normalized[0]?.value || 'Enterprise view');
+
   return (
     <TextField
-      select size="small" value={value || options[0]} onChange={(e) => onChange?.(e.target.value)}
-      className={className} sx={{ minWidth: 160, ...sx }} aria-label="Facility scope"
+      select
+      size="small"
+      value={safeValue}
+      onChange={(e) => onChange?.(e.target.value)}
+      className={className}
+      sx={{ minWidth: 200, ...sx }}
+      aria-label="Facility scope"
     >
-      {options.map((opt) => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
+      {normalized.map((opt) => (
+        <MenuItem key={opt.value} value={opt.value}>
+          <Box>
+            <Typography variant="body2" sx={{ lineHeight: 1.3 }}>{opt.label}</Typography>
+            {opt.detail ? (
+              <Typography variant="caption" color="text.secondary" display="block">
+                {opt.detail}
+              </Typography>
+            ) : null}
+          </Box>
+        </MenuItem>
+      ))}
     </TextField>
   );
 }
@@ -180,16 +210,20 @@ export function AuditSpine({ events = [], className = '', sx, tabIndex }) {
   );
 }
 
-/** Dock — quick actions */
+/** Dock — magnified quick actions (React Bits style) */
 export function Dock({
   onCommand, onCopilot, onWorkspacePanel, onPin, className = '', sx,
 }) {
+  const items = [
+    { icon: <SearchOutlined fontSize="small" />, label: 'Command', onClick: onCommand },
+    { icon: <SmartToyOutlined fontSize="small" />, label: 'Copilot', onClick: onCopilot },
+    { icon: <ViewSidebarOutlined fontSize="small" />, label: 'Panel', onClick: onWorkspacePanel },
+    { icon: <PushPinOutlined fontSize="small" />, label: 'Pin', onClick: onPin },
+  ].filter((item) => typeof item.onClick === 'function');
+
   return (
-    <Box className={`rig-dock ${className}`} role="toolbar" aria-label="Workspace dock" sx={sx}>
-      <Tooltip title="Command (Ctrl K)"><IconButton onClick={onCommand} aria-label="Command bar"><SearchOutlined /></IconButton></Tooltip>
-      <Tooltip title="AI copilot"><IconButton onClick={onCopilot} aria-label="AI copilot"><SmartToyOutlined /></IconButton></Tooltip>
-      <Tooltip title="Workspace panel (Ctrl J)"><IconButton onClick={onWorkspacePanel} aria-label="Workspace panel"><ViewSidebarOutlined /></IconButton></Tooltip>
-      <Tooltip title="Pin workspace"><IconButton onClick={onPin} aria-label="Pin workspace"><PushPinOutlined /></IconButton></Tooltip>
+    <Box className={className} sx={sx}>
+      <WorkspaceDock items={items} />
     </Box>
   );
 }

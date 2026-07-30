@@ -39,10 +39,14 @@ def get_health_prediction(asset_id, horizon_days=14, stress: float = 0.0):
 
     metrics = engine.compute_asset(asset, readings)
 
+    # Keep the chart legible and the calculation bounded. The prior adapter
+    # returned the entire historian and recalculated every prefix (O(n²)),
+    # which visually compressed the 14-day stress scenario into a tiny tail.
+    history_window = readings[-42:]
     historical = []
-    for i in range(len(readings)):
+    for i in range(len(history_window)):
         h = engine._calculate_health(
-            readings[: i + 1],
+            history_window[: i + 1],
             engine.config.get_thresholds(metrics["asset_type"]),
             {},
         )

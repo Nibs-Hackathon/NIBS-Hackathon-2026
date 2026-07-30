@@ -1,0 +1,65 @@
+.card-swap-container {
+  position: relative;
+  margin: 0 auto;
+  perspective: 900px;
+  overflow: visible;
+}
+
+.card-swap-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(160deg, rgba(22, 30, 42, 0.98), rgba(12, 16, 22, 0.98));
+  color: #d7e2ee;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.card-swap-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.card-swap-card p {
+  margin: 0;
+  color: #93a5bb;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.card-swap-card em {
+  color: #8fd4ff;
+  font: 700 0.72rem 'DM Mono', monospace;
+  font-style: normal;
+}
+
+.card-swap-card.is-selected {
+  border-color: rgba(95, 158, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(95, 158, 255, 0.2);
+}
+.briefing-card-stack {
+  position: relative;
+  min-height: 220px;
+  margin-bottom: 12px;
+}
+
+.briefing-card-stack .card-swap-container {
+  transform: scale(0.82);
+  transform-origin: top center;
+}
+
+@media (max-width: 720px) {
+  .briefing-card-stack .card-swap-container {
+    transform: scale(0.7);
+  }
+}

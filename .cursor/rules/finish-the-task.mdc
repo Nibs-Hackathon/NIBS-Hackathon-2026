@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+A task is not complete until:
+
+- imports compile
+- no obvious dead code remains
+- no duplicate logic remains
+- related types are updated
+- related tests are updated if present
+- lint errors introduced by the change are resolved
+
+After implementing:
+
+1. Review your own diff.
+2. Simplify it.
+3. Remove unnecessary code.
+4. Verify the requested behavior is fully implemented.
+
+Never stop after only generating code.

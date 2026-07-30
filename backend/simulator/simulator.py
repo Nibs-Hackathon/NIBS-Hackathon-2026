@@ -1,5 +1,6 @@
 """Simulator with proper incident cooldown and rate limiting."""
 
+import os
 import random
 from datetime import datetime
 from uuid import uuid4
@@ -27,6 +28,7 @@ class Simulator:
         # ✅ Track active incidents with proper cooldown
         self.active_incidents = {}        # asset_id -> incident_data
         self.resolved_incidents = {}      # asset_id -> resolution_tick
+        self.incident_resolutions = {}    # incident_id -> auditable outcome
         self._incident_cooldown_ticks = 20  # ✅ 20 ticks cooldown
         self._last_incident_time = 0
         self.incident_resolution_count = 0
@@ -47,11 +49,11 @@ class Simulator:
 
     def _get_notification_service(self):
         if self.notification_service is None:
-            from services.notification_service import NotificationService, Notification, NotificationType, NotificationSeverity
+            from services.notification_service import notification_service, Notification, NotificationType, NotificationSeverity
             self._Notification = Notification
             self._NotificationType = NotificationType
             self._NotificationSeverity = NotificationSeverity
-            self.notification_service = NotificationService()
+            self.notification_service = notification_service
         return self.notification_service
 
     def tick(self, tick_number, fault=None, target_asset_id=None):
@@ -67,7 +69,9 @@ class Simulator:
         
         # ✅ Use the fixed persistence
         try:
-            self._get_persistence().record_telemetry(telemetry)
+            persist_every = max(1, int(os.getenv("RIGOS_TELEMETRY_PERSIST_EVERY", "5")))
+            if fault or tick_number % persist_every == 0:
+                self._get_persistence().record_telemetry(telemetry)
         except Exception as e:
             # Log but don't crash the simulation
             print(f"⚠️ Telemetry save failed: {e}")
@@ -77,19 +81,15 @@ class Simulator:
             history = self.state.get_history(asset.asset.id)
             if history:
                 metrics = self.computation_engine.compute_asset(asset.asset, history)
-                self.kernel.asset_service.update_health(asset.asset.id, metrics["health"])
-                self.kernel.asset_service.update_status(asset.asset.id, metrics["status"])
+                active = self.active_incidents.get(asset.asset.id)
+                health = metrics["health"]
+                status = metrics["status"]
+                if active:
+                    health = min(health, active.get("incident_health", health))
+                    status = active.get("asset_status", "Attention")
+                self.kernel.asset_service.update_health(asset.asset.id, health)
+                self.kernel.asset_service.update_status(asset.asset.id, status)
         
-        # ... rest of code
-
-        # Update asset health
-        for asset in self.facility.assets:
-            history = self.state.get_history(asset.asset.id)
-            if history:
-                metrics = self.computation_engine.compute_asset(asset.asset, history)
-                self.kernel.asset_service.update_health(asset.asset.id, metrics["health"])
-                self.kernel.asset_service.update_status(asset.asset.id, metrics["status"])
-
         # EventGenerator emits each injected event once. Recheck every active
         # incident on every tick so the operational state closes when its
         # sensor has actually returned to a safe range.
@@ -161,6 +161,11 @@ class Simulator:
         asset_type = asset.asset_type.value if asset and hasattr(asset.asset_type, 'value') else "Pump"
         
         # ✅ Store active incident
+        severity = str(getattr(event, "severity", "") or "").lower()
+        penalty = 28 if "critical" in severity else 18
+        current_health = float(getattr(asset, "health", 100) or 100)
+        incident_health = max(0, min(current_health, current_health - penalty))
+        asset_status = "Critical" if "critical" in severity else "Attention"
         self.active_incidents[asset_id] = {
             "event": event,
             "start_time": datetime.now(),
@@ -168,7 +173,12 @@ class Simulator:
             "asset_name": asset_name,
             "asset_type": asset_type,
             "resolved": False,
+            "incident_health": incident_health,
+            "asset_status": asset_status,
         }
+        if asset:
+            self.kernel.asset_service.update_health(asset_id, incident_health)
+            self.kernel.asset_service.update_status(asset_id, asset_status)
         
         self._last_incident_time = tick_number
         self._notification_sent[asset_id] = False
@@ -208,6 +218,7 @@ class Simulator:
                 asset_id=asset_id,
                 asset_name=asset_name,
                 incident_type=event.name,
+                metadata={"incident_id": getattr(event, "id", None)},
             )
         )
         
@@ -223,6 +234,7 @@ class Simulator:
                 asset_id=asset_id,
                 asset_name=asset_name,
                 revenue_impact=impact['revenue_loss'],
+                metadata={"incident_id": getattr(event, "id", None)},
             )
         )
 
@@ -230,6 +242,10 @@ class Simulator:
         """Resolve an active incident."""
         if asset_id in self.active_incidents:
             active_incident = self.active_incidents[asset_id]
+            event = active_incident.get("event")
+            incident_id = getattr(event, "id", None)
+            resolved_at = datetime.now()
+            started_at = active_incident.get("start_time")
             self.incident_resolution_count += 1
             
             notification_service = self._get_notification_service()
@@ -247,6 +263,8 @@ class Simulator:
                     message=asset_name,
                     asset_id=asset_id,
                     asset_name=asset_name,
+                    incident_type=getattr(active_incident.get("event"), "name", None),
+                    metadata={"incident_id": getattr(active_incident.get("event"), "id", None)},
                 )
             )
 
@@ -264,8 +282,71 @@ class Simulator:
             
             # ✅ Remove from active incidents
             del self.active_incidents[asset_id]
+            asset = self.kernel.asset_service.get(asset_id)
+            if asset:
+                history = self.state.get_history(asset_id)
+                metrics = self.computation_engine.compute_asset(asset, history) if history else None
+                if metrics:
+                    self.kernel.asset_service.update_health(asset_id, metrics["health"])
+                    self.kernel.asset_service.update_status(asset_id, metrics["status"])
+            if incident_id:
+                self.incident_resolutions[str(incident_id)] = {
+                    "incident_id": incident_id,
+                    "asset_id": asset_id,
+                    "resolved_at": resolved_at,
+                    "resolution_seconds": (
+                        round(max(0.0, (resolved_at - started_at).total_seconds()), 2)
+                        if started_at else None
+                    ),
+                    "health_after": getattr(
+                        self.kernel.asset_service.get(asset_id),
+                        "health",
+                        None,
+                    ),
+                }
             
             print(f"✅ Resolved: {asset_name}")
+
+    def complete_field_work(self, asset_id, incident_id=None):
+        """Resolve the matching incident after audited simulated field work.
+
+        This updates only RigOS simulation state and never commands physical
+        industrial equipment.
+        """
+        active = self.active_incidents.get(asset_id)
+        if active is None:
+            prior = self.incident_resolutions.get(str(incident_id)) if incident_id else None
+            if prior:
+                return {
+                    "resolved": True,
+                    "already_resolved": True,
+                    **prior,
+                    "reason": "The linked simulator incident was already resolved",
+                }
+            return {
+                "resolved": False,
+                "incident_id": incident_id,
+                "reason": "No active simulator incident exists for this asset",
+            }
+        event = active.get("event")
+        active_incident_id = getattr(event, "id", None)
+        if incident_id and str(active_incident_id) != str(incident_id):
+            return {
+                "resolved": False,
+                "incident_id": incident_id,
+                "reason": "The work order is linked to a different incident",
+            }
+        asset = self.kernel.asset_service.get(asset_id)
+        asset_name = getattr(asset, "name", active.get("asset_name", asset_id))
+        resolution_tick = int(time.time())
+        self._resolve_incident(asset_id, resolution_tick, asset_name)
+        self.resolved_incidents[asset_id] = resolution_tick
+        return {
+            "resolved": True,
+            "incident_id": active_incident_id,
+            "asset_id": asset_id,
+            "reason": "Field work completed in RigOS simulation",
+        }
 
     def _check_values_normalized(self, asset_id):
         """Check if telemetry values have returned to normal range."""

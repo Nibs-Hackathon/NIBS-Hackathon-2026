@@ -19,7 +19,7 @@ class IncidentService:
     def __init__(self, simulator):
         self.simulator = simulator
 
-    def trigger_incident(self, incident_type):
+    def trigger_incident(self, incident_type, asset_id=None):
         normalized_type = " ".join(
             incident_type.strip().lower().replace("_", " ").replace("-", " ").split()
         )
@@ -34,10 +34,13 @@ class IncidentService:
                 simulated_asset
                 for simulated_asset in self.simulator.facility.assets
                 if simulated_asset.asset.id not in active_assets
+                and (asset_id is None or simulated_asset.asset.id == asset_id)
             ),
             None,
         )
         if target is None:
+            if asset_id is not None:
+                raise RuntimeError("The selected asset is unavailable or already has an active incident.")
             raise RuntimeError("No asset is currently available for fault injection.")
 
         telemetry, reports = self.simulator.tick(

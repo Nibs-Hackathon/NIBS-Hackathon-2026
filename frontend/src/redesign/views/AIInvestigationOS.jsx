@@ -45,6 +45,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
   const [auditIncident, setAuditIncident] = useState(null);
   const [replayReadings, setReplayReadings] = useState([]);
   const [replayLoading, setReplayLoading] = useState(false);
+  const [liveAssetReadings, setLiveAssetReadings] = useState([]);
   const [evidenceMode, setEvidenceMode] = useState('live');
   const [knowledgeResults, setKnowledgeResults] = useState([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -68,6 +69,30 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
   }, [incident?.id]);
 
   const activeIncident = auditIncident?.id === incident?.id ? { ...incident, ...auditIncident } : incident;
+
+  useEffect(() => {
+    const assetId = activeIncident?.asset_id;
+    if (!assetId) {
+      setLiveAssetReadings([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const loadLive = () => {
+      getTelemetry(assetId, { limit: 120 })
+        .then((response) => {
+          if (!cancelled) setLiveAssetReadings(normalizeTelemetryReadings(response.data));
+        })
+        .catch(() => {
+          if (!cancelled) setLiveAssetReadings([]);
+        });
+    };
+    loadLive();
+    const timer = setInterval(loadLive, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeIncident?.asset_id]);
 
   useEffect(() => {
     const assetId = activeIncident?.asset_id;
@@ -161,8 +186,13 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
 
   const traceStages = normalizeTraceStages(pipeline, investigation);
   const evidenceFacts = buildEvidenceFacts({ incident: activeIncident, stages: pipeline, investigation });
-  const liveReadings = Array.isArray(telemetry?.readings) ? telemetry.readings : [];
+  // Prefer asset-scoped live feed; facility-global telemetry is a last resort only when asset matches.
+  const globalReadings = Array.isArray(telemetry?.readings) && (!telemetry.asset_id || telemetry.asset_id === activeIncident?.asset_id)
+    ? telemetry.readings
+    : [];
+  const liveReadings = liveAssetReadings.length ? liveAssetReadings : globalReadings;
   const displayReadings = evidenceMode === 'replay' && replayReadings.length ? replayReadings : liveReadings;
+  const pipelineStreaming = pipeline.some((stage) => /running|streaming/i.test(String(stage.state || '')));
 
   const investigationConfidence = investigation?.confidence != null
     ? round(Number(investigation.confidence) <= 1
@@ -231,7 +261,7 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
         </Box>
         <Box className="ai-flagship-live">
           <i />
-          {pipeline.length ? 'STREAMING EXECUTION' : 'AWAITING WORKFLOW'}
+          {pipelineStreaming ? 'STREAMING EXECUTION' : pipeline.length ? 'WORKFLOW IDLE' : 'AWAITING WORKFLOW'}
           <small>
             {investigationConfidence != null ? `${Number(investigationConfidence).toFixed(2)}% model confidence` : 'No active investigation confidence'}
           </small>
@@ -296,8 +326,8 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
                           {safeReasoning(stage.reasoning || stage.output || stage.task || 'No reasoning recorded for this stage.')}
                         </Typography>
                         <Box>
-                          <span>Evidence {evidenceCount.toFixed(2)}</span>
-                          <span>Artifacts {artifactCount.toFixed(2)}</span>
+                          <span>Evidence {evidenceCount}</span>
+                          <span>Artifacts {artifactCount}</span>
                           <span>
                             Duration {stage.duration_seconds
                               ? `${Number(stage.duration_seconds).toFixed(2)}s`
@@ -312,19 +342,22 @@ export function AIInvestigationOS({ stages, investigation, incident, telemetry, 
             </Box>
           ) : agentRegistry.length ? (
             <Box className="ai-pipeline-list">
-              {agentRegistry.map((agent, index) => (
-                <Box key={`${agent.name}-${index}`} className="ai-stage completed">
-                  <span className="ai-stage-index">{index + 1}</span>
-                  <Box>
-                    <Typography>{agent.name}</Typography>
-                    <Typography>{agent.task}</Typography>
+              {agentRegistry.map((agent, index) => {
+                const agentState = String(agent.state || 'ready').toLowerCase();
+                return (
+                  <Box key={`${agent.name}-${index}`} className={`ai-stage ${agentState}`}>
+                    <span className="ai-stage-index">{index + 1}</span>
+                    <Box>
+                      <Typography>{agent.name}</Typography>
+                      <Typography>{agent.task}</Typography>
+                    </Box>
+                    <Box className="ai-stage-state">
+                      <b>{agent.confidence || '—'}</b>
+                      <small>{label(agent.state || 'ready')}</small>
+                    </Box>
                   </Box>
-                  <Box className="ai-stage-state">
-                    <b>{agent.confidence || '—'}</b>
-                    <small>{label(agent.state || 'ready')}</small>
-                  </Box>
-                </Box>
-              ))}
+                );
+              })}
             </Box>
           ) : (
             <Box sx={{ p: 2 }}>

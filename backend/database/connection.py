@@ -64,11 +64,13 @@ SessionLocal = None
 db_session = None
 
 if DATABASE_URL:
+    pool_size = max(1, int(os.getenv("DATABASE_POOL_SIZE", "5")))
+    max_overflow = max(0, int(os.getenv("DATABASE_MAX_OVERFLOW", "5")))
     engine = create_engine(
         DATABASE_URL,
         poolclass=QueuePool,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
         pool_pre_ping=True,
         pool_recycle=3600,
         pool_timeout=15,

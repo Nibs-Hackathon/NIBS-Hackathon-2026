@@ -26,13 +26,6 @@ from services.refinery_generator import RefineryGenerator
 from services.local_mode import local_demo_mode
 
 
-class _LocalVectorStore:
-    """Empty retrieval store used by the isolated demo runtime."""
-
-    @staticmethod
-    def similarity_search(_query):
-        return []
-
 # Global instances
 _kernel = None
 _simulator = None
@@ -100,17 +93,25 @@ def _initialize_kernel():
     
     # Initialize vector store
     global _vector_store
+    local_store = None
+    primary_store = None
     try:
-        embedder = None if local_demo_mode() else Embedder()
-        _vector_store = (
-            _LocalVectorStore()
-            if local_demo_mode()
-            else NeonVectorStore(embedder.get_model())
-        )
+        from rag.local_knowledge_store import HybridKnowledgeStore, LocalKnowledgeStore
+        local_store = LocalKnowledgeStore()
+        primary_store = None
+        if not local_demo_mode():
+            try:
+                primary_store = NeonVectorStore(Embedder().get_model())
+                if primary_store.count() == 0:
+                    primary_store = None
+            except Exception as error:
+                print(f"Vector retrieval unavailable; using local refinery corpus: {type(error).__name__}")
+        _vector_store = HybridKnowledgeStore(primary=primary_store, fallback=local_store)
         print("✅ Vector store initialized")
     except Exception as e:
         print(f"⚠️ Vector store failed: {e}")
-        _vector_store = None
+        from rag.local_knowledge_store import LocalKnowledgeStore
+        _vector_store = LocalKnowledgeStore()
     
     # Register all agents
     for agent in (
@@ -125,10 +126,18 @@ def _initialize_kernel():
         ReportAgent(),
     ):
         kernel.register_agent(agent)
+
+    kernel._knowledge_document_count = local_store.count() if local_store is not None else 0
+    kernel._knowledge_source = "local_corpus+vector" if primary_store is not None else "local_corpus"
     
     # Generate refineries
     global _refineries
-    _refineries = RefineryGenerator.generate_refineries(count=5, assets_per_refinery=50)
+    # Populate every catalog facility. Twenty-four assets per site keeps the
+    # full 16-site portfolio bounded at 384 simulated assets.
+    _refineries = RefineryGenerator.generate_refineries(
+        count=len(RefineryGenerator.REFINERY_NAMES),
+        assets_per_refinery=24,
+    )
     
     for refinery in _refineries:
         for asset in refinery.assets:
@@ -166,144 +175,140 @@ def _start_auto_simulation(kernel):
 
 
 def _auto_simulation_loop(kernel):
-    """Background thread that keeps telemetry live and injects a demo incident every 1-4 minutes."""
+    """Run bounded telemetry plus fair, automatic portfolio incident scenarios."""
+    import math
     import random
+    from datetime import datetime, timedelta
+
     global _simulator
-    
-    from simulator.simulator import Simulator
+
     from simulator.facility import SimulatedFacility
-    
-    # ✅ Create simulator
-    all_assets = []
-    for refinery in _refineries:
-        all_assets.extend(refinery.assets)
-    
-    facility = Facility(
-        id="rigos-alpha",
-        name="RigOS Global",
-        assets=all_assets
-    )
-    
+    from simulator.simulator import Simulator
+
+    all_assets = [asset for refinery in _refineries for asset in refinery.assets]
+    facility = Facility(id="rigos-global", name="RigOS Global", assets=all_assets)
     simulated_facility = SimulatedFacility(facility)
-    simulator = Simulator(
-        facility=simulated_facility,
-        kernel=kernel
-    )
-    # Timer-driven and API-triggered incidents must share one lifecycle.
+    simulator = Simulator(facility=simulated_facility, kernel=kernel)
     _simulator = simulator
-    
+
+    tick_interval = max(0.5, float(os.getenv("RIGOS_SIMULATION_TICK_SECONDS", "2")))
+    warmup_seconds = max(2.0, float(os.getenv("RIGOS_SIMULATION_WARMUP_SECONDS", "8")))
+    initial_delay = max(1, int(os.getenv("RIGOS_INITIAL_INCIDENT_DELAY", "5")))
+    coverage_delay = max(5, int(os.getenv("RIGOS_COVERAGE_INCIDENT_DELAY", "12")))
+    regular_min_delay = max(15, int(os.getenv("RIGOS_INCIDENT_MIN_DELAY", "45")))
+    regular_max_delay = max(
+        regular_min_delay,
+        int(os.getenv("RIGOS_INCIDENT_MAX_DELAY", "90")),
+    )
+    max_active = max(1, int(os.getenv("RIGOS_MAX_ACTIVE_INCIDENTS", "3")))
+    auto_incidents = os.getenv("RIGOS_AUTO_INCIDENTS", "true").strip().lower() not in {
+        "0", "false", "no", "off",
+    }
+    rng = random.Random("rigos-portfolio-scenarios")
+    sensor_sequence = ["pressure", "temperature", "vibration", "gas", "flow"]
     tick = 0
     incident_counter = 0
-    
-    # ✅ WARM-UP - 30 seconds with no faults
-    print("🔄 Simulation warming up (30 seconds)...")
+    refinery_cursor = 0
+    covered_facilities = set()
+
+    kernel._simulation_stats = {
+        "automatic": auto_incidents,
+        "mode": "portfolio_rotation",
+        "state": "warming_up",
+        "tick_seconds": tick_interval,
+        "incidents_generated": 0,
+        "facilities_covered": 0,
+        "coverage_complete": False,
+        "portfolio_facilities": len(_refineries),
+        "next_facility": _refineries[0].name if _refineries else None,
+        "next_incident_at": None,
+    }
+
+    warmup_ticks = max(1, math.ceil(warmup_seconds / tick_interval))
     try:
-        for _ in range(30):
+        for _ in range(warmup_ticks):
+            if not _simulation_running:
+                return
             tick += 1
-            telemetry, reports = simulator.tick(tick)
-            for asset in simulated_facility.assets:
-                history = kernel.state.get_history(asset.asset.id)
-                if history:
-                    health = kernel.health.calculate_health(history)
-                    kernel.asset_service.update_health(asset.asset.id, health)
-            time.sleep(1.0)
-    except Exception as e:
-        print(f"⚠️ Warm-up error: {e}")
-    
-    initial_incident_delay = max(1, int(os.getenv("RIGOS_INITIAL_INCIDENT_DELAY", "8")))
-    incident_min_delay = max(5, int(os.getenv("RIGOS_INCIDENT_MIN_DELAY", "60")))
-    incident_max_delay = max(incident_min_delay, int(os.getenv("RIGOS_INCIDENT_MAX_DELAY", "240")))
-    print(f"Simulation running. First incident in {initial_incident_delay}s; subsequent incidents every {incident_min_delay}-{incident_max_delay}s.")
-    
-    # ✅ Run with timer-based incidents
+            simulator.tick(tick)
+            time.sleep(tick_interval)
+    except Exception as error:
+        print(f"Simulation warm-up error: {error}")
+
+    kernel._simulation_stats["state"] = "running" if auto_incidents else "telemetry_only"
+    print(
+        f"Simulation ready: telemetry every {tick_interval:g}s; "
+        f"automatic portfolio incidents {'enabled' if auto_incidents else 'disabled'}."
+    )
+
     while _simulation_running:
         try:
-            # ✅ Generate random wait time (15-45 seconds)
-            wait_time = initial_incident_delay if incident_counter == 0 else random.randint(incident_min_delay, incident_max_delay)
-            print(f"⏳ Next incident in {wait_time} seconds...")
-            
-            # ✅ Wait for the interval (with regular ticks)
-            for _ in range(wait_time):
+            first_coverage_pass = len(covered_facilities) < len(_refineries)
+            if incident_counter == 0:
+                wait_seconds = initial_delay
+            elif first_coverage_pass:
+                wait_seconds = coverage_delay
+            else:
+                wait_seconds = rng.randint(regular_min_delay, regular_max_delay)
+
+            next_refinery = _refineries[refinery_cursor % len(_refineries)] if _refineries else None
+            kernel._simulation_stats.update({
+                "next_facility": getattr(next_refinery, "name", None),
+                "next_incident_at": (
+                    datetime.now() + timedelta(seconds=wait_seconds)
+                ).isoformat() if auto_incidents else None,
+            })
+
+            wait_ticks = max(1, math.ceil(wait_seconds / tick_interval))
+            for _ in range(wait_ticks):
                 if not _simulation_running:
-                    break
+                    return
                 tick += 1
-                try:
-                    telemetry, reports = simulator.tick(tick)
-                except RuntimeError as e:
-                    if "cannot schedule new futures" in str(e):
-                        print("⚠️ Persistence pool shutdown, continuing...")
-                        # Retry without persistence
-                        telemetry, reports = simulator.tick(tick)
-                    else:
-                        raise
-                
-                # ✅ Update state
-                for asset in simulated_facility.assets:
-                    history = kernel.state.get_history(asset.asset.id)
-                    if history:
-                        health = kernel.health.calculate_health(history)
-                        kernel.asset_service.update_health(asset.asset.id, health)
-                
-                for report in reports:
-                    kernel.state.add_report(report)
-                    for result in report.agent_results:
-                        kernel.state.add_agent_result(result)
-                
-                time.sleep(1.0)
-            
-            if not _simulation_running:
-                break
-            
-            # ✅ TRIGGER INCIDENT
-            if all_assets:
-                asset = random.choice(all_assets)
-                sensor_types = ["pressure", "temperature", "vibration", "gas", "flow"]
-                sensor = random.choice(sensor_types)
-                
-                fault_values = {
-                    "pressure": {"sensor": "pressure", "value": random.randint(155, 180)},
-                    "temperature": {"sensor": "temperature", "value": random.randint(90, 110)},
-                    "vibration": {"sensor": "vibration", "value": random.randint(12, 20)},
-                    "gas": {"sensor": "gas", "value": random.randint(45, 70)},
-                    "flow": {"sensor": "flow", "value": random.randint(10, 20)},
-                }
-                
-                fault = fault_values[sensor]
-                incident_counter += 1
-                print(f"💥 [#{incident_counter}] {sensor.upper()} fault on {asset.name} (value: {fault['value']})")
-                
-                # ✅ Inject fault
-                try:
-                    for sim_asset in simulated_facility.assets:
-                        if sim_asset.asset.id == asset.id:
-                            telemetry, reports = simulator.tick(tick, fault, target_asset_id=asset.id)
-                            break
-                    else:
-                        telemetry, reports = simulator.tick(tick)
-                except RuntimeError as e:
-                    if "cannot schedule new futures" in str(e):
-                        print("⚠️ Persistence error during fault injection, continuing...")
-                        continue
-                    else:
-                        raise
-                
-                # ✅ Process incident
-                for asset_obj in simulated_facility.assets:
-                    history = kernel.state.get_history(asset_obj.asset.id)
-                    if history:
-                        health = kernel.health.calculate_health(history)
-                        kernel.asset_service.update_health(asset_obj.asset.id, health)
-                
-                for report in reports:
-                    kernel.state.add_report(report)
-                    for result in report.agent_results:
-                        kernel.state.add_agent_result(result)
-            
-        except Exception as e:
-            print(f"⚠️ Simulation error: {e}")
-            import traceback
-            traceback.print_exc()
-            time.sleep(2)
+                simulator.tick(tick)
+                time.sleep(tick_interval)
+
+            if not auto_incidents or not next_refinery:
+                continue
+            if len(simulator.active_incidents) >= max_active:
+                continue
+
+            available_assets = [
+                asset for asset in next_refinery.assets
+                if asset.id not in simulator.active_incidents
+            ]
+            if not available_assets:
+                continue
+
+            asset = rng.choice(available_assets)
+            sensor = sensor_sequence[incident_counter % len(sensor_sequence)]
+            fault_values = {
+                "pressure": {"sensor": "pressure", "value": rng.randint(155, 180)},
+                "temperature": {"sensor": "temperature", "value": rng.randint(90, 110)},
+                "vibration": {"sensor": "vibration", "value": rng.randint(12, 20)},
+                "gas": {"sensor": "gas", "value": rng.randint(45, 70)},
+                "flow": {"sensor": "flow", "value": rng.randint(10, 20)},
+            }
+            simulator.tick(tick, fault_values[sensor], target_asset_id=asset.id)
+            incident_counter += 1
+            refinery_cursor += 1
+            covered_facilities.add(next_refinery.id)
+            kernel._simulation_stats.update({
+                "incidents_generated": incident_counter,
+                "facilities_covered": len(covered_facilities),
+                "coverage_complete": len(covered_facilities) == len(_refineries),
+                "last_facility": next_refinery.name,
+                "last_asset_id": asset.id,
+                "last_asset_name": asset.name,
+                "last_incident_type": sensor,
+                "last_incident_at": datetime.now().isoformat(),
+            })
+            print(
+                f"Automatic scenario #{incident_counter}: {sensor} fault on "
+                f"{next_refinery.name} / {asset.name}"
+            )
+        except Exception as error:
+            print(f"Simulation loop recovered from {type(error).__name__}: {error}")
+            time.sleep(tick_interval)
 
 
 def _persist_assets_to_database(kernel):
@@ -321,10 +326,13 @@ def _persist_assets_to_database(kernel):
         repo = AssetRepository(session)
         
         existing = repo.get_all()
-        if not existing or len(existing) == 0:
+        existing_ids = {str(asset.id) for asset in existing}
+        if existing is not None:
             count = 0
             for refinery in kernel._refineries:
                 for asset in refinery.assets:
+                    if str(asset.id) in existing_ids:
+                        continue
                     asset_db = AssetDB(
                         id=asset.id,
                         name=asset.name,

@@ -55,7 +55,7 @@ class PersistenceService:
             return
         
         # Save in batches
-        batch_size = 100
+        batch_size = 1000
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
             self._save_telemetry_sync(batch)
@@ -137,8 +137,23 @@ class PersistenceService:
             session = get_session()
             if session is None:
                 return
-            incident = session.query(IncidentDB).filter(IncidentDB.id == incident_id).first()
+            incident = None
+            # Resolution and report persistence are intentionally asynchronous.
+            # On a fast simulator tick, normalization can win that race. Retry
+            # briefly so the durable incident row receives the outcome instead
+            # of remaining under investigation forever.
+            for attempt in range(12):
+                incident = session.query(IncidentDB).filter(IncidentDB.id == incident_id).first()
+                if incident is not None:
+                    break
+                if attempt < 11:
+                    session.expire_all()
+                    time.sleep(0.5)
             if incident is None:
+                logger.warning(
+                    "Incident %s was not available for resolution after persistence retries",
+                    incident_id,
+                )
                 return
             resolved_at = datetime.utcnow()
             incident.status = "resolved"

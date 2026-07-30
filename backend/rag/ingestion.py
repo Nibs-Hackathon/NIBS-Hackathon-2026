@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from rag.embedder import Embedder
@@ -26,7 +27,9 @@ class KnowledgeIngestion:
         documents = []
 
 
-        for file in Path(folder).rglob("*.pdf"):
+        root = Path(folder)
+
+        for file in root.rglob("*.pdf"):
 
             print(
                 f"Loading: {file}"
@@ -42,10 +45,18 @@ class KnowledgeIngestion:
 
 
 
+        for pattern in ("*.md", "*.txt"):
+            for file in root.rglob(pattern):
+                print(f"Loading: {file}")
+                documents.append(Document(
+                    page_content=file.read_text(encoding="utf-8"),
+                    metadata={"source": str(file)},
+                ))
+
         if not documents:
 
             raise RuntimeError(
-                "No PDF documents found in docs/"
+                "No PDF, Markdown, or text documents found in the knowledge folder"
             )
 
 

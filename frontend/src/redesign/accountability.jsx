@@ -38,9 +38,9 @@ export function normalizeTraceStages(stages = [], investigation = {}) {
       agent: name,
       state: stage.state || 'queued',
       reasoning: stage.reasoning || stage.finding || stage.summary || null,
-      inputs: stage.inputs || stage.evidence || (stage.input ? JSON.stringify(stage.input) : `telemetry + case context · step ${index + 1}`),
+      inputs: stage.inputs || stage.evidence || (stage.input ? JSON.stringify(stage.input) : null),
       outputs: stage.outputs || stage.output || stage.recommendation || (confidence != null ? `${confidence.toFixed(2)}% confidence finding` : null),
-      modelId: stage.model_id || stage.modelId || investigation.model_id || 'gemini-flash · MAO',
+      modelId: stage.model_id || stage.modelId || investigation.model_id || null,
       duration: stage.duration_seconds != null
         ? (Number(stage.duration_seconds) < 1
           ? `${Math.max(0.01, Number(stage.duration_seconds) * 1000).toFixed(2)} ms`

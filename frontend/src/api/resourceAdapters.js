@@ -1,5 +1,7 @@
 /** Map backend API payloads to shapes expected by redesign views. */
 
+import { REFINERY_GEO, formatDisplayLocation } from '../data/refineryGeo.js';
+
 function parsePercent(value) {
   if (value == null) return null;
   const parsed = parseFloat(String(value).replace('%', '').trim());
@@ -40,6 +42,8 @@ export function normalizePredictionResponse(data, baseAsset = {}) {
     forecast_available: projectedHealth.length > 1,
     forecast_method: data.forecast_method,
     projected_health: projectedHealth,
+    historical_health: historical.map(Number).filter(Number.isFinite),
+    predicted_health: predicted.map(Number).filter(Number.isFinite),
     stress: data.stress ?? 0,
     stress_multiplier: data.stress_multiplier,
     scenario: data.scenario || null,
@@ -73,6 +77,7 @@ export function mergeAssetsWithTwin(assets, twinRows) {
 
   const byId = new Map(base.map((asset) => [asset.id, { ...asset }]));
   twins.forEach((twin) => {
+    if (!byId.has(twin.id)) return;
     const existing = byId.get(twin.id) || {};
     byId.set(twin.id, { ...existing, ...twin });
   });
@@ -80,11 +85,112 @@ export function mergeAssetsWithTwin(assets, twinRows) {
 }
 
 export function facilityOptionsFromRefineries(refineries = []) {
-  const names = (Array.isArray(refineries) ? refineries : [])
-    .map((row) => row?.name)
-    .filter(Boolean);
-  const unique = [...new Set(names)];
-  return unique.length ? [...unique, 'Enterprise view'] : ['Enterprise view'];
+  return normalizeRefineryOptions(refineries).map((row) => row.value);
+}
+
+function refineryDetail(refinery) {
+  if (!refinery) return null;
+  if (refinery.display_location) return refinery.display_location;
+  const region = [refinery.state, refinery.country].filter(Boolean).join(', ');
+  if (region && refinery.sea) return `${region} · ${refinery.sea}`;
+  return region || refinery.sea || null;
+}
+
+export function normalizeRefineryOptions(refineries = []) {
+  const liveRows = (Array.isArray(refineries) ? refineries : []).filter((row) => row?.name);
+  // Scope controls expose only facilities confirmed by operations/live.
+  // Catalog-only entries may remain visible on the globe, but cannot create
+  // an empty application scope before the backend instantiates them.
+  const unique = [...new Map(liveRows.map((row) => [row.name, row])).values()];
+  return [
+    { value: 'Enterprise view', label: 'Enterprise view', detail: 'All facilities in portfolio' },
+    ...unique.map((row) => ({
+      value: row.name,
+      label: row.name,
+      detail: refineryDetail(row) || 'Operational site',
+    })),
+  ];
+}
+
+export function enrichRefineryGeo(refineries = []) {
+  const liveRows = (Array.isArray(refineries) ? refineries : []).filter((row) => row?.name);
+  const byName = new Map(liveRows.map((row) => [row.name, row]));
+  Object.entries(REFINERY_GEO).forEach(([name, geo]) => {
+    if (!byName.has(name)) byName.set(name, { name, ...geo, catalog_only: true });
+  });
+
+  return Array.from(byName.values()).map((row) => {
+    const geo = REFINERY_GEO[row?.name] || {};
+    return {
+      ...row,
+      ...geo,
+      lat: row.lat ?? geo.lat ?? null,
+      lng: row.lng ?? geo.lng ?? null,
+      display_location: row.display_location || formatDisplayLocation({ ...geo, ...row }),
+    };
+  });
+}
+
+export function telemetryToLivePoints(readings = []) {
+  return (Array.isArray(readings) ? readings : [])
+    .map((row, index) => {
+      const value = Number(row.value);
+      if (!Number.isFinite(value)) return null;
+      const stamp = row.timestamp || row.time;
+      const time = stamp ? new Date(stamp).getTime() / 1000 : Date.now() / 1000 - (readings.length - index);
+      return { time, value };
+    })
+    .filter(Boolean)
+    .slice(-500);
+}
+
+export function refineriesForFacility(refineries = [], facility) {
+  const list = Array.isArray(refineries) ? refineries : [];
+  if (!facility || facility === 'Enterprise view' || facility === 'portfolio' || facility === 'North Sea Portfolio') {
+    return list;
+  }
+  const matched = list.filter((row) => row.name === facility);
+  return matched.length ? matched : list;
+}
+
+export function telemetryForFacility(operations = {}, facility) {
+  const enterprise = !facility || facility === 'Enterprise view' || facility === 'portfolio' || facility === 'North Sea Portfolio';
+  if (!enterprise) {
+    const row = (operations.telemetry_by_refinery || []).find((item) => item.refinery === facility);
+    if (row) {
+      return {
+        asset_id: row.asset_id,
+        asset_name: row.asset_name,
+        readings: Array.isArray(row.readings) ? row.readings : [],
+      };
+    }
+  }
+  return operations.telemetry || { readings: [] };
+}
+
+export function fleetHealthForScope({ refineries = [], assets = [], dashboard = {} }, facility) {
+  // The scoped asset collection is the most current source in the live
+  // operations snapshot. Average only published numeric readings; treating a
+  // missing reading as zero would make a disconnected asset look failed.
+  const healthReadings = assets
+    .map((asset) => Number(asset?.health))
+    .filter(Number.isFinite);
+  if (healthReadings.length) {
+    const total = healthReadings.reduce((sum, health) => sum + health, 0);
+    return Math.round((total / healthReadings.length) * 10) / 10;
+  }
+  const scoped = refineriesForFacility(refineries, facility);
+  if (
+    facility
+    && facility !== 'Enterprise view'
+    && scoped[0]?.fleet_health != null
+    && Number.isFinite(Number(scoped[0].fleet_health))
+  ) {
+    return Number(scoped[0].fleet_health);
+  }
+  return dashboard.fleet_health != null && Number.isFinite(Number(dashboard.fleet_health))
+    ? Number(dashboard.fleet_health)
+    : null;
 }
 
 export function timelineFromAudit(incident) {

@@ -4,7 +4,22 @@ from simulator.asset import SimulatedAsset
 
 class SimulatedFacility:
     def __init__(self, facility: Facility):
-        self.assets = [SimulatedAsset(asset) for asset in facility.assets]
+        # Gemini designs one cached operating envelope per asset type at
+        # startup. Simulation ticks stay local and inexpensive.
+        from services.ai_config import AIConfigGenerator
+
+        config = AIConfigGenerator()
+        source = config.get_source()
+        profiles = {}
+        self.assets = []
+        for asset in facility.assets:
+            asset_type = getattr(asset.asset_type, "value", str(asset.asset_type))
+            if asset_type not in profiles:
+                profiles[asset_type] = config.get_thresholds(asset_type)
+            asset.metadata["sensor_profile_source"] = source
+            self.assets.append(
+                SimulatedAsset(asset, operating_thresholds=profiles[asset_type])
+            )
         self.active_faults = {}
 
     def tick(self, tick_number, fault=None, target_asset_id=None):

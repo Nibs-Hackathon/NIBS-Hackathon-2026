@@ -91,6 +91,7 @@ class AssistantQuery(BaseModel):
     asset_id: str | None = None
     incident_id: str | None = None
     facility: str | None = None
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
 
 
 class OperatorActionRequest(BaseModel):
@@ -98,6 +99,7 @@ class OperatorActionRequest(BaseModel):
 
     incident_id: str | None = None
     asset_id: str | None = None
+    report_id: str | None = None
     action_type: str = Field(min_length=2, max_length=80)
     decision: str = Field(pattern="^(approved|rejected|escalated|evidence_requested|deferred)$")
     operator: str = Field(default="Chief Operator", min_length=2, max_length=120)
@@ -117,6 +119,12 @@ class WorkOrderCreateRequest(BaseModel):
 
 
 class WorkOrderApproveRequest(BaseModel):
+    operator: str = Field(default="Maintenance lead", min_length=2, max_length=120)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class WorkOrderTransitionRequest(BaseModel):
+    status: str = Field(pattern="^(in_progress|completed)$")
     operator: str = Field(default="Maintenance lead", min_length=2, max_length=120)
     note: str | None = Field(default=None, max_length=2000)
 
@@ -176,11 +184,13 @@ async def health_check():
 )
 async def platform_metadata():
     """Small, UI-consumable documentation payload for environments and demos."""
+    knowledge_files = list((BACKEND_ROOT / "knowledge_docs").glob("*.md"))
     return {
         "product": "RigOS",
         "api_version": "1.1.0",
         "capabilities": {
             "multi_agent_investigation": True,
+            "automatic_portfolio_simulation": True,
             "rag_assistant": True,
             "websocket_updates": True,
             "persistent_operator_actions": True,
@@ -190,12 +200,15 @@ async def platform_metadata():
         "contracts": {
             "operations_live": "/api/operations/live",
             "assistant": "/api/assistant/query",
+            "knowledge_search": "/api/knowledge/search",
+            "knowledge_documents": "/api/knowledge/documents",
             "operator_action": "/api/operator-actions",
             "database_health": "/api/health/database",
         },
         "notes": {
             "revenue_projection": "Modelled production value based on current asset availability and health; not booked revenue.",
             "operator_actions": "Decisions are persisted to the existing actions table when PostgreSQL is available.",
+            "knowledge_corpus": f"{len(knowledge_files)} checked-in refinery references with local retrieval fallback.",
         },
     }
 
@@ -219,7 +232,11 @@ async def record_operator_action(payload: OperatorActionRequest):
                 incident_id=payload.incident_id,
                 asset_id=payload.asset_id,
                 action_type=payload.action_type,
-                payload={"decision": payload.decision, "note": payload.note},
+                payload={
+                    "decision": payload.decision,
+                    "note": payload.note,
+                    "report_id": payload.report_id,
+                },
                 risk_level=payload.risk_level.upper(),
                 status=status,
                 requires_human_approval=payload.decision in {"deferred", "evidence_requested"},
@@ -229,6 +246,11 @@ async def record_operator_action(payload: OperatorActionRequest):
             )
             session.add(action)
             session.commit()
+            try:
+                from api.adapters.operations_adapter import invalidate_execution_report_cache
+                invalidate_execution_report_cache()
+            except Exception:
+                pass
             return {
                 "id": action.id,
                 "status": action.status,
@@ -340,11 +362,13 @@ async def get_incidents():
         return []
 
 @app.post("/api/incidents/{incident_type}")
-async def trigger_incident(incident_type: str):
+async def trigger_incident(incident_type: str, asset_id: str | None = None):
     require_operational_services()
     try:
         require_operational_services()
-        result = backend_api.trigger_incident(incident_type)
+        result = backend_api.trigger_incident(incident_type, asset_id=asset_id)
+        from api.adapters.operations_adapter import invalidate_operations_snapshot
+        invalidate_operations_snapshot()
         return result
     except Exception as e:
         print(f"⚠️ Error triggering incident: {e}")
@@ -457,6 +481,7 @@ async def query_assistant(payload: AssistantQuery):
             payload.asset_id,
             payload.incident_id,
             payload.facility,
+            payload.history,
         )
         return {"answer": answer}
     except Exception as e:
@@ -467,7 +492,6 @@ async def query_assistant(payload: AssistantQuery):
 @app.get("/api/knowledge/search")
 async def knowledge_search(q: str = ""):
     """Retrieve knowledge-base snippets for investigation / asset knowledge panels."""
-    require_operational_services()
     try:
         from api.adapters.knowledge_adapter import KnowledgeSearchError, search_knowledge
         return {"query": q, "results": search_knowledge(q)}
@@ -481,6 +505,31 @@ async def knowledge_search(q: str = ""):
         raise HTTPException(
             status_code=503,
             detail={"code": "KNOWLEDGE_UNAVAILABLE", "message": "Knowledge search is unavailable."},
+        ) from e
+
+
+@app.get("/api/knowledge/documents")
+async def knowledge_documents():
+    """List the checked-in refinery corpus without requiring operational services."""
+    try:
+        from api.adapters.knowledge_adapter import list_knowledge_documents
+
+        documents = list_knowledge_documents()
+        return {
+            "count": len(documents),
+            "source": "local_refinery_corpus",
+            "documents": documents,
+            "retrieval": {
+                "local": "always available",
+                "postgres_pgvector": "used when configured, reachable, and populated",
+                "gemini": "used for answer synthesis when configured",
+            },
+        }
+    except Exception as e:
+        print(f"Error listing knowledge documents: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "KNOWLEDGE_CATALOG_ERROR", "message": "Knowledge catalog could not be loaded."},
         ) from e
 
 
@@ -529,10 +578,14 @@ class ConnectionManager:
             self.disconnect(connection)
 
 manager = ConnectionManager()
+WEBSOCKET_SNAPSHOT_SECONDS = max(
+    2.0,
+    float(os.getenv("RIGOS_WEBSOCKET_SNAPSHOT_SECONDS", "5")),
+)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Push operations snapshots every ~2s.
+    """Push shared operations snapshots on a bounded interval.
 
     Must also await receive() — a send-only loop never notices the browser
     drop (refresh / Vite HMR / React Strict Mode). asyncio then keeps writing
@@ -543,7 +596,7 @@ async def websocket_endpoint(websocket: WebSocket):
     async def _client_still_connected() -> bool:
         return websocket.client_state == WebSocketState.CONNECTED
 
-    async def _wait_interval_or_disconnect(seconds: float = 2.0) -> bool:
+    async def _wait_interval_or_disconnect(seconds: float = WEBSOCKET_SNAPSHOT_SECONDS) -> bool:
         """Return False when the client disconnected."""
         try:
             message = await asyncio.wait_for(websocket.receive(), timeout=seconds)
@@ -574,7 +627,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"WebSocket update error: {exc}")
                 break
 
-            if not await _wait_interval_or_disconnect(2.0):
+            if not await _wait_interval_or_disconnect():
                 break
     except WebSocketDisconnect:
         pass
@@ -682,6 +735,28 @@ async def approve_maintenance_work_order(work_order_id: str, payload: WorkOrderA
                 "message": "Work order approval could not be persisted.",
                 "error_type": type(e).__name__,
             },
+        ) from e
+
+
+@app.post("/api/maintenance/work-orders/{work_order_id}/status")
+async def transition_maintenance_work_order(work_order_id: str, payload: WorkOrderTransitionRequest):
+    require_operational_services()
+    try:
+        from api.adapters.maintenance_adapter import transition_work_order
+        return transition_work_order(
+            work_order_id,
+            status=payload.status,
+            operator=payload.operator,
+            note=payload.note,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail={"code": "WORK_ORDER_NOT_FOUND", "message": str(e)}) from e
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail={"code": "INVALID_WORK_ORDER_TRANSITION", "message": str(e)}) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "WORK_ORDER_STORAGE_UNAVAILABLE", "message": "Work order status could not be persisted."},
         ) from e
 
 # ============================================

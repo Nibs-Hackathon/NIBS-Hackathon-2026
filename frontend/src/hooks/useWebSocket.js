@@ -14,8 +14,9 @@ function resolveWsUrl() {
   return 'ws://localhost:8080/ws';
 }
 
-const RECONNECT_MIN_DELAY = 1500;
-const RECONNECT_MAX_DELAY = 15000;
+const RECONNECT_MIN_DELAY = 3000;
+const RECONNECT_MAX_DELAY = 120000;
+const STRICT_MODE_CONNECT_DELAY = 75;
 
 /**
  * Keeps the most recently verified snapshot on screen while the connection
@@ -36,12 +37,16 @@ export function useWebSocket() {
     const scheduleReconnect = () => {
       if (disposedRef.current) return;
       if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current);
-      const delay = Math.min(
+      const baseDelay = Math.min(
         RECONNECT_MIN_DELAY * (2 ** attemptsRef.current),
         RECONNECT_MAX_DELAY,
       );
+      const delay = Math.round(baseDelay * (0.85 + Math.random() * 0.3));
       attemptsRef.current += 1;
-      reconnectTimeoutRef.current = window.setTimeout(connect, delay);
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        reconnectTimeoutRef.current = null;
+        connect();
+      }, delay);
     };
 
     const connect = () => {
@@ -75,12 +80,8 @@ export function useWebSocket() {
           }
         };
 
-        socket.onerror = () => {
-          // Let onclose own reconnect; closing here avoids half-open proxies.
-          if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-            try { socket.close(1000, 'error'); } catch { /* already closing */ }
-          }
-        };
+        // Browser transport owns the close transition; onclose schedules retry.
+        socket.onerror = () => {};
         socket.onclose = () => {
           if (socketRef.current === socket) socketRef.current = null;
           if (disposedRef.current) return;
@@ -94,11 +95,21 @@ export function useWebSocket() {
       }
     };
 
-    connect();
+    // Avoid opening then immediately closing the first socket during React
+    // StrictMode's development-only effect probe.
+    const initialConnectTimeout = window.setTimeout(connect, STRICT_MODE_CONNECT_DELAY);
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!socketRef.current && !reconnectTimeoutRef.current) scheduleReconnect();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       disposedRef.current = true;
+      window.clearTimeout(initialConnectTimeout);
       if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       const socket = socketRef.current;
       socketRef.current = null;
       if (socket) {

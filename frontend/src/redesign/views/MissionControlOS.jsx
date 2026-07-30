@@ -1,47 +1,97 @@
+import { useMemo } from 'react';
 import { Box, Button, Paper, Typography } from '@mui/material';
-import { BoltOutlined, HubOutlined, ShieldOutlined } from '@mui/icons-material';
+import { BoltOutlined, HubOutlined, PlaceOutlined, ShieldOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
 import { OperationsStrip } from '../../design-system/catalog/shell';
+import {
+  Grid,
+  LiveLine,
+  LiveLineChart,
+  LiveXAxis,
+  LiveYAxis,
+} from '@/components/charts';
 import { ExportAuditButton } from '../accountability';
-import { Metric, Status, MiniGraph, label, round, averageHealth, safeReasoning, traceLabel } from './shared';
-import { normalizeAgentActivityRow } from '../../api/resourceAdapters';
+import { FacilityGlobe } from './FacilityGlobe';
+import { Metric, Status, label, round, safeReasoning, traceLabel } from './shared';
+import {
+  normalizeAgentActivityRow,
+  telemetryToLivePoints,
+} from '../../api/resourceAdapters';
 
 /** Part 8 — Command Center with sticky OperationsStrip + cross-nav. */
 export function MissionControlOS({
-  assets, incidents, stages, dashboard, refineries, telemetry, maintenance,
+  assets, incidents, stages, dashboard, refineries, refineriesAll, telemetry, maintenance, simulation,
   aiActivity = [],
-  facility = null, auditEvents = [], provenance = 'live',
+  facility = null, auditEvents = [], provenance = 'live', connected = false,
 }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
-  const safeAssets = Array.isArray(assets) ? assets : [];
+  const safeAssets = useMemo(
+    () => (Array.isArray(assets) ? assets : []),
+    [assets],
+  );
   const safeIncidents = Array.isArray(incidents) ? incidents : [];
   const safeStages = Array.isArray(stages) ? stages : [];
   const safeRefineries = Array.isArray(refineries) ? refineries : [];
-  const health = dashboard.fleet_health ?? averageHealth(safeAssets);
+  const globeRefineries = Array.isArray(refineriesAll) && refineriesAll.length
+    ? refineriesAll
+    : safeRefineries;
+  const scopedHealthReadings = useMemo(
+    () => safeAssets.map((asset) => Number(asset?.health)).filter(Number.isFinite),
+    [safeAssets],
+  );
+  const health = dashboard.fleet_health != null && Number.isFinite(Number(dashboard.fleet_health))
+    ? Number(dashboard.fleet_health)
+    : scopedHealthReadings.length
+      ? round(scopedHealthReadings.reduce((sum, value) => sum + value, 0) / scopedHealthReadings.length)
+      : null;
+  const healthDisplay = health == null ? '—' : `${round(health)}%`;
   const primary = safeIncidents[0];
-  const values = Array.isArray(telemetry?.readings)
-    ? telemetry.readings.map((item) => item.value)
-    : safeAssets.map((asset) => asset.health);
-  const risks = safeAssets.slice().sort((a, b) => Number(a.health) - Number(b.health)).slice(0, 4);
+  const telemetryReadings = telemetry?.readings;
+  const sensorReadings = useMemo(
+    () => (Array.isArray(telemetryReadings) ? telemetryReadings : []),
+    [telemetryReadings],
+  );
+  const livePoints = useMemo(() => telemetryToLivePoints(sensorReadings), [sensorReadings]);
+  const latestValue = livePoints.length ? livePoints[livePoints.length - 1].value : 0;
+  const values = useMemo(
+    () => sensorReadings.map((item) => item.value).filter((value) => Number.isFinite(Number(value))),
+    [sensorReadings],
+  );
+  const risks = useMemo(
+    () => safeAssets.slice().sort((a, b) => Number(a.health) - Number(b.health)).slice(0, 4),
+    [safeAssets],
+  );
   const tasks = Array.isArray(maintenance?.tasks) ? maintenance.tasks : [];
-  const activityRows = (Array.isArray(aiActivity) ? aiActivity : [])
-    .map(normalizeAgentActivityRow)
-    .filter(Boolean);
+  const activityRows = useMemo(
+    () => (Array.isArray(aiActivity) ? aiActivity : [])
+      .map(normalizeAgentActivityRow)
+      .filter(Boolean),
+    [aiActivity],
+  );
+  const activeFacility = facility || objectApi.scope?.facility || 'Enterprise view';
+  const enterpriseScope = !activeFacility
+    || activeFacility === 'Enterprise view'
+    || activeFacility === 'portfolio'
+    || activeFacility === 'North Sea Portfolio';
   const scopeLabel = (
-    objectApi.scope?.facility
-    || facility
+    activeFacility
     || safeRefineries[0]?.name
     || 'Enterprise view'
   ).toUpperCase();
-
-  const twinNodes = risks.length
-    ? risks.slice(0, 4)
-    : safeAssets.slice(0, 4);
+  const focusRefinery = globeRefineries.find((row) => row.name === activeFacility)
+    || safeRefineries.find((row) => row.name === activeFacility)
+    || globeRefineries[0]
+    || safeRefineries[0];
   const agentsLive = safeStages.filter((s) => /running|streaming/i.test(s.state)).length;
   const telemetryLive = values.length > 0;
+  const systemsLive = connected && (provenance === 'live' || provenance === 'estimated');
+  const pendingDecisions = safeIncidents.filter((item) => {
+    const status = String(item.status || '').toLowerCase();
+    return !status || !/closed|resolved|complete/.test(status);
+  }).length;
 
   const openInvestigation = () => {
     if (!primary) {
@@ -60,7 +110,7 @@ export function MissionControlOS({
       <OperationsStrip
         className="p8-operations-strip"
         metrics={[
-          { label: 'Fleet health', value: `${health}%`, detail: provenance },
+          { label: 'Fleet health', value: healthDisplay, detail: health == null ? 'Awaiting asset health' : `${scopedHealthReadings.length} live assets` },
           { label: 'Active incidents', value: String(safeIncidents.length), detail: primary ? label(primary.severity || 'open') : 'Clear' },
           { label: 'Agents live', value: String(safeStages.filter((s) => /running|streaming/i.test(s.state)).length), detail: 'MAO network' },
           { label: 'Work orders', value: String(tasks.length), detail: tasks.length ? 'Planned window' : 'No downtime' },
@@ -89,7 +139,16 @@ export function MissionControlOS({
           </Typography>
         </Box>
         <Box className="mission-situation-actions">
-          <Typography><i />SYSTEMS LIVE</Typography>
+          <Typography><i />{systemsLive ? 'SYSTEMS LIVE' : provenance === 'stale' ? 'SYSTEMS STALE' : 'SYSTEMS OFFLINE'}</Typography>
+          {simulation?.automatic && (
+            <Typography title={simulation.next_facility || ''}>
+              <i />
+              AUTO SCENARIOS · {simulation.incidents_generated || 0} RUN
+              {simulation.portfolio_facilities
+                ? ` · ${simulation.facilities_covered || 0}/${simulation.portfolio_facilities} SITES`
+                : ''}
+            </Typography>
+          )}
           <ExportAuditButton events={auditEvents} facility={facility} />
           <Button variant="contained" onClick={openInvestigation}>
             {primary ? 'Review investigation' : 'Open digital twin'}
@@ -97,47 +156,43 @@ export function MissionControlOS({
         </Box>
       </Paper>
 
-      <Box className="mission-command-grid">
-        <Paper className="mission-twin">
+      <Box className="mission-bento-grid">
+        <Paper className="mission-twin mission-bento-globe">
           <Box className="mission-panel-head">
             <Box>
               <Typography className="product-kicker">DIGITAL TWIN OVERVIEW</Typography>
               <Typography>Facility operating map</Typography>
             </Box>
-            <Status state={primary ? 'Attention' : 'Nominal'} />
+            <Box className="mission-globe-actions">
+              <Status state={primary ? 'Attention' : 'Nominal'} />
+            </Box>
           </Box>
-          <Box className="mission-twin-map">
-            <Box className="mission-twin-core"><b>{health}%</b><span>FLEET HEALTH</span></Box>
-            {twinNodes.length ? twinNodes.map((asset, index) => (
-              <button
-                type="button"
-                key={asset.id || index}
-                className={`mission-twin-node ${Number(asset.health ?? health) < 75 ? 'risk is-pulse' : ''}`}
-                onClick={() => navigateTo(objectApi, navigate, 'assets', { assetId: asset.id || null })}
-              >
-                <i />
-                <span>{asset.name || asset.location || `Asset ${index + 1}`}</span>
-                <b>{round(asset.health ?? health)}%</b>
-              </button>
-            )) : (
-              <Typography className="mission-empty-copy" sx={{ position: 'absolute', inset: 0, displayContent: 'center', p: 2 }}>
-                No assets available for the twin overview.
-              </Typography>
-            )}
-            <svg viewBox="0 0 600 250"><path d="M86 70H250M350 70H515M86 180H250M350 180H515M300 94V155" /></svg>
-          </Box>
+          <FacilityGlobe
+            facility={activeFacility}
+            refineries={globeRefineries}
+            fleetHealth={health}
+          />
           <Box className="mission-twin-footer">
-            <Typography><HubOutlined /> {safeAssets.length} assets connected</Typography>
-            <Typography><BoltOutlined /> {values.length ? `${values.length} historian samples` : 'No historian samples'}</Typography>
-            <Typography>
+            <Box>
+              <PlaceOutlined />
+              <span><small>SCOPE</small><b>{enterpriseScope ? 'Global portfolio' : focusRefinery?.display_location || activeFacility}</b></span>
+            </Box>
+            <Box>
+              <HubOutlined />
+              <span><small>CONNECTED ASSETS</small><b>{safeAssets.length || 'Awaiting data'}</b></span>
+            </Box>
+            <Box>
+              <BoltOutlined />
+              <span><small>HISTORIAN</small><b>{values.length ? `${values.length} samples` : 'Waiting for stream'}</b></span>
+            </Box>
+            <Box className={primary ? 'is-alert' : 'is-clear'}>
               <ShieldOutlined />
-              {' '}
-              {primary ? `${label(primary.severity)} incident open` : 'No critical incidents open'}
-            </Typography>
+              <span><small>INCIDENT STATE</small><b>{primary ? `${label(primary.severity)} open` : 'No critical incidents'}</b></span>
+            </Box>
           </Box>
         </Paper>
 
-        <Paper className="mission-telemetry-panel">
+        <Paper className="mission-telemetry-panel mission-bento-telemetry">
           <Box className="mission-panel-head">
             <Box>
               <Typography className="product-kicker">LIVE TELEMETRY</Typography>
@@ -148,20 +203,55 @@ export function MissionControlOS({
               {telemetryLive ? 'STREAMING' : 'IDLE'}
             </Typography>
           </Box>
-          <Box className="mission-chart-wrap">
-            <MiniGraph
-              values={values}
-              area
-              label={telemetryLive ? 'Process index · live historian feed' : 'No telemetry samples in the current window'}
-            />
-            {telemetryLive ? (
-              <Box className="mission-chart-annotation"><span>Watch threshold</span><i /></Box>
-            ) : null}
+          <Box className="mission-chart-wrap mission-live-chart">
+            {livePoints.length ? (
+              <LiveLineChart
+                data={livePoints}
+                value={latestValue}
+                window={120}
+                nowOffsetUnits={1}
+                margin={{ top: 14, right: 66, bottom: 30, left: 34 }}
+                style={{ height: '100%' }}
+              >
+                <Grid horizontal numTicksRows={4} strokeOpacity={0.26} hideHorizontalEdgeLines />
+                <LiveLine
+                  dataKey="value"
+                  stroke="var(--chart-line-primary, #55d6ff)"
+                  strokeWidth={1.7}
+                  dotSize={3}
+                  formatValue={(v) => `${round(v)}${telemetry?.unit ? ` ${telemetry.unit}` : ''}`}
+                />
+                <LiveXAxis numTicks={4} />
+                <LiveYAxis
+                  position="left"
+                  minGap={42}
+                  formatValue={(v) => round(v)}
+                />
+              </LiveLineChart>
+            ) : (
+              <Box className="mission-telemetry-standby" role="status" aria-label="Waiting for sensor telemetry">
+                <Box className="mission-standby-grid" aria-hidden>
+                  <i /><i /><i />
+                  <span />
+                  <b /><b /><b /><b /><b />
+                </Box>
+                <Box className="mission-standby-copy">
+                  <i aria-hidden />
+                  <Typography>Waiting for signal</Typography>
+                  <Typography>Chart will start when a sensor stream connects</Typography>
+                </Box>
+              </Box>
+            )}
           </Box>
+          {!livePoints.length && (
+            <Typography className="mission-empty-copy">
+              No sensor telemetry in the current window
+            </Typography>
+          )}
           <Box className="mission-chart-legend">
-            <Typography><i className="normal" />Nominal</Typography>
-            <Typography><i className="watch" />Watch ≥ 75%</Typography>
-            <Typography><i className="critical" />Critical ≥ 90%</Typography>
+            <Typography><i className="normal" />Sensor series</Typography>
+            <Typography><i className="watch" />Auto-scaled axis</Typography>
+            <Typography><i className="critical" />No invented thresholds</Typography>
           </Box>
           <Box className="mission-production">
             <Metric label="Production" value={dashboard.production_rate ?? '—'} provenance={dashboard.production_rate != null ? 'live' : 'stale'} />
@@ -170,9 +260,9 @@ export function MissionControlOS({
           </Box>
         </Paper>
 
-        <Paper className="mission-decisions">
+        <Paper className="mission-decisions mission-bento-decisions">
           <Typography className="product-kicker">PENDING DECISIONS</Typography>
-          <Typography className="mission-decision-count">{primary ? '01' : '00'}</Typography>
+          <Typography className="mission-decision-count">{String(pendingDecisions).padStart(2, '0')}</Typography>
           <Typography>
             {primary
               ? primary.ai_recommendation || 'Review the evidence package and approve the recommended response.'
@@ -185,10 +275,9 @@ export function MissionControlOS({
             {primary ? 'Open decision record' : 'Review audit trail'}
           </Button>
         </Paper>
-      </Box>
 
-      <Box className="mission-lower-grid">
-        <Paper className="mission-feed">
+        <Box className="mission-bento-lower">
+        <Paper className="mission-feed mission-bento-feed">
           <Box className="mission-panel-head">
             <Box>
               <Typography className="product-kicker">LIVE INCIDENT FEED</Typography>
@@ -221,7 +310,7 @@ export function MissionControlOS({
             : <Typography className="mission-empty-copy">No active incidents. The event bus and evidence agents are monitoring the facility.</Typography>}
         </Paper>
 
-        <Paper className="mission-agents">
+        <Paper className="mission-agents mission-bento-agents">
           <Box className="mission-panel-head">
             <Box>
               <Typography className="product-kicker">ACTIVE AI AGENTS</Typography>
@@ -270,7 +359,7 @@ export function MissionControlOS({
           </Box>
         </Paper>
 
-        <Paper className="mission-risks">
+        <Paper className="mission-risks mission-bento-risks">
           <Typography className="product-kicker">TOP RISKS</Typography>
           {risks.length
             ? risks.map((asset, index) => (
@@ -283,15 +372,15 @@ export function MissionControlOS({
                   if (event.key === 'Enter') navigateTo(objectApi, navigate, 'assets', { assetId: asset.id });
                 }}
               >
-                <Typography><b>{asset.name || `Asset ${index + 1}`}</b><small>{asset.location || asset.zone || 'Process train'}</small></Typography>
+                <Typography><b>{asset.name || `Asset ${index + 1}`}</b><small>{asset.location || asset.zone || '—'}</small></Typography>
                 <Box><span style={{ width: `${Math.max(10, 100 - round(asset.health))}%` }} /></Box>
-                <b>{Math.max(0, 100 - round(asset.health))}</b>
+                <b title="Health deficit (100 − health)">{Math.max(0, 100 - round(asset.health))}</b>
               </Box>
             ))
             : <Typography className="mission-empty-copy">Risk model is synchronizing asset condition.</Typography>}
         </Paper>
 
-        <Paper className="mission-shift">
+        <Paper className="mission-shift mission-bento-shift">
           <Typography className="product-kicker">MAINTENANCE WINDOW</Typography>
           <Typography className="mission-shift-title">
             {tasks.length ? `${tasks.length} work orders in plan` : 'No planned downtime'}
@@ -301,6 +390,7 @@ export function MissionControlOS({
           <Typography><i className="event-dot risk" />Open incidents <b>{safeIncidents.length}</b></Typography>
           <Button size="small" onClick={() => navigateTo(objectApi, navigate, 'maintenance')}>Open work control</Button>
         </Paper>
+        </Box>
       </Box>
 
       <Paper className="mission-executive">

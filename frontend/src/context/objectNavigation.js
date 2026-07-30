@@ -59,8 +59,7 @@ export function filterByFacility(items, facility, getLocation) {
     return items || [];
   }
   const list = Array.isArray(items) ? items : [];
-  const matched = list.filter((item) => getLocation(item) === facility);
-  return matched.length ? matched : list;
+  return list.filter((item) => getLocation(item) === facility);
 }
 
 export function assetLocation(asset) {
@@ -68,7 +67,9 @@ export function assetLocation(asset) {
 }
 
 export function incidentLocation(item, assets = []) {
-  if (item?.refinery || item?.location) return item.refinery || item.location;
+  if (item?.facility || item?.refinery || item?.location) {
+    return item.facility || item.refinery || item.location;
+  }
   const asset = assets.find((a) => a.id === item?.asset_id);
   return assetLocation(asset);
 }
@@ -76,5 +77,21 @@ export function incidentLocation(item, assets = []) {
 export function taskLocation(task, assets = []) {
   if (task?.refinery || task?.location) return task.refinery || task.location;
   const asset = assets.find((a) => a.id === task?.asset_id);
+  return assetLocation(asset);
+}
+
+export function reportLocation(report, assets = []) {
+  if (report?.facility || report?.refinery || report?.location) {
+    return report.facility || report.refinery || report.location;
+  }
+  const asset = assets.find((a) => a.id === report?.asset_id);
+  return assetLocation(asset);
+}
+
+export function activityLocation(activity, assets = []) {
+  if (activity?.facility || activity?.refinery || activity?.location) {
+    return activity.facility || activity.refinery || activity.location;
+  }
+  const asset = assets.find((a) => a.id === activity?.asset_id);
   return assetLocation(asset);
 }

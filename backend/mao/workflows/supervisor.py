@@ -36,29 +36,15 @@ class Supervisor:
             )
         )
 
-        # Collect findings
-        findings = [
-            f"[{result.agent_name}] {result.finding}"
-            for result in results
-            if result.finding
-        ]
-
-        # Collect summaries
-        summaries = [
-            f"[{result.agent_name}] {result.summary}"
-            for result in results
-            if result.summary
-        ]
-
-        # Determine overall severity
-        severity = "Low"
-
-        if confidence >= 0.90:
-            severity = "Critical"
-        elif confidence >= 0.75:
-            severity = "High"
-        elif confidence >= 0.50:
-            severity = "Medium"
+        # Confidence measures evidence quality, not incident severity.
+        safety_status = str(context.metadata.get("safety", {}).get("status", "SAFE")).upper()
+        maintenance_priority = str(context.metadata.get("maintenance", {}).get("priority", "LOW")).upper()
+        severity = (
+            "Critical" if "CRITICAL" in {safety_status, maintenance_priority}
+            else "High" if safety_status == "WARNING" or maintenance_priority == "HIGH"
+            else "Medium" if maintenance_priority == "MEDIUM"
+            else "Low"
+        )
 
         context.incident_level = severity
 
@@ -75,19 +61,23 @@ class Supervisor:
         context.metadata["severity"] = severity
         context.metadata["approval_required"] = approval_required
 
-        # Executive summary
-        summary_parts = []
-
-        if findings:
-            summary_parts.append("Key Findings")
-            summary_parts.extend(findings)
-
-        if summaries:
-            summary_parts.append("")
-            summary_parts.append("Agent Analysis")
-            summary_parts.extend(summaries)
-
-        summary = "\n".join(summary_parts)
+        # Keep the board narrative concise. Detailed agent findings remain on
+        # the execution report and evidence appendix instead of being dumped
+        # into the executive summary.
+        event_name = getattr(context.event, "name", "operational")
+        asset_id = getattr(context.event, "source", "unknown asset")
+        recommendation = recommendations[0] if recommendations else "Continue monitoring and complete operator review."
+        diagnosis = ", ".join(context.metadata.get("diagnosis", {}).get("diagnosis", []))
+        safety_line = context.metadata.get("safety", {}).get("status", "not established")
+        maintenance_line = context.metadata.get("maintenance", {}).get("priority", "not established")
+        summary = (
+            f"{event_name} on asset {asset_id} was assessed at {severity.lower()} severity "
+            f"with {confidence:.0%} evidence confidence. Safety status: {safety_line}; "
+            f"maintenance priority: {maintenance_line}."
+        )
+        if diagnosis:
+            summary += f" The diagnostic finding was {diagnosis}."
+        summary += f" Recommended next action: {recommendation}"
 
         return {
             "success": success,

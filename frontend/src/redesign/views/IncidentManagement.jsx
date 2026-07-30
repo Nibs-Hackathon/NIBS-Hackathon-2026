@@ -22,7 +22,7 @@ import {
 import {
   OperatorDecisionBar, EvidenceLineage, buildEvidenceFacts, DecisionHistory, ProvenanceBadge,
 } from '../accountability';
-import { Status, MiniGraph, EvidenceItem, formatTime, label, round, safeReasoning } from './shared';
+import { Status, MiniGraph, EvidenceItem, formatTime, label, safeReasoning } from './shared';
 
 function riskScore(severity) {
   if (/critical/i.test(severity || '')) return 92;
@@ -45,7 +45,9 @@ const SIMULATOR_FAULTS = [
   { type: 'flow-restriction', label: 'Flow restriction' },
 ];
 
-export function IncidentManagement({ incidents, telemetry, provenance = 'live' }) {
+export function IncidentManagement({
+  assets = [], incidents, telemetry, simulation = {}, provenance = 'live',
+}) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
   const { refresh } = useOperations();
@@ -63,6 +65,7 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
   const [auditLoading, setAuditLoading] = useState(false);
   const [replayReadings, setReplayReadings] = useState([]);
   const [replayLoading, setReplayLoading] = useState(false);
+  const [liveAssetReadings, setLiveAssetReadings] = useState([]);
   const [evidenceMode, setEvidenceMode] = useState('live');
   const [simulating, setSimulating] = useState(false);
 
@@ -72,14 +75,16 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
   );
   const incident = visible.find((item) => item.id === selectedId) || visible[0];
   const activeIncident = auditDetail?.id === incident?.id ? { ...incident, ...auditDetail } : incident;
+  const activeCount = incidents.filter((item) => !/closed|resolved|completed/i.test(item.status || '')).length;
+  const resolvedCount = incidents.length - activeCount;
+  const reviewCount = incidents.filter((item) => /critical|high/i.test(item.severity || '')).length;
 
   useEffect(() => {
-    if (!incident?.id) {
-      setAuditDetail(null);
-      return undefined;
-    }
+    if (!incident?.id) return undefined;
     let cancelled = false;
-    setAuditLoading(true);
+    Promise.resolve().then(() => {
+      if (!cancelled) setAuditLoading(true);
+    });
     getIncidentAuditDetail(incident.id)
       .then((response) => {
         if (!cancelled) setAuditDetail(response.data);
@@ -95,13 +100,33 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
 
   useEffect(() => {
     const assetId = activeIncident?.asset_id;
-    const window = incidentTelemetryWindow(activeIncident);
-    if (!assetId || !window) {
-      setReplayReadings([]);
-      return undefined;
-    }
+    if (!assetId) return undefined;
     let cancelled = false;
-    setReplayLoading(true);
+    const loadLive = () => {
+      getTelemetry(assetId, { limit: 120 })
+        .then((response) => {
+          if (!cancelled) setLiveAssetReadings(normalizeTelemetryReadings(response.data));
+        })
+        .catch(() => {
+          if (!cancelled) setLiveAssetReadings([]);
+        });
+    };
+    loadLive();
+    const timer = setInterval(loadLive, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeIncident?.asset_id]);
+
+  useEffect(() => {
+    const assetId = activeIncident?.asset_id;
+    const window = incidentTelemetryWindow(activeIncident);
+    if (!assetId || !window) return undefined;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) setReplayLoading(true);
+    });
     getTelemetry(assetId, { limit: 120, since: window.since, until: window.until })
       .then((response) => {
         if (!cancelled) setReplayReadings(normalizeTelemetryReadings(response.data));
@@ -113,6 +138,9 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
         if (!cancelled) setReplayLoading(false);
       });
     return () => { cancelled = true; };
+  // The selected incident fields are intentionally primitive dependencies;
+  // depending on the merged object would restart replay on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIncident?.id, activeIncident?.asset_id, activeIncident?.timestamp, activeIncident?.created_at, activeIncident?.resolved_at]);
 
   useEffect(() => {
@@ -122,9 +150,16 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
   }, [incident?.id]);
 
   const injectFault = useCallback(async (faultType) => {
+    const scopedAssets = Array.isArray(assets) ? assets : [];
+    const targetAsset = scopedAssets.find((asset) => asset.id === objectApi.selection.assetId)
+      || scopedAssets[0];
+    if (!targetAsset?.id) {
+      toast.error('No asset is available in the selected facility.');
+      return;
+    }
     setSimulating(true);
     try {
-      await triggerIncident(faultType);
+      await triggerIncident(faultType, targetAsset.id);
       toast.success('Simulator fault injected — refreshing incident queue');
       await refresh();
     } catch (error) {
@@ -133,14 +168,18 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
     } finally {
       setSimulating(false);
     }
-  }, [refresh]);
+  }, [assets, objectApi.selection.assetId, refresh]);
 
   if (!incident) {
     return (
       <Box className="twin-empty">
         <WarningAmberOutlined fontSize="large" />
         <Typography fontWeight={800}>No incident records in this view</Typography>
-        <Typography variant="body2">The live incident queue will populate when detection or operator escalation creates a case.</Typography>
+        <Typography variant="body2">
+          {simulation.automatic
+            ? `Automatic portfolio simulation is ${simulation.state || 'running'}. Scenarios rotate across facilities${simulation.next_facility ? `; next target: ${simulation.next_facility}` : ''}.`
+            : 'The live incident queue will populate when detection or operator escalation creates a case.'}
+        </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 2 }}>
           {SIMULATOR_FAULTS.map((fault) => (
             <Button
@@ -160,7 +199,10 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
 
   const confidence = confidencePercent(activeIncident);
   const risk = riskScore(activeIncident.severity);
-  const liveReadings = telemetry?.readings || [];
+  const globalReadings = Array.isArray(telemetry?.readings) && (!telemetry.asset_id || telemetry.asset_id === activeIncident?.asset_id)
+    ? telemetry.readings
+    : [];
+  const liveReadings = liveAssetReadings.length ? liveAssetReadings : globalReadings;
   const displayReadings = evidenceMode === 'replay' && replayReadings.length ? replayReadings : liveReadings;
   const auditTimeline = timelineFromAudit(activeIncident);
   const events = auditTimeline.length
@@ -200,6 +242,13 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
             </Button>
           ))}
         </Stack>
+      </Box>
+
+      <Box className="incident-os-kpis">
+        <Paper><span>Open cases</span><b>{activeCount}</b><small>Live field conditions</small></Paper>
+        <Paper><span>Priority review</span><b>{reviewCount}</b><small>High and critical severity</small></Paper>
+        <Paper><span>Resolved</span><b>{resolvedCount}</b><small>Telemetry returned to range</small></Paper>
+        <Paper><span>Automation</span><b>{simulation.automatic ? 'Running' : 'Manual'}</b><small>{simulation.next_facility || 'Selected facility scope'}</small></Paper>
       </Box>
 
       <Box className="incident-os-grid">
@@ -265,7 +314,7 @@ export function IncidentManagement({ incidents, telemetry, provenance = 'live' }
           <Box className="incident-summary-strip">
             <Box><Typography>Severity</Typography><b>{label(activeIncident.severity || 'Medium')}</b><ProvenanceBadge value={provenance} /></Box>
             <Box><Typography>Severity risk</Typography><b className="risk-text">{risk}/100</b><Typography variant="caption" color="text.secondary">Derived from severity</Typography></Box>
-            <Box><Typography>Impact</Typography><b>{activeIncident.impact || 'Production exposure'}</b></Box>
+            <Box><Typography>Impact</Typography><b>{activeIncident.impact || '—'}</b></Box>
             <Box><Typography>Confidence</Typography><b>{confidence != null ? `${confidence}%` : '—'}</b></Box>
           </Box>
           <Box className="incident-timeline">

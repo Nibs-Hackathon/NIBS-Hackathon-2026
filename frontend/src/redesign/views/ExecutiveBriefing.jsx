@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { ArticleOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
-import { exportReport, getReports, recordOperatorAction } from '../../api/client';
+import { exportReport, recordOperatorAction } from '../../api/client';
 import { downloadReportExport } from '../../api/downloadHelpers';
 import { DecisionRail } from '../../design-system/catalog/panels';
 import { ApprovalStamp, RATIONALE_MIN } from '../accountability';
 import { formatTime, round, Metric } from './shared';
 
-function timelineFromReport(report, approval) {
+function timelineFromReport(report, approval, decisionAt) {
+  if (Array.isArray(report.timeline) && report.timeline.length) {
+    const rows = report.timeline.filter((row) => row?.event && row?.when);
+    if (!approval.includes('Awaiting') && !rows.some((row) => row.event === 'Board decision') && decisionAt) {
+      rows.push({ event: 'Board decision', detail: approval, when: decisionAt });
+    }
+    return rows;
+  }
   const rows = [];
   const detected = report.created_at || report.started_at || report.timestamp;
   if (detected) rows.push({ event: 'Signal detected', detail: 'Case opened in the operating record', when: detected });
@@ -23,66 +30,101 @@ function timelineFromReport(report, approval) {
       when: report.completed_at || report.updated_at || detected,
     });
   }
-  if (!approval.includes('Awaiting') && report.id) {
-    rows.push({ event: 'Board decision', detail: approval, when: new Date().toISOString() });
+  if (!approval.includes('Awaiting') && report.id && decisionAt) {
+    rows.push({ event: 'Board decision', detail: approval, when: decisionAt });
   }
   return rows;
 }
 
+function executiveSummary(report) {
+  const raw = String(report?.executive_summary || report?.summary || '').trim();
+  if (!raw) return 'No executive summary has been published for this brief yet.';
+  const concise = raw.split(/\n\s*(?:Key Findings|Agent Analysis)\s*\n/i)[0].trim();
+  return concise.length > 850 ? `${concise.slice(0, 847).trim()}…` : concise;
+}
+
 /** Part 8 — Executive approval with persisted board decisions + export package. */
-export function ExecutiveBriefing({ reports }) {
+const BOARD_OPERATOR = 'Operator';
+const BOARD_LABELS = {
+  approved: 'Approved for publication',
+  deferred: 'Deferred pending revision',
+  escalated: 'Escalated to operating committee',
+};
+
+function matchingBoardAction(report, operatorActions) {
+  if (!report?.incident_id) return null;
+  return operatorActions
+    .filter((action) => (
+      action?.incident_id === report.incident_id
+      && ['board_approve', 'board_defer', 'board_escalate'].includes(action.action_type)
+      && (!action.payload?.report_id || String(action.payload.report_id) === String(report.id))
+    ))
+    .sort((a, b) => Date.parse(b.timestamp || 0) - Date.parse(a.timestamp || 0))[0] || null;
+}
+
+function formatCurrency(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount)
+    ? amount.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+    : '—';
+}
+
+function formatPercent(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount)
+    ? `${amount.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+    : '—';
+}
+
+export function ExecutiveBriefing({ reports, operatorActions = [] }) {
   const navigate = useNavigate();
   const objectApi = useObjectContext();
-  const sessionApprovals = objectApi.audit?.recentDecisions || [];
-  const [reportList, setReportList] = useState(reports);
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { setReportList(reports); }, [reports]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getReports()
-      .then((response) => {
-        if (cancelled) return;
-        const rows = Array.isArray(response.data) ? response.data : [];
-        if (rows.length) setReportList(rows);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  const safeReports = Array.isArray(reportList) ? reportList.filter(Boolean) : [];
+  const safeReports = Array.isArray(reports) ? reports.filter(Boolean) : [];
+  const orderedReports = [...safeReports].reverse();
   const [selectedId, setSelectedId] = useState(objectApi.selection.reportId);
   const [mode, setMode] = useState('brief');
-  const [approval, setApproval] = useState('Awaiting board approval');
   const [rationale, setRationale] = useState('');
-  const [decisionAt, setDecisionAt] = useState(null);
+  const [decisionOverrides, setDecisionOverrides] = useState({});
   const rationaleRef = useRef(null);
 
   const chooseReport = (id) => {
     setSelectedId(id);
     objectApi.setSelection({ reportId: id });
-    setApproval('Awaiting board approval');
-    setDecisionAt(null);
   };
 
-  const report = safeReports.find((item) => item.id === (selectedId || objectApi.selection.reportId)) || safeReports[0] || null;
+  const report = safeReports.find((item) => item.id === (selectedId || objectApi.selection.reportId)) || orderedReports[0] || null;
   const title = report?.title || report?.name || report?.incident_type || 'Operating brief';
   const confidenceRaw = report?.confidence;
   const confidence = confidenceRaw != null
     ? round(Number(confidenceRaw) <= 1 ? Number(confidenceRaw) * 100 : Number(confidenceRaw))
     : null;
 
-  const timeline = useMemo(
-    () => (report ? timelineFromReport(report, approval) : []),
-    [report, approval],
-  );
+  const persistedAction = matchingBoardAction(report, operatorActions);
+  const linkedOperatorActions = report?.incident_id
+    ? operatorActions.filter((action) => action?.incident_id === report.incident_id)
+    : [];
+  const decisionOverride = report?.id ? decisionOverrides[report.id] : null;
+  const persistedDecision = report?.board_decision || persistedAction?.decision;
+  const approval = decisionOverride?.status
+    || report?.board_status
+    || BOARD_LABELS[persistedDecision]
+    || 'Awaiting board approval';
+  const decisionAt = decisionOverride?.at
+    || report?.board_decision_at
+    || persistedAction?.timestamp
+    || null;
+  const decisionBy = decisionOverride?.operator
+    || report?.board_decision_by
+    || persistedAction?.operator
+    || null;
+  const timeline = report ? timelineFromReport(report, approval, decisionAt) : [];
 
   const boardDone = !approval.includes('Awaiting');
   const opsDone = Boolean(report?.completed_at || report?.summary || report?.executive_summary);
   const reliabilityDone = Boolean(report?.recommendation || report?.ai_recommendation || boardDone);
-
   const recordDecision = async (decision, statusLabel, actionType) => {
     if (!report?.id) {
       toast.error('Select a report before recording a board decision');
@@ -99,21 +141,30 @@ export function ExecutiveBriefing({ reports }) {
       const response = await recordOperatorAction({
         incident_id: report.incident_id || null,
         asset_id: report.asset_id || null,
+        report_id: report.id,
         action_type: actionType,
         decision,
         risk_level: report.severity || 'MEDIUM',
         note,
-        operator: 'Board chair',
+        operator: BOARD_OPERATOR,
       });
-      setApproval(statusLabel);
-      setDecisionAt(new Date().toISOString());
+      const recordedAt = response?.data?.recorded_at || new Date().toISOString();
+      setDecisionOverrides((current) => ({
+        ...current,
+        [report.id]: {
+          status: statusLabel,
+          decision,
+          at: recordedAt,
+          operator: BOARD_OPERATOR,
+        },
+      }));
       objectApi.pushAuditDecision({
-        id: response?.data?.id || `brief-${Date.now()}`,
+        id: response?.data?.id || `brief-${report.id}-${decision}`,
         decision,
         what: `${decision.replace(/_/g, ' ')} — ${title.slice(0, 40)}`,
-        who: 'Board chair',
-        operator: 'Board chair',
-        at: new Date().toISOString(),
+        who: BOARD_OPERATOR,
+        operator: BOARD_OPERATOR,
+        at: recordedAt,
         reportId: report.id,
         incidentId: report.incident_id,
         objectLabel: title,
@@ -186,27 +237,14 @@ export function ExecutiveBriefing({ reports }) {
         </Stack>
       </Box>
 
-      <Stack spacing={1} sx={{ mt: 1.5, mb: 2, maxWidth: 360 }}>
-        <ApprovalStamp
-          signatory={boardDone ? 'Board chair' : '—'}
-          timestamp={decisionAt ? new Date(decisionAt).toLocaleString() : null}
-          status={approval}
-        />
-        {sessionApprovals.slice(0, 3).map((entry) => (
-          <ApprovalStamp
-            key={entry.id}
-            signatory={entry.who || entry.operator}
-            timestamp={entry.at ? new Date(entry.at).toLocaleString() : null}
-            status={entry.decision || 'recorded'}
-          />
-        ))}
-      </Stack>
-
       <Box className="briefing-layout">
         <Paper className="briefing-index">
           <Typography className="product-kicker">BRIEFING PACK</Typography>
           <Typography className="briefing-index-title">Board view</Typography>
-          {safeReports.map((item, index) => (
+          <Typography variant="caption" color="text.secondary">
+            {safeReports.length} generated report{safeReports.length === 1 ? '' : 's'} · available archive
+          </Typography>
+          {orderedReports.map((item, index) => (
             <button
               type="button"
               key={item.id || index}
@@ -235,13 +273,17 @@ export function ExecutiveBriefing({ reports }) {
           </Box>
           <Typography className="briefing-document-title">Executive summary</Typography>
           <Typography className="briefing-lede">
-            {report.summary || report.executive_summary || 'No executive summary has been published for this brief yet.'}
+            {executiveSummary(report)}
           </Typography>
           <Box className="briefing-numbers">
-            <Metric label="Financial impact" value={report.financial_impact || '—'} provenance="live" />
-            <Metric label="Maintenance cost" value={report.maintenance_cost || '—'} provenance="live" />
-            <Metric label="Production impact" value={report.production_impact || '—'} provenance="live" />
-            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : '—'} provenance="live" />
+            <Metric
+              label="Modeled exposure"
+              value={formatCurrency(report.financial_impact)}
+              provenance={report.financial_impact != null ? 'estimated' : 'stale'}
+            />
+            <Metric label="Maintenance cost" value={formatCurrency(report.maintenance_cost)} provenance={report.maintenance_cost != null ? 'estimated' : 'stale'} />
+            <Metric label="Production impact" value={formatPercent(report.production_impact)} provenance={report.production_impact != null ? 'estimated' : 'stale'} />
+            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : '—'} provenance={confidence != null ? 'live' : 'stale'} />
           </Box>
           <Box className="briefing-section">
             <Typography className="product-kicker">INCIDENT REVIEW & ROOT CAUSE</Typography>
@@ -271,6 +313,11 @@ export function ExecutiveBriefing({ reports }) {
 
         <Paper className="briefing-rail">
           <Typography className="product-kicker">DECISION CONTROL</Typography>
+          <ApprovalStamp
+            signatory={boardDone ? (decisionBy || BOARD_OPERATOR) : '—'}
+            timestamp={decisionAt ? new Date(decisionAt).toLocaleString() : null}
+            status={approval}
+          />
           <Box className="briefing-confidence">
             <Typography>AI confidence</Typography>
             <b>{confidence != null ? `${confidence}%` : '—'}</b>
@@ -280,7 +327,7 @@ export function ExecutiveBriefing({ reports }) {
             <Typography className="product-kicker">EVIDENCE & ATTACHMENTS</Typography>
             <Typography><ArticleOutlined />Incident linkage<b>{report.incident_id ? 'linked' : 'none'}</b></Typography>
             <Typography><ArticleOutlined />Agent results<b>{report.agent_results ?? report.agents?.length ?? '—'}</b></Typography>
-            <Typography><ArticleOutlined />Operator actions<b>{report.operator_actions ?? 0}</b></Typography>
+            <Typography><ArticleOutlined />Operator actions<b>{Math.max(Number(report.operator_actions) || 0, linkedOperatorActions.length)}</b></Typography>
             <Typography><ArticleOutlined />Source<b>{report.source || 'operations'}</b></Typography>
           </Box>
           <Box className="briefing-approvals">
@@ -290,8 +337,8 @@ export function ExecutiveBriefing({ reports }) {
             <Typography><i className={boardDone ? 'done' : ''} />Board approval <b>{boardDone ? 'recorded' : 'pending'}</b></Typography>
           </Box>
           <DecisionRail
-            className="e5-decision-bar"
-            recommendation={report.recommendation || report.ai_recommendation || 'Approve publication of this operating brief.'}
+            className="briefing-decision"
+            recommendation={report.recommendation || report.ai_recommendation || 'No board recommendation published yet.'}
             rationale={rationale}
             onRationaleChange={setRationale}
             minRationale={RATIONALE_MIN}

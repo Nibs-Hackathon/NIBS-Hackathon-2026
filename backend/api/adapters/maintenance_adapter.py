@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+import hashlib
 import sys
 from typing import Any
 
@@ -15,6 +16,38 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # ✅ FIXED - Use runtime proxy
 from services.runtime import runtime
+
+
+def _notify_work_order(action_id: str, title: str, status: str, asset_id: str | None = None) -> None:
+    """Publish work-order state changes into the operator inbox."""
+    try:
+        from uuid import uuid4
+        from services.notification_service import (
+            Notification,
+            NotificationSeverity,
+            NotificationType,
+            notification_service,
+        )
+
+        severity = (
+            NotificationSeverity.WARNING
+            if status == "pending_approval"
+            else NotificationSeverity.SUCCESS
+            if status in {"approved", "completed"}
+            else NotificationSeverity.INFO
+        )
+        notification_service.add_notification(Notification(
+            id=str(uuid4()),
+            type=NotificationType.MAINTENANCE_SCHEDULED,
+            severity=severity,
+            title=f"Work order {status.replace('_', ' ')}",
+            message=title,
+            asset_id=asset_id,
+            metadata={"work_order_id": action_id, "status": status},
+            human_approval_required=status == "pending_approval",
+        ))
+    except Exception:
+        return
 
 
 def _result_index() -> dict[tuple[str, str], Any]:
@@ -77,6 +110,7 @@ def get_maintenance_plan() -> dict:
     results = _result_index()
     rows = []
     seen_work = set()
+    work_index = {}
     for task in kernel.state.get_tasks():
         # Sensor, safety, and knowledge tasks are evidence collection—not work
         # orders. The maintenance board should show only planned field work.
@@ -95,20 +129,35 @@ def get_maintenance_plan() -> dict:
             if key in seen_work:
                 continue
             seen_work.add(key)
+            task_id = getattr(task, "id", None) or getattr(task, "task_id", None)
+            if task_id:
+                stable_id = f"plan-{task_id}"
+            else:
+                stable_id = "plan-" + hashlib.md5(f"{asset_name}:{work_order}".encode()).hexdigest()[:12]
+            meta = getattr(result, "metadata", {}) or {}
             rows.append(
                 {
+                    "id": stable_id,
                     "Priority": priority,
                     "Asset": asset_name,
+                    "asset_id": getattr(asset, "id", None),
+                    "incident_id": meta.get("incident_id"),
                     "Refinery": getattr(asset, "location", "Unassigned"),
                     "Work order": work_order,
+                    "title": work_order,
                     "Owner": "RigOS Maintenance Planner",
                     "Service provider": _service_provider(getattr(getattr(asset, "asset_type", None), "value", "")),
                     "Scheduled date": _scheduled_date(priority),
-                    "Estimated downtime": (getattr(result, "metadata", {}) or {}).get("downtime") or {"P1": "6 hours", "P2": "3 hours", "P3": "1 hour"}.get(priority, "To be assessed"),
-                    "State": "Scheduled" if result and result.success else "Planning failed",
+                    "Estimated downtime": meta.get("downtime") or "To be assessed",
+                    # A successful MAO plan is ready for operator approval; it
+                    # is not scheduled field work until that approval persists.
+                    "State": "Ready" if result and result.success else "Backlog",
+                    "status": "Ready" if result and result.success else "Backlog",
                     "Confidence": f"{round(result.confidence * 100)}%" if result else "Not available",
+                    "source": "mao_plan",
                 }
             )
+            work_index[key] = len(rows) - 1
 
     maintenance_results = [
         result for result in kernel.state.agent_results if result.agent_name == "maintenance"
@@ -132,9 +181,13 @@ def get_maintenance_plan() -> dict:
     for row in persisted:
         key = (row.get("Asset"), row.get("Work order"))
         if key in seen_work:
+            # The persisted operator record is authoritative over its original
+            # AI proposal, especially after approval changes the status.
+            rows[work_index[key]] = {**rows[work_index[key]], **row}
             continue
         seen_work.add(key)
         rows.append(row)
+        work_index[key] = len(rows) - 1
         owners[row.get("Owner") or "Operator"] += 1
 
     return {
@@ -249,8 +302,10 @@ def create_work_order(
         )
         session.add(action)
         session.commit()
+        _notify_work_order(action.id, title, action.status, asset_id)
         return {
             "id": action.id,
+            "incident_id": incident_id,
             "asset_id": asset_id,
             "title": title,
             "priority": priority,
@@ -287,11 +342,92 @@ def approve_work_order(work_order_id: str, *, operator: str = "Maintenance lead"
         action.requires_human_approval = False
         session.add(action)
         session.commit()
+        _notify_work_order(
+            action.id,
+            payload.get("title") or "Maintenance work order",
+            action.status,
+            action.asset_id,
+        )
         return {
             "id": action.id,
             "status": action.status,
             "approved_by": operator,
             "message": "Work order approved. No industrial command was executed.",
+        }
+    finally:
+        session.close()
+
+
+def transition_work_order(
+    work_order_id: str,
+    *,
+    status: str,
+    operator: str = "Maintenance lead",
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Advance an approved work order through its auditable field-work lifecycle."""
+    from datetime import datetime
+    from database.connection import get_session
+    from database.models import ActionDB
+
+    requested = str(status or "").strip().lower().replace(" ", "_")
+    allowed = {"approved": {"in_progress"}, "in_progress": {"completed"}}
+    session = get_session()
+    try:
+        action = session.query(ActionDB).filter(ActionDB.id == work_order_id).first()
+        if action is None:
+            raise LookupError(f"Work order {work_order_id} not found")
+        if action.action_type not in {"work_order", "work_order_create"}:
+            raise ValueError("Action is not a work order")
+        current = str(action.status or "").lower().replace(" ", "_")
+        if requested not in allowed.get(current, set()):
+            raise ValueError(f"Work order cannot move from {current or 'unknown'} to {requested}")
+        payload = dict(action.payload or {})
+        history = list(payload.get("status_history") or [])
+        history.append({
+            "from": current,
+            "to": requested,
+            "operator": operator,
+            "note": note,
+            "at": datetime.utcnow().isoformat(),
+        })
+        payload["status_history"] = history
+        action.payload = payload
+        action.status = requested
+        action.approved_by = action.approved_by or operator
+        action.executed_at = datetime.utcnow()
+        session.add(action)
+        session.commit()
+        incident_resolution = {
+            "resolved": False,
+            "incident_id": action.incident_id,
+            "reason": "Work remains open or no matching active simulator incident exists",
+        }
+        if requested == "completed" and action.asset_id:
+            simulator = getattr(runtime, "active_simulator", None)
+            if simulator is not None:
+                incident_resolution = simulator.complete_field_work(
+                    action.asset_id,
+                    incident_id=action.incident_id,
+                )
+        _notify_work_order(
+            action.id,
+            payload.get("title") or "Maintenance work order",
+            requested,
+            action.asset_id,
+        )
+        return {
+            "id": action.id,
+            "status": requested,
+            "operator": operator,
+            "incident_resolution": incident_resolution,
+            "message": (
+                "Work order completed, linked simulator incident resolved, and audit trail updated."
+                if requested == "completed" and incident_resolution.get("resolved")
+                else "Work order completed and recorded in the audit trail."
+                if requested == "completed"
+                else "Work order marked in progress. No industrial command was executed."
+            ),
         }
     finally:
         session.close()
