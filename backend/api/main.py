@@ -1,0 +1,806 @@
+"""FastAPI backend for RigOS."""
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from starlette.websockets import WebSocketState
+import sys
+from pathlib import Path
+import asyncio
+from datetime import datetime
+from uuid import uuid4
+import os
+
+# Add parent directory to path
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_ROOT))
+
+print(f"Backend root: {BACKEND_ROOT}")
+
+# ============================================
+# FORCE LOAD REAL SERVICES
+# ============================================
+
+REAL_SERVICES_AVAILABLE = False
+backend_api = None
+notification_service = None
+runtime = None
+
+try:
+    print("🔄 Loading real services...")
+    
+    # Force import of services
+    from services.runtime import runtime as _runtime
+    runtime = _runtime
+    print("✅ runtime loaded")
+    
+    from services.notification_service import notification_service as _notification
+    notification_service = _notification
+    print("✅ notification_service loaded")
+    
+    # Import adapters
+    from api.adapters.backend_api_new import api as _backend_api
+    backend_api = _backend_api
+    print("✅ backend_api loaded")
+    
+    REAL_SERVICES_AVAILABLE = True
+    print(f"✅ Real services loaded successfully!")
+    print(f"✅ Assets available: {len(runtime.kernel.asset_service.all_assets())}")
+    
+except Exception as e:
+    print(f"⚠️ Real services failed to load: {e}")
+    import traceback
+    traceback.print_exc()
+    
+    # Create mock fallbacks
+    class MockRuntime:
+        class MockKernel:
+            class MockAssetService:
+                def all_assets(self):
+                    return []
+            asset_service = MockAssetService()
+            state = None
+            event_store = None
+            registry = None
+            _simulation_running = False
+        kernel = MockKernel()
+    runtime = MockRuntime()
+    
+    class MockNotificationService:
+        def get_notifications(self, limit=5, unread_only=True):
+            return []
+    notification_service = MockNotificationService()
+    
+    class MockBackendAPI:
+        def get_assets(self):
+            return []
+        def get_incidents(self):
+            return []
+        def get_asset_telemetry(self, asset_id, limit):
+            return []
+        def trigger_incident(self, incident_type):
+            return {"id": "mock-1", "type": incident_type, "status": "triggered"}
+    backend_api = MockBackendAPI()
+
+app = FastAPI(title="RigOS API", version="1.0.0")
+
+
+class AssistantQuery(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    asset_id: str | None = None
+    incident_id: str | None = None
+    facility: str | None = None
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+
+
+class OperatorActionRequest(BaseModel):
+    """Human decision recorded against an incident or AI recommendation."""
+
+    incident_id: str | None = None
+    asset_id: str | None = None
+    report_id: str | None = None
+    action_type: str = Field(min_length=2, max_length=80)
+    decision: str = Field(pattern="^(approved|rejected|escalated|evidence_requested|deferred)$")
+    operator: str = Field(default="Chief Operator", min_length=2, max_length=120)
+    risk_level: str = Field(default="MEDIUM", max_length=30)
+    note: str = Field(min_length=20, max_length=2000)
+
+
+class WorkOrderCreateRequest(BaseModel):
+    asset_id: str | None = None
+    incident_id: str | None = None
+    title: str = Field(min_length=3, max_length=240)
+    priority: str = Field(default="P2", max_length=10)
+    owner: str = Field(default="Control operator", min_length=2, max_length=120)
+    downtime: str | None = None
+    estimated_cost: float | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class WorkOrderApproveRequest(BaseModel):
+    operator: str = Field(default="Maintenance lead", min_length=2, max_length=120)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class WorkOrderTransitionRequest(BaseModel):
+    status: str = Field(pattern="^(in_progress|completed)$")
+    operator: str = Field(default="Maintenance lead", min_length=2, max_length=120)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AssetNoteRequest(BaseModel):
+    note: str = Field(default="", max_length=8000)
+    operator: str = Field(default="Control operator", min_length=2, max_length=120)
+
+
+class NotificationReadRequest(BaseModel):
+    notification_ids: list[str] = Field(default_factory=list)
+    mark_all: bool = False
+
+
+def require_operational_services() -> None:
+    """Avoid presenting unavailable services as healthy operational data."""
+    if not REAL_SERVICES_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "RUNTIME_UNAVAILABLE",
+                "message": "RigOS operational services did not start. Check deployment logs and database configuration.",
+            },
+        )
+
+# CORS: local development plus Vercel production and preview deployments.
+# Set CORS_ORIGINS to a comma-separated allow-list for a custom frontend domain.
+_configured_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+_default_origins = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[*_default_origins, *_configured_origins],
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https://([a-z0-9-]+\.)?vercel\.app"),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ============================================
+# API ENDPOINTS
+# ============================================
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "ok" if REAL_SERVICES_AVAILABLE else "degraded",
+        "message": "RigOS API is running",
+        "real_services": REAL_SERVICES_AVAILABLE,
+        "assets_count": len(backend_api.get_assets()) if REAL_SERVICES_AVAILABLE else 0,
+        "operational_data_available": REAL_SERVICES_AVAILABLE,
+    }
+
+
+@app.get(
+    "/api/metadata",
+    tags=["Platform metadata"],
+    summary="Describe the live RigOS capability contract",
+)
+async def platform_metadata():
+    """Small, UI-consumable documentation payload for environments and demos."""
+    knowledge_files = list((BACKEND_ROOT / "knowledge_docs").glob("*.md"))
+    return {
+        "product": "RigOS",
+        "api_version": "1.1.0",
+        "capabilities": {
+            "multi_agent_investigation": True,
+            "automatic_portfolio_simulation": True,
+            "rag_assistant": True,
+            "websocket_updates": True,
+            "persistent_operator_actions": True,
+            "mandatory_decision_rationale": True,
+            "modelled_production_value": True,
+        },
+        "contracts": {
+            "operations_live": "/api/operations/live",
+            "assistant": "/api/assistant/query",
+            "knowledge_search": "/api/knowledge/search",
+            "knowledge_documents": "/api/knowledge/documents",
+            "operator_action": "/api/operator-actions",
+            "database_health": "/api/health/database",
+        },
+        "notes": {
+            "revenue_projection": "Modelled production value based on current asset availability and health; not booked revenue.",
+            "operator_actions": "Decisions are persisted to the existing actions table when PostgreSQL is available.",
+            "knowledge_corpus": f"{len(knowledge_files)} checked-in refinery references with local retrieval fallback.",
+        },
+    }
+
+
+@app.post(
+    "/api/operator-actions",
+    tags=["Operator decisions"],
+    summary="Persist an operator approval, rejection, escalation, or evidence request",
+)
+async def record_operator_action(payload: OperatorActionRequest):
+    """Use the existing ActionDB audit table; never execute industrial equipment here."""
+    try:
+        from database.connection import get_session
+        from database.models import ActionDB
+
+        session = get_session()
+        try:
+            status = "approved" if payload.decision == "approved" else payload.decision
+            action = ActionDB(
+                id=str(uuid4()),
+                incident_id=payload.incident_id,
+                asset_id=payload.asset_id,
+                action_type=payload.action_type,
+                payload={
+                    "decision": payload.decision,
+                    "note": payload.note,
+                    "report_id": payload.report_id,
+                },
+                risk_level=payload.risk_level.upper(),
+                status=status,
+                requires_human_approval=payload.decision in {"deferred", "evidence_requested"},
+                requested_by="MAO",
+                approved_by=payload.operator if payload.decision == "approved" else None,
+                executed_at=datetime.utcnow() if payload.decision == "approved" else None,
+            )
+            session.add(action)
+            session.commit()
+            try:
+                from api.adapters.operations_adapter import invalidate_execution_report_cache
+                invalidate_execution_report_cache()
+            except Exception:
+                pass
+            return {
+                "id": action.id,
+                "status": action.status,
+                "decision": payload.decision,
+                "recorded_at": action.created_at.isoformat() if action.created_at else None,
+                "message": "Operator decision recorded. No industrial command was executed.",
+            }
+        finally:
+            session.close()
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPERATOR_ACTION_STORAGE_UNAVAILABLE",
+                "message": "The operator decision could not be persisted. Check PostgreSQL connectivity.",
+                "error_type": type(error).__name__,
+            },
+        ) from error
+
+@app.get("/api/operator-actions")
+async def list_operator_actions(
+    limit: int = 50,
+    incident_id: str | None = None,
+    asset_id: str | None = None,
+):
+    """List persisted operator decisions for audit spine and incident detail."""
+    try:
+        from api.adapters.operations_adapter import get_operator_actions
+        return get_operator_actions(
+            limit=max(1, min(limit, 200)),
+            incident_id=incident_id,
+            asset_id=asset_id,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPERATOR_ACTIONS_UNAVAILABLE",
+                "message": "Operator actions could not be loaded.",
+                "error_type": type(error).__name__,
+            },
+        ) from error
+
+@app.get("/api/assets")
+async def get_assets():
+    require_operational_services()
+    try:
+        require_operational_services()
+        return backend_api.get_assets()
+    except Exception as e:
+        print(f"⚠️ Error fetching assets: {e}")
+        return []
+
+
+@app.get("/api/assets/{asset_id}")
+async def get_asset_detail(asset_id: str):
+    """Asset object inspector detail — identity, health, and recent signals."""
+    require_operational_services()
+    try:
+        from api.adapters.health_adapter import get_asset_health
+        detail = get_asset_health(asset_id)
+        if not detail.get("data_available") and detail.get("message"):
+            raise HTTPException(status_code=404, detail={"code": "ASSET_NOT_FOUND", "message": detail["message"]})
+        return detail
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ Error fetching asset detail: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ASSET_DETAIL_UNAVAILABLE", "message": "Asset health detail could not be loaded."},
+        ) from e
+
+
+@app.get("/api/assets/{asset_id}/notes")
+async def get_asset_notes(asset_id: str):
+    require_operational_services()
+    try:
+        from api.adapters.asset_notes_adapter import list_asset_notes
+        return list_asset_notes(asset_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ASSET_NOTES_UNAVAILABLE", "message": "Asset notes could not be loaded. Check PostgreSQL connectivity."},
+        ) from e
+
+
+@app.post("/api/assets/{asset_id}/notes")
+async def save_asset_note(asset_id: str, payload: AssetNoteRequest):
+    require_operational_services()
+    try:
+        from api.adapters.asset_notes_adapter import upsert_asset_note
+        return upsert_asset_note(asset_id, payload.note, payload.operator)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ASSET_NOTES_UNAVAILABLE", "message": "Asset note could not be persisted. Check PostgreSQL connectivity."},
+        ) from e
+
+
+@app.get("/api/incidents")
+async def get_incidents():
+    require_operational_services()
+    try:
+        require_operational_services()
+        return backend_api.get_incidents()
+    except Exception as e:
+        print(f"⚠️ Error fetching incidents: {e}")
+        return []
+
+@app.post("/api/incidents/{incident_type}")
+async def trigger_incident(incident_type: str, asset_id: str | None = None):
+    require_operational_services()
+    try:
+        require_operational_services()
+        result = backend_api.trigger_incident(incident_type, asset_id=asset_id)
+        from api.adapters.operations_adapter import invalidate_operations_snapshot
+        invalidate_operations_snapshot()
+        return result
+    except Exception as e:
+        print(f"⚠️ Error triggering incident: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/telemetry/{asset_id}")
+async def get_telemetry(asset_id: str, limit: int = 30, since: str | None = None, until: str | None = None):
+    require_operational_services()
+    try:
+        require_operational_services()
+        return backend_api.get_asset_telemetry(asset_id, limit, since=since, until=until)
+    except Exception as e:
+        print(f"⚠️ Error fetching telemetry: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "TELEMETRY_UNAVAILABLE", "message": "No verified telemetry is available for this asset."},
+        ) from e
+
+@app.get("/api/predictions/{asset_id}")
+async def get_prediction(asset_id: str, horizon: int = 14, stress: float = 0.0):
+    require_operational_services()
+    try:
+        require_operational_services()
+        from api.adapters.health_prediction_adapter import get_health_prediction
+        return get_health_prediction(asset_id, horizon, stress=stress)
+    except Exception as e:
+        print(f"⚠️ Error fetching prediction: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "PREDICTION_UNAVAILABLE", "message": "A verified health forecast could not be calculated."},
+        ) from e
+
+@app.get("/api/dashboard")
+async def get_dashboard():
+    require_operational_services()
+    try:
+        require_operational_services()
+        from api.adapters.dashboard_adapter import get_dashboard
+        return get_dashboard()
+    except Exception as e:
+        print(f"⚠️ Error fetching dashboard: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "DASHBOARD_UNAVAILABLE", "message": "The current operational summary could not be calculated."},
+        ) from e
+
+
+@app.get("/api/operations/live")
+async def get_operations_live():
+    """Aggregated Operations Center snapshot; existing page APIs remain unchanged."""
+    require_operational_services()
+    try:
+        require_operational_services()
+        from api.adapters.operations_adapter import get_operations_live as operations_live
+        return await run_in_threadpool(operations_live)
+    except Exception as e:
+        print(f"⚠️ Error fetching operations snapshot: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "OPERATIONS_SNAPSHOT_UNAVAILABLE", "message": "RigOS could not assemble a verified live operations snapshot."},
+        ) from e
+
+
+@app.post("/api/notifications/read")
+async def mark_notifications_read(request: NotificationReadRequest):
+    """Persist operator inbox read state for the current runtime."""
+    if request.mark_all:
+        notification_service.mark_all_read()
+    else:
+        for notification_id in request.notification_ids:
+            notification_service.mark_read(notification_id)
+    return {"unread_count": notification_service.get_unread_count()}
+
+
+@app.get("/api/incidents/audit")
+async def get_incident_audit(limit: int = 100):
+    try:
+        from api.adapters.operations_adapter import get_incident_audit as incident_audit
+        return incident_audit(limit=max(1, min(limit, 500)))
+    except Exception as e:
+        print(f"⚠️ Error fetching incident audit: {e}")
+        return []
+
+
+@app.get("/api/incidents/audit/{incident_id}")
+async def get_incident_audit_detail(incident_id: str):
+    from fastapi import HTTPException
+    try:
+        from api.adapters.operations_adapter import get_incident_audit_detail as incident_detail
+        audit = incident_detail(incident_id)
+        if audit is None:
+            raise HTTPException(status_code=404, detail="Incident audit record not found")
+        return audit
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ Error fetching incident audit detail: {e}")
+        raise HTTPException(status_code=500, detail="Unable to load incident audit record") from e
+
+
+@app.post("/api/assistant/query")
+async def query_assistant(payload: AssistantQuery):
+    """Route the global assistant through the existing Knowledge Agent/RAG path."""
+    try:
+        from api.adapters.knowledge_agent_adapter import ask_knowledge_agent
+        answer = await run_in_threadpool(
+            ask_knowledge_agent,
+            payload.question,
+            None,
+            payload.asset_id,
+            payload.incident_id,
+            payload.facility,
+            payload.history,
+        )
+        return {"answer": answer}
+    except Exception as e:
+        print(f"⚠️ Assistant query failed: {e}")
+        return {"answer": "RigOS Assistant is temporarily unavailable. Please try again shortly.", "degraded": True}
+
+
+@app.get("/api/knowledge/search")
+async def knowledge_search(q: str = ""):
+    """Retrieve knowledge-base snippets for investigation / asset knowledge panels."""
+    try:
+        from api.adapters.knowledge_adapter import KnowledgeSearchError, search_knowledge
+        return {"query": q, "results": search_knowledge(q)}
+    except KnowledgeSearchError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "KNOWLEDGE_UNAVAILABLE", "message": str(e)[:240]},
+        ) from e
+    except Exception as e:
+        print(f"⚠️ Error searching knowledge: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "KNOWLEDGE_UNAVAILABLE", "message": "Knowledge search is unavailable."},
+        ) from e
+
+
+@app.get("/api/knowledge/documents")
+async def knowledge_documents():
+    """List the checked-in refinery corpus without requiring operational services."""
+    try:
+        from api.adapters.knowledge_adapter import list_knowledge_documents
+
+        documents = list_knowledge_documents()
+        return {
+            "count": len(documents),
+            "source": "local_refinery_corpus",
+            "documents": documents,
+            "retrieval": {
+                "local": "always available",
+                "postgres_pgvector": "used when configured, reachable, and populated",
+                "gemini": "used for answer synthesis when configured",
+            },
+        }
+    except Exception as e:
+        print(f"Error listing knowledge documents: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "KNOWLEDGE_CATALOG_ERROR", "message": "Knowledge catalog could not be loaded."},
+        ) from e
+
+
+@app.get("/api/health/database")
+async def database_health():
+    """Diagnose database reachability without exposing the configured DSN."""
+    try:
+        from sqlalchemy import text
+        from database.connection import engine
+
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as error:
+        return {
+            "status": "unhealthy",
+            "database": "unavailable",
+            "error_type": type(error).__name__,
+            "message": str(error).split("\n", 1)[0][:300],
+        }
+
+# ============================================
+# WEBSOCKET
+# ============================================
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        dead = []
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                dead.append(connection)
+        for connection in dead:
+            self.disconnect(connection)
+
+manager = ConnectionManager()
+WEBSOCKET_SNAPSHOT_SECONDS = max(
+    2.0,
+    float(os.getenv("RIGOS_WEBSOCKET_SNAPSHOT_SECONDS", "5")),
+)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """Push shared operations snapshots on a bounded interval.
+
+    Must also await receive() — a send-only loop never notices the browser
+    drop (refresh / Vite HMR / React Strict Mode). asyncio then keeps writing
+    to a dead transport and logs 'socket.send() raised exception.'
+    """
+    await manager.connect(websocket)
+
+    async def _client_still_connected() -> bool:
+        return websocket.client_state == WebSocketState.CONNECTED
+
+    async def _wait_interval_or_disconnect(seconds: float = WEBSOCKET_SNAPSHOT_SECONDS) -> bool:
+        """Return False when the client disconnected."""
+        try:
+            message = await asyncio.wait_for(websocket.receive(), timeout=seconds)
+        except asyncio.TimeoutError:
+            return await _client_still_connected()
+        except WebSocketDisconnect:
+            return False
+        if message.get("type") == "websocket.disconnect":
+            return False
+        return await _client_still_connected()
+
+    try:
+        while await _client_still_connected():
+            try:
+                from api.adapters.operations_adapter import get_operations_live as operations_live
+                snapshot = await run_in_threadpool(operations_live)
+                if not await _client_still_connected():
+                    break
+                await websocket.send_json({
+                    "type": "update",
+                    "data": snapshot,
+                })
+            except WebSocketDisconnect:
+                break
+            except (RuntimeError, OSError):
+                break
+            except Exception as exc:
+                print(f"WebSocket update error: {exc}")
+                break
+
+            if not await _wait_interval_or_disconnect():
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)
+
+@app.on_event("startup")
+async def startup_event():
+    """Report readiness without blocking the HTTP/WebSocket server."""
+    print("=" * 50)
+    print("RigOS API startup")
+    print(f"Real services available: {REAL_SERVICES_AVAILABLE}")
+    # Do not synchronously query external services or alter database schema here.
+    # Either can wait indefinitely when a local database is unavailable, leaving
+    # Uvicorn listening on the port but unable to answer HTTP or WebSocket calls.
+    print("HTTP and WebSocket transport ready")
+    print("=" * 50)
+
+# ============================================
+# AGENT ROUTES
+# ============================================
+
+@app.get("/api/agents")
+async def get_agents():
+    try:
+        from api.adapters.agent_adapter import get_agents as agents
+        return agents()
+    except Exception as e:
+        print(f"⚠️ Error fetching agents: {e}")
+        return []
+
+@app.get("/api/agent-metrics")
+async def get_agent_metrics():
+    try:
+        from api.adapters.agent_adapter import get_agent_metrics as metrics
+        return metrics()
+    except Exception as e:
+        print(f"⚠️ Error fetching agent metrics: {e}")
+        return []
+
+@app.get("/api/agent-activity")
+async def get_agent_activity():
+    try:
+        from api.adapters.agent_activity_adapter import get_agent_activity as activity
+        return activity()
+    except Exception as e:
+        print(f"⚠️ Error fetching agent activity: {e}")
+        return []
+
+# ============================================
+# MAINTENANCE ROUTES
+# ============================================
+
+@app.get("/api/maintenance")
+async def get_maintenance():
+    try:
+        from api.adapters.maintenance_adapter import get_maintenance_plan as plan
+        return plan()
+    except Exception as e:
+        print(f"⚠️ Error fetching maintenance plan: {e}")
+        return {"tasks": []}
+
+
+@app.post("/api/maintenance/work-orders")
+async def create_maintenance_work_order(payload: WorkOrderCreateRequest):
+    require_operational_services()
+    try:
+        from api.adapters.maintenance_adapter import create_work_order
+        return create_work_order(
+            asset_id=payload.asset_id,
+            incident_id=payload.incident_id,
+            title=payload.title,
+            priority=payload.priority,
+            owner=payload.owner,
+            downtime=payload.downtime,
+            estimated_cost=payload.estimated_cost,
+            note=payload.note,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "WORK_ORDER_STORAGE_UNAVAILABLE",
+                "message": "Work order could not be persisted. Check PostgreSQL connectivity.",
+                "error_type": type(e).__name__,
+            },
+        ) from e
+
+
+@app.post("/api/maintenance/work-orders/{work_order_id}/approve")
+async def approve_maintenance_work_order(work_order_id: str, payload: WorkOrderApproveRequest):
+    require_operational_services()
+    try:
+        from api.adapters.maintenance_adapter import approve_work_order
+        return approve_work_order(work_order_id, operator=payload.operator, note=payload.note)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail={"code": "WORK_ORDER_NOT_FOUND", "message": str(e)}) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_WORK_ORDER", "message": str(e)}) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "WORK_ORDER_STORAGE_UNAVAILABLE",
+                "message": "Work order approval could not be persisted.",
+                "error_type": type(e).__name__,
+            },
+        ) from e
+
+
+@app.post("/api/maintenance/work-orders/{work_order_id}/status")
+async def transition_maintenance_work_order(work_order_id: str, payload: WorkOrderTransitionRequest):
+    require_operational_services()
+    try:
+        from api.adapters.maintenance_adapter import transition_work_order
+        return transition_work_order(
+            work_order_id,
+            status=payload.status,
+            operator=payload.operator,
+            note=payload.note,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail={"code": "WORK_ORDER_NOT_FOUND", "message": str(e)}) from e
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail={"code": "INVALID_WORK_ORDER_TRANSITION", "message": str(e)}) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "WORK_ORDER_STORAGE_UNAVAILABLE", "message": "Work order status could not be persisted."},
+        ) from e
+
+# ============================================
+# REPORTS ROUTES
+# ============================================
+
+@app.get("/api/reports")
+async def get_reports():
+    try:
+        from api.adapters.operations_adapter import get_execution_reports
+        return get_execution_reports()
+    except Exception as e:
+        print(f"⚠️ Error fetching reports: {e}")
+        return []
+
+
+@app.get("/api/reports/{report_id}/export")
+async def export_report(report_id: str, format: str = "markdown"):
+    """Honest export package (markdown/JSON). True PDF rendering is deferred."""
+    try:
+        from api.adapters.operations_adapter import get_execution_report_export
+        return get_execution_report_export(report_id, fmt=format)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail={"code": "REPORT_NOT_FOUND", "message": str(e)}) from e
+    except Exception as e:
+        print(f"⚠️ Error exporting report: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "REPORT_EXPORT_UNAVAILABLE", "message": "Report export package could not be built."},
+        ) from e
+
+# ============================================
+# DIGITAL TWIN ROUTES
+# ============================================
+
+@app.get("/api/twin-assets")
+async def get_twin_assets():
+    try:
+        from api.adapters.digital_twin_adapter import get_twin_assets as twin
+        return twin()
+    except Exception as e:
+        print(f"⚠️ Error fetching twin assets: {e}")
+        return []
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

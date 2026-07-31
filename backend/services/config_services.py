@@ -1,0 +1,209 @@
+"""Optimized Gemini-powered dynamic configuration service with precomputation."""
+
+import json
+import re
+import time
+from typing import Any, Dict, List, Optional
+from functools import lru_cache
+from services.llm import LLMManager
+from services.local_mode import local_demo_mode
+
+
+class ConfigService:
+    """Generate and cache operational configurations using Gemini."""
+
+    _instance = None
+    _cache: Dict[str, Any] = {}
+    _precomputed: Dict[str, Any] = {}
+    _precomputed_done = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        self.llm = None if local_demo_mode() else LLMManager()
+        if not ConfigService._precomputed_done:
+            self._precompute_defaults()
+            ConfigService._precomputed_done = True
+
+    def _precompute_defaults(self):
+        """Precompute common configurations for all asset types."""
+        asset_types = ["Pump", "Compressor", "Tank", "Valve", "Pipeline", "Heat Exchanger", "Reactor", "Boiler", "Turbine"]
+        
+        for asset_type in asset_types:
+            cache_key = f"thresholds_{asset_type}_default"
+            if cache_key not in self._precomputed:
+                if local_demo_mode():
+                    self._precomputed[cache_key] = self._get_default_thresholds(asset_type)
+                else:
+                    try:
+                        self._precomputed[cache_key] = self._generate_thresholds(asset_type)
+                    except Exception:
+                        self._precomputed[cache_key] = self._get_default_thresholds(asset_type)
+        
+        print(f"✅ Precomputed thresholds for {len(asset_types)} asset types")
+
+    @lru_cache(maxsize=128)
+    def _generate_thresholds(self, asset_type: str) -> Dict[str, float]:
+        """Generate thresholds with caching."""
+        prompt = f"""
+You are an industrial operations configuration expert.
+
+Generate operational thresholds for a {asset_type} asset.
+
+Return ONLY a JSON object with these fields:
+- pressure_max: float (maximum safe pressure in PSI)
+- temperature_max: float (maximum safe temperature in °C)
+- gas_max: float (maximum safe gas concentration in ppm)
+- vibration_max: float (maximum safe vibration in mm/s)
+- flow_min: float (minimum safe flow rate in L/min)
+
+Use realistic values for {asset_type} equipment.
+Respond with ONLY valid JSON, no other text.
+"""
+        try:
+            response = self.llm.generate(prompt, use_cache=True)
+            return self._parse_json(response)
+        except Exception as e:
+            print(f"⚠️ Gemini config generation failed: {e}")
+            return self._get_default_thresholds(asset_type)
+
+    def _parse_json(self, response: str) -> Dict:
+        """Extract JSON from Gemini response."""
+        start = response.find('{')
+        end = response.rfind('}') + 1
+        if start >= 0 and end > start:
+            json_str = response[start:end]
+            json_str = re.sub(r',\s*}', '}', json_str)
+            json_str = re.sub(r',\s*]', ']', json_str)
+            return json.loads(json_str)
+        raise ValueError("No JSON found in response")
+
+    def _get_default_thresholds(self, asset_type: str) -> Dict:
+        """Fallback thresholds when Gemini is unavailable."""
+        defaults = {
+            "Pump": {"pressure_max": 150, "temperature_max": 85, "gas_max": 40, "vibration_max": 8, "flow_min": 25},
+            "Compressor": {"pressure_max": 160, "temperature_max": 90, "gas_max": 35, "vibration_max": 10, "flow_min": 30},
+            "Tank": {"pressure_max": 120, "temperature_max": 80, "gas_max": 45, "vibration_max": 5, "flow_min": 20},
+            "Valve": {"pressure_max": 140, "temperature_max": 85, "gas_max": 40, "vibration_max": 7, "flow_min": 15},
+            "Pipeline": {"pressure_max": 130, "temperature_max": 80, "gas_max": 50, "vibration_max": 6, "flow_min": 10},
+            "Heat Exchanger": {"pressure_max": 145, "temperature_max": 100, "gas_max": 30, "vibration_max": 9, "flow_min": 25},
+            "Reactor": {"pressure_max": 155, "temperature_max": 95, "gas_max": 35, "vibration_max": 8, "flow_min": 20},
+            "Boiler": {"pressure_max": 170, "temperature_max": 120, "gas_max": 25, "vibration_max": 10, "flow_min": 30},
+            "Turbine": {"pressure_max": 140, "temperature_max": 100, "gas_max": 30, "vibration_max": 12, "flow_min": 25},
+        }
+        return defaults.get(asset_type, defaults["Pump"])
+
+    def get_thresholds(self, asset_type: str, context: Optional[str] = None) -> Dict[str, float]:
+        """Get thresholds - uses precomputed values for speed."""
+        # ✅ Check precomputed first (super fast)
+        precomputed_key = f"thresholds_{asset_type}_default"
+        if precomputed_key in self._precomputed:
+            return self._precomputed[precomputed_key]
+        
+        cache_key = f"thresholds_{asset_type}_{context or 'default'}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        thresholds = self._generate_thresholds(asset_type)
+        self._cache[cache_key] = thresholds
+        return thresholds
+
+    def get_workflow_sequence(self, incident_type: str) -> List[str]:
+        """Generate agent sequence for an incident type."""
+        fallback = ["sensor", "safety", "diagnostic", "maintenance", "planning", "knowledge", "prediction", "notification", "report"]
+        if local_demo_mode():
+            return fallback
+
+        cache_key = f"workflow_{incident_type}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        prompt = f"""
+For an industrial {incident_type} incident, list the agents that should respond in order.
+
+Available agents: sensor, safety, diagnostic, knowledge, maintenance, planning, prediction, notification, report
+
+Return ONLY a JSON array of agent names.
+Example: ["sensor", "safety", "diagnostic", "knowledge", "maintenance", "planning", "prediction", "notification", "report"]
+"""
+
+        try:
+            response = self.llm.generate(prompt, use_cache=True)
+            sequence = self._parse_json(response)
+            if isinstance(sequence, list):
+                self._cache[cache_key] = sequence
+                return sequence
+        except Exception:
+            pass
+
+        return fallback
+
+    def get_priority_level(self, incident_type: str, severity: str) -> int:
+        """Generate priority level for an incident."""
+        severity_map = {"critical": 1, "high": 2, "medium": 3, "low": 4}
+        if local_demo_mode():
+            return severity_map.get(severity.lower(), 3)
+
+        prompt = f"""
+For an industrial {incident_type} incident with {severity} severity, assign a priority level.
+
+Priority is 1 (highest) to 9 (lowest).
+Return ONLY an integer.
+"""
+
+        try:
+            response = self.llm.generate(prompt, use_cache=True)
+            numbers = re.findall(r'\d+', response)
+            if numbers:
+                priority = int(numbers[0])
+                return max(1, min(9, priority))
+        except Exception:
+            pass
+
+        return severity_map.get(severity.lower(), 3)
+
+    def get_risk_weights(self, incident_type: str) -> Dict[str, int]:
+        """Generate risk weights for different sensors."""
+        fallback = {"pressure_weight": 30, "temperature_weight": 20, "gas_weight": 25, "vibration_weight": 15, "flow_weight": 10}
+        if local_demo_mode():
+            return fallback
+
+        cache_key = f"risk_weights_{incident_type}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        prompt = f"""
+For a {incident_type} incident, assign risk weights (0-100) to each sensor type.
+
+Return ONLY a JSON object with:
+- pressure_weight: int
+- temperature_weight: int
+- gas_weight: int
+- vibration_weight: int
+- flow_weight: int
+
+Sum of all weights should be 100.
+"""
+
+        try:
+            response = self.llm.generate(prompt, use_cache=True)
+            weights = self._parse_json(response)
+            self._cache[cache_key] = weights
+            return weights
+        except Exception:
+            pass
+
+        return fallback
+
+    def clear_cache(self):
+        """Clear the configuration cache."""
+        self._cache = {}
+        print("✅ Config cache cleared")
+
+    def refresh(self):
+        """Refresh all configurations by clearing cache."""
+        self.clear_cache()
+        return {"status": "refreshed", "cache_size": 0}

@@ -1,0 +1,535 @@
+/* Epic 2 — reusable layout grids. Slot containers only. */
+
+.rig-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  gap: 16px;
+}
+
+.rig-layout-scroll {
+  overflow: auto;
+  min-height: 0;
+}
+
+.rig-layout-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(164, 196, 228, 0.12);
+  border-radius: 10px;
+  background: #111722;
+}
+
+.rig-layout-pane-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 12px;
+}
+
+.rig-layout-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+  padding: 16px;
+  border: 1px dashed rgba(164, 196, 228, 0.22);
+  border-radius: 8px;
+  color: #93A2B8;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.rig-layout-tabs {
+  display: none;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rig-layout-tabs button {
+  flex: 1;
+  border: 0;
+  padding: 10px 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: #93A2B8;
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.rig-layout-tabs button.is-active {
+  background: #0d1219;
+  color: #EEF4FC;
+}
+
+/* —— Mission Control —— */
+.rig-mission-layout {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: auto minmax(200px, 1fr) auto auto;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-mission-strip {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rig-mission-map { grid-column: 1 / 9; min-height: 0; }
+.rig-mission-queue { grid-column: 9 / 13; min-height: 0; }
+.rig-mission-sparklines { grid-column: 1 / -1; }
+.rig-mission-audit {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  min-height: 32px;
+}
+
+/* —— Explorer (twin + forecast) —— */
+.rig-explorer-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-explorer-tree { grid-row: 1; grid-column: 1; }
+.rig-explorer-canvas { grid-row: 1; grid-column: 2; }
+.rig-explorer-inspector { grid-row: 1; grid-column: 3; }
+.rig-explorer-signals {
+  grid-column: 2;
+  grid-row: 2;
+  max-height: 120px;
+}
+
+.rig-explorer-layout[data-variant="forecast"] .rig-explorer-tree {
+  /* watchlist same width as explorer */
+}
+
+/* —— Incident —— */
+.rig-incident-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-incident-queue { grid-column: 1; grid-row: 1; }
+.rig-incident-timeline { grid-column: 2; grid-row: 1; }
+.rig-incident-dossier { grid-column: 3; grid-row: 1; }
+.rig-incident-decision {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+/* —— Investigation —— */
+.rig-investigation-layout {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-rows: 120px minmax(0, 1fr) auto;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-investigation-pipeline {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  overflow-x: auto;
+}
+
+.rig-investigation-trace { grid-column: 1; grid-row: 2; }
+.rig-investigation-evidence { grid-column: 2; grid-row: 2; }
+.rig-investigation-decision {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+/* —— Kanban —— */
+.rig-kanban-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-kanban-toolbar {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rig-kanban-board {
+  grid-column: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rig-kanban-columns {
+  display: flex;
+  gap: 12px;
+  min-width: max-content;
+  height: 100%;
+  padding-bottom: 4px;
+}
+
+.rig-kanban-column {
+  width: 220px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(164, 196, 228, 0.12);
+  border-radius: 10px;
+  background: #0d1219;
+  overflow: hidden;
+}
+
+.rig-kanban-column-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(164, 196, 228, 0.12);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93A2B8;
+}
+
+.rig-kanban-column-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+
+.rig-kanban-inspector { grid-column: 2; }
+
+/* —— Executive —— */
+.rig-executive-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+.rig-executive-index { overflow: auto; }
+.rig-executive-brief { overflow: auto; }
+.rig-executive-rail { overflow: auto; }
+
+/* —— Application Shell —— */
+.rig-app-shell {
+  display: grid;
+  grid-template-columns: var(--rig-nav-width, 246px) minmax(0, 1fr);
+  height: 100vh;
+  width: 100%;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(38, 132, 255, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 90% 10%, rgba(94, 77, 178, 0.1), transparent 50%),
+    #090b0f;
+  color: #EEF4FC;
+  --rig-nav-width: 246px;
+}
+
+.rig-app-shell.is-nav-collapsed {
+  --rig-nav-width: 72px;
+}
+
+.rig-app-shell-nav {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+  background: #0d1015;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.rig-app-brand {
+  height: 52px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+
+.rig-app-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #edf3fb;
+  color: #0d1015;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.rig-app-brand-title {
+  font-size: 0.88rem;
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.rig-app-nav {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 10px 16px;
+}
+
+.rig-app-nav-group {
+  margin-bottom: 14px;
+}
+
+.rig-app-nav-group .rig-label {
+  padding: 0 10px 6px;
+  font-size: 0.58rem;
+}
+
+.rig-app-nav-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.84rem;
+  font-weight: 650;
+  z-index: 0;
+}
+
+.rig-app-nav-item:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rig-app-nav-item.is-active {
+  color: #f8fafc;
+}
+
+.rig-app-nav-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: rgba(38, 132, 255, 0.16);
+  z-index: -1;
+}
+
+.rig-app-nav-footer {
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.rig-app-connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+}
+
+.rig-app-connection i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22a06b;
+  display: inline-block;
+}
+
+.rig-app-connection.is-offline i {
+  background: #e2483d;
+}
+
+.rig-app-shell-stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rig-app-shell-header {
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(13, 16, 21, 0.72);
+  backdrop-filter: blur(12px);
+  z-index: 3;
+  flex-shrink: 0;
+}
+
+.rig-app-shell-main {
+  flex: 1;
+  padding: 16px 20px;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rig-app-shell-audit {
+  flex-shrink: 0;
+  z-index: 3;
+}
+
+.rig-copilot-dock {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  bottom: 72px;
+  width: min(420px, calc(100vw - 32px));
+  z-index: 50;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #111418;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.rig-layout-pane {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 40%),
+    repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(148, 163, 184, 0.04) 24px),
+    #111722;
+}
+
+@media (max-width: 1023px) {
+  .rig-layout-tabs { display: flex; }
+
+  .rig-mission-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .rig-mission-strip,
+  .rig-mission-map,
+  .rig-mission-queue,
+  .rig-mission-sparklines,
+  .rig-mission-audit { grid-column: 1; }
+  .rig-mission-layout.is-tabbed .rig-mission-map,
+  .rig-mission-layout.is-tabbed .rig-mission-queue,
+  .rig-mission-layout.is-tabbed .rig-mission-sparklines { display: none; }
+  .rig-mission-layout.is-tabbed[data-tab="queue"] .rig-mission-queue { display: flex; }
+  .rig-mission-layout.is-tabbed[data-tab="map"] .rig-mission-map { display: flex; }
+  .rig-mission-layout.is-tabbed[data-tab="sparklines"] .rig-mission-sparklines { display: block; }
+
+  .rig-explorer-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .rig-explorer-tree,
+  .rig-explorer-canvas,
+  .rig-explorer-inspector,
+  .rig-explorer-signals { grid-column: 1; grid-row: auto; }
+  .rig-explorer-layout.is-tabbed .rig-explorer-tree,
+  .rig-explorer-layout.is-tabbed .rig-explorer-canvas,
+  .rig-explorer-layout.is-tabbed .rig-explorer-inspector { display: none; }
+  .rig-explorer-layout.is-tabbed[data-tab="explorer"] .rig-explorer-tree { display: flex; }
+  .rig-explorer-layout.is-tabbed[data-tab="canvas"] .rig-explorer-canvas { display: flex; }
+  .rig-explorer-layout.is-tabbed[data-tab="inspector"] .rig-explorer-inspector { display: flex; }
+
+  .rig-incident-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .rig-incident-queue,
+  .rig-incident-timeline,
+  .rig-incident-dossier,
+  .rig-incident-decision { grid-column: 1; grid-row: auto; }
+  .rig-incident-layout.is-tabbed .rig-incident-queue,
+  .rig-incident-layout.is-tabbed .rig-incident-timeline,
+  .rig-incident-layout.is-tabbed .rig-incident-dossier { display: none; }
+  .rig-incident-layout.is-tabbed[data-tab="queue"] .rig-incident-queue { display: flex; }
+  .rig-incident-layout.is-tabbed[data-tab="timeline"] .rig-incident-timeline { display: flex; }
+  .rig-incident-layout.is-tabbed[data-tab="dossier"] .rig-incident-dossier { display: flex; }
+
+  .rig-investigation-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .rig-investigation-pipeline,
+  .rig-investigation-trace,
+  .rig-investigation-evidence,
+  .rig-investigation-decision { grid-column: 1; }
+  .rig-investigation-layout.is-tabbed .rig-investigation-trace,
+  .rig-investigation-layout.is-tabbed .rig-investigation-evidence { display: none; }
+  .rig-investigation-layout.is-tabbed[data-tab="trace"] .rig-investigation-trace { display: flex; }
+  .rig-investigation-layout.is-tabbed[data-tab="evidence"] .rig-investigation-evidence { display: flex; }
+
+  .rig-kanban-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .rig-kanban-inspector { grid-column: 1; }
+  .rig-kanban-layout.is-tabbed .rig-kanban-board,
+  .rig-kanban-layout.is-tabbed .rig-kanban-inspector { display: none; }
+  .rig-kanban-layout.is-tabbed[data-tab="board"] .rig-kanban-board { display: block; }
+  .rig-kanban-layout.is-tabbed[data-tab="inspector"] .rig-kanban-inspector { display: flex; }
+
+  .rig-executive-layout {
+    grid-template-columns: 1fr;
+  }
+  .rig-executive-layout.is-tabbed .rig-executive-index,
+  .rig-executive-layout.is-tabbed .rig-executive-brief,
+  .rig-executive-layout.is-tabbed .rig-executive-rail { display: none; }
+  .rig-executive-layout.is-tabbed[data-tab="index"] .rig-executive-index { display: flex; }
+  .rig-executive-layout.is-tabbed[data-tab="brief"] .rig-executive-brief { display: flex; }
+  .rig-executive-layout.is-tabbed[data-tab="rail"] .rig-executive-rail { display: flex; }
+
+  .rig-app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .rig-app-shell-nav .rig-app-brand > div:not(.rig-app-brand-mark),
+  .rig-app-nav-group .rig-label,
+  .rig-app-nav-item span,
+  .rig-app-connection .MuiTypography-root {
+    display: none;
+  }
+}
+
+html[data-rigos-theme='light'] .rig-layout-pane,
+html[data-rigos-theme='light'] .rig-app-shell-nav,
+html[data-rigos-theme='light'] .rig-kanban-column {
+  background: #fff;
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #111827;
+}
+html[data-rigos-theme='light'] .rig-app-shell,
+html[data-rigos-theme='light'] .rig-app-shell-header {
+  background: #f6f7f9;
+  color: #111827;
+}
+html[data-rigos-theme='light'] .rig-layout-placeholder {
+  color: #64748b;
+  border-color: rgba(15, 23, 42, 0.15);
+}

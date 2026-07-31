@@ -1,0 +1,218 @@
+/* Part 8 — Interaction Model: sticky chrome + allowed animation timings */
+
+:root {
+  --p8-select: 120ms;
+  --p8-crossfade: 200ms;
+  --p8-page: 120ms;
+  --p8-pulse: 400ms;
+  --p8-stage: 120ms;
+}
+
+/* Sticky: Mission Control OperationsStrip */
+.mission-os .rig-operations-strip,
+.p8-operations-strip {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin-bottom: 14px;
+}
+
+/* Sticky: Explorer / Kanban / Forecast / Executive toolbars & headers */
+.twin-workspace-head,
+.maintenance-planner-head,
+.maintenance-board-head,
+.terminal-watchlist .product-kicker,
+.briefing-index .product-kicker,
+.incident-queue-head,
+.ai-pipeline .ai-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: inherit;
+}
+
+.twin-workspace-head,
+.maintenance-planner-head,
+.incident-os-head,
+.forecast-terminal-head,
+.ai-flagship-head,
+.briefing-head {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  padding-bottom: 8px;
+  background: var(--rig-sticky-fade, linear-gradient(180deg, #090b0f 70%, transparent));
+}
+
+.incident-queue-head {
+  background: var(--rig-surface, #11161e);
+  padding-bottom: 8px;
+}
+
+.ai-pipeline {
+  position: relative;
+}
+
+.ai-pipeline .ai-panel-head {
+  background: var(--rig-surface, #11161e);
+  padding-top: 4px;
+  padding-bottom: 8px;
+}
+
+.terminal-watchlist > .product-kicker,
+.terminal-watchlist > .terminal-watchlist-sub {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--rig-surface, #11161e);
+}
+
+.briefing-index > .product-kicker,
+.briefing-index > .briefing-index-title {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--rig-surface, #11161e);
+}
+
+/* Selection highlight 120ms */
+.asset-tree-item,
+.incident-queue-item,
+.work-order,
+.terminal-watchlist button,
+.briefing-index button,
+.mission-feed-row {
+  transition:
+    background-color var(--p8-select) ease,
+    box-shadow var(--p8-select) ease,
+    border-color var(--p8-select) ease,
+    transform var(--p8-select) ease !important;
+}
+
+/* Inspector / dossier crossfade 200ms */
+.twin-inspector,
+.incident-evidence,
+.maintenance-inspector,
+.p8-inspector-swap {
+  animation: p8-crossfade var(--p8-crossfade) ease;
+}
+
+@keyframes p8-crossfade {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+/* Map / twin node pulse */
+.twin-map-node.selected,
+.mission-twin-node.is-pulse {
+  animation: p8-node-pulse var(--p8-crossfade) ease;
+}
+
+.twin-map-node.critical i,
+.asset-tree-dot.critical,
+.rig-status-badge.is-pulse i {
+  animation: p8-status-pulse var(--p8-pulse) ease infinite;
+}
+
+@keyframes p8-node-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(79, 140, 255, 0.45); }
+  100% { box-shadow: 0 0 0 8px rgba(79, 140, 255, 0); }
+}
+
+@keyframes p8-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+/* Pipeline stage enlarge 120ms */
+.ai-stage {
+  transition: transform var(--p8-stage) ease, background-color var(--p8-stage) ease !important;
+}
+
+.ai-stage.expanded {
+  transform: scale(1.02);
+  transform-origin: left center;
+}
+
+/* Value crossfade on live metrics */
+.e5-metric > p:last-child,
+.rig-kpi,
+.metric > p:last-child {
+  transition: opacity var(--p8-crossfade) ease;
+}
+
+/* Forbidden: bounce/spring on operational panels — prefer linear fades */
+.workspace-inspector,
+.copilot-dock,
+.product-page :where(.mission-twin, .asset-explorer, .incident-queue, .ai-pipeline, .maintenance-board) {
+  transition: opacity var(--p8-page) ease, border-color var(--p8-select) ease !important;
+}
+
+.product-page :where(.interactive-card, .pulse-card, .refinery-card, .maintenance-refinery, .work-order):hover {
+  transform: none !important;
+}
+
+/* Asset inspector section stack */
+.p8-inspector-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.p8-inspector-section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.p8-inspector-signals {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.p8-inspector-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.p8-inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.p8-inspector-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Focus trap shell */
+.workspace-inspector.is-open {
+  outline: none;
+}
+
+.workspace-inspector[data-focus-trap='true'] {
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Primary nav roving focus */
+.os-nav a:focus-visible {
+  outline: 2px solid #4f8cff;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .twin-inspector,
+  .p8-inspector-swap,
+  .twin-map-node.selected,
+  .mission-twin-node.is-pulse,
+  .ai-stage.expanded {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

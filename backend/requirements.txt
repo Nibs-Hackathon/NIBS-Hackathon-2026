@@ -1,0 +1,49 @@
+# ============================================
+# CORE FRAMEWORKS
+# ============================================
+fastapi
+uvicorn
+pydantic
+python-dotenv
+
+# ============================================
+# DATABASE
+# ============================================
+SQLAlchemy
+alembic
+psycopg2-binary
+pgvector
+
+# ============================================
+# AI & GEMINI
+# ============================================
+google-generativeai
+langchain-google-genai
+langchain-community
+langchain-text-splitters
+
+# ============================================
+# EMBEDDINGS & VECTORS
+# ============================================
+# Production retrieval uses Gemini embeddings with PostgreSQL/pgvector.
+# Do not add sentence-transformers/torch here: Railway is a CPU service and
+# pip otherwise downloads several gigabytes of CUDA wheels during every build.
+
+# ============================================
+# RAG & PDF PROCESSING
+# ============================================
+pypdf
+
+# ============================================
+# UTILITIES
+# ============================================
+websockets
+python-multipart
+requests
+pandas
+plotly
+
+# ============================================
+# LOGGING
+# ============================================
+loguru

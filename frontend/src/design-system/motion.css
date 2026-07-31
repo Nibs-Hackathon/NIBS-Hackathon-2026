@@ -1,0 +1,9 @@
+@keyframes rigos-v2-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes rigos-v2-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.92); } }
+@keyframes rigos-v2-glow { 0%, 100% { box-shadow: 0 0 12px rgba(88,216,255,.14); } 50% { box-shadow: 0 0 28px rgba(88,216,255,.48); } }
+@keyframes rigos-v2-shimmer { from { background-position: 180% 0; } to { background-position: -180% 0; } }
+.rigos-v2-enter { animation: rigos-v2-fade-up 240ms cubic-bezier(.2,.8,.2,1) both; }
+.rigos-v2-ai-pulse { animation: rigos-v2-pulse 2s cubic-bezier(.2,.8,.2,1) infinite; }
+.rigos-v2-glow { animation: rigos-v2-glow 2.4s ease-in-out infinite; }
+.rigos-v2-shimmer { background: linear-gradient(100deg, transparent 32%, rgba(88,216,255,.26) 50%, transparent 68%); background-size: 220% 100%; animation: rigos-v2-shimmer 2.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .rigos-v2-enter, .rigos-v2-ai-pulse, .rigos-v2-glow, .rigos-v2-shimmer { animation: none !important; } }

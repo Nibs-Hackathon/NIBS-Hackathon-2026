@@ -1,0 +1,82 @@
+.os-topbar {
+  gap: 20px;
+}
+
+.os-topbar-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.os-topbar-actions {
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.os-command-trigger {
+  flex: 0 1 310px;
+  min-width: 190px !important;
+  max-width: 310px;
+  padding: 0 10px !important;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.os-command-trigger .MuiButton-startIcon,
+.os-command-trigger .MuiButton-endIcon {
+  flex: 0 0 auto;
+}
+
+.os-command-trigger .MuiButton-startIcon {
+  margin-left: 0 !important;
+  margin-right: 9px !important;
+}
+
+.os-command-trigger .MuiButton-endIcon {
+  margin-left: 10px !important;
+  margin-right: 0 !important;
+}
+
+.os-command-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.os-top-context {
+  flex: 0 0 auto;
+  min-width: 128px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+@media (max-width: 1180px) {
+  .os-command-trigger {
+    flex-basis: 230px;
+    max-width: 230px;
+  }
+
+  .os-command-trigger .MuiButton-endIcon {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .os-command-trigger {
+    width: 42px !important;
+    min-width: 42px !important;
+    flex-basis: 42px;
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+
+  .os-command-label,
+  .os-command-trigger .MuiButton-endIcon {
+    display: none;
+  }
+
+  .os-command-trigger .MuiButton-startIcon {
+    margin: 0 !important;
+  }
+}
