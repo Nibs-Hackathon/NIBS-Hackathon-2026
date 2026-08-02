@@ -53,18 +53,24 @@ class KnowledgeAgent(Agent):
             # an unexplained agent failure or surface vendor diagnostics to an operator.
             if "Embedding capacity is temporarily unavailable" not in str(error):
                 raise
-            return AgentResult(
-                agent_name=self.name,
-                success=True,
-                finding="Knowledge guidance is temporarily unavailable.",
-                confidence=0.0,
-                evidence=[],
-                recommendations=["Continue the safety and maintenance workflow; retry knowledge guidance shortly."],
-                required_action="Retry knowledge retrieval when embedding capacity returns",
-                requires_human_approval=False,
-                metadata={"availability": "temporarily_unavailable"},
-                summary="Knowledge guidance was deferred because embedding capacity is temporarily unavailable.",
-            )
+            if workflow_execution:
+                return AgentResult(
+                    agent_name=self.name,
+                    success=True,
+                    finding="Knowledge guidance is temporarily unavailable.",
+                    confidence=0.0,
+                    evidence=[],
+                    recommendations=["Continue the safety and maintenance workflow; retry knowledge guidance shortly."],
+                    required_action="Retry knowledge retrieval when embedding capacity returns",
+                    requires_human_approval=False,
+                    metadata={"availability": "temporarily_unavailable"},
+                    summary="Knowledge guidance was deferred because embedding capacity is temporarily unavailable.",
+                )
+            documents = []
+        except Exception:
+            if workflow_execution:
+                raise
+            documents = []
 
         references, summaries, source_labels, context_parts = self._document_details(documents)
         execution_plan = self._get_metadata(context, "planning").get("execution_plan", [])
@@ -94,11 +100,17 @@ class KnowledgeAgent(Agent):
                 summary=f"Knowledge retrieval completed with {len(documents)} matching document(s).",
             )
 
-        answer = self.llm.generate(self._chat_prompt(query, "\n\n".join(context_parts)))
+        answer = self.llm.generate(self._chat_prompt(
+            query,
+            "\n\n".join(context_parts) if context_parts else (
+                "No matching technical references were retrieved. "
+                "Answer from the live operator context in the question only."
+            ),
+        ))
         return AgentResult(
             agent_name=self.name,
             success=True,
-            confidence=0.95,
+            confidence=0.95 if context_parts else 0.7,
             evidence=source_labels,
             recommendations=["Follow approved operating procedures", "Verify operating limits"],
             metadata={"documents_used": len(documents), "sources": source_labels},
@@ -125,13 +137,15 @@ class KnowledgeAgent(Agent):
 You are Command Nexus, an experienced refinery operations engineer.
 
 Deliver a confident, concise, professional operational response using the live
-observations in the operator context and ONLY the technical reference material
+observations in the operator context and the technical reference material
 supplied below for procedural guidance. Do not copy passages verbatim.
 Treat the operator context as authoritative for current asset identity, active
-incident type, telemetry, and RigOS modeled financial exposure. Use those
-numbers directly when asked, clearly labeling modeled exposure as an estimate
-and never calling it booked revenue loss. Correct an operator assumption when
-the requested incident type does not match the active incident.
+incident type, telemetry, fleet health, and RigOS modeled financial exposure.
+Use those numbers directly when asked, clearly labeling modeled exposure as an
+estimate and never calling it booked revenue loss. Correct an operator
+assumption when the requested incident type does not match the active incident.
+When technical reference material is empty, answer from live operator context
+only and say when a procedural limit is not established.
 Do not invent operating limits, causes, actions, or citations that the material
 does not support. Never mention implementation details such as retrieval,
 documents, a knowledge base, databases, RAG, prompts, models, or internal

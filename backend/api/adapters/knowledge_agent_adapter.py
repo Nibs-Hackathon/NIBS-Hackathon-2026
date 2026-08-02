@@ -28,6 +28,7 @@ OPERATIONAL_KEYWORDS = (
     "trip", "failure", "process", "telemetry", "sensor", "knowledge",
     "attention", "risk", "current", "status", "facility", "report",
     "work order", "work-order", "agent", "revenue", "cost", "loss", "impact",
+    "health", "fleet", "offline", "running", "degraded",
 )
 
 
@@ -78,6 +79,11 @@ def _live_context(
         from services.runtime import runtime
         from services.revenue_impact_calculator import revenue_service
 
+        from api.adapters.operations_adapter import (
+            _average_asset_health,
+            _published_asset_health,
+        )
+
         kernel = runtime.kernel
         assets = list(kernel.asset_service.all_assets())
         enterprise = not facility or facility in {
@@ -86,16 +92,31 @@ def _live_context(
         scoped_assets = assets if enterprise else [
             asset for asset in assets if getattr(asset, "location", None) == facility
         ]
+        live_by_id = {
+            str(getattr(asset, "id", "")): {
+                "id": getattr(asset, "id", None),
+                "health": _published_asset_health(asset, kernel),
+                "status": getattr(asset, "status", None),
+                "location": getattr(asset, "location", None),
+            }
+            for asset in assets
+        }
+        scoped_live = [live_by_id[str(getattr(asset, "id", ""))] for asset in scoped_assets]
         lines = [f"Facility scope: {facility or 'Enterprise view'}"]
-        if scoped_assets:
+        if scoped_assets or scoped_live:
+            fleet_health = _average_asset_health(scoped_live)
             health_values = [
-                float(asset.health) for asset in scoped_assets
-                if getattr(asset, "health", None) is not None
+                float(row["health"]) for row in scoped_live
+                if row.get("health") is not None
             ]
-            average_health = sum(health_values) / len(health_values) if health_values else 0
             lines.extend([
-                f"Assets in scope: {len(scoped_assets)}",
-                f"Average asset health: {average_health:.1f}/100",
+                f"Assets in scope: {len(scoped_assets) or len(scoped_live)}",
+                (
+                    f"Fleet health (average of published asset health): "
+                    f"{fleet_health:.1f}/100"
+                    if fleet_health is not None
+                    else "Fleet health: unavailable (no published health readings)"
+                ),
                 f"Assets below 80 health: {sum(value < 80 for value in health_values)}",
             ])
 
@@ -267,11 +288,17 @@ def _live_context(
                 "value",
                 getattr(asset, "asset_type", "Unknown"),
             )
+            live_health = (live_by_id.get(str(asset.id)) or {}).get("health")
+            if live_health is None:
+                live_health = getattr(asset, "health", "Unknown")
+            live_status = (live_by_id.get(str(asset.id)) or {}).get("status")
+            if live_status is None:
+                live_status = getattr(asset, "status", "Unknown")
             lines.extend([
                 f"Resolved asset: {asset.name} ({asset.id})",
                 f"Resolved asset type: {asset_type}",
-                f"Resolved asset health: {getattr(asset, 'health', 'Unknown')}",
-                f"Resolved asset status: {getattr(asset, 'status', 'Unknown')}",
+                f"Resolved asset health: {live_health}",
+                f"Resolved asset status: {live_status}",
             ])
             if incident is not None:
                 payload = getattr(incident, "payload", {}) or {}
@@ -476,6 +503,7 @@ def ask_knowledge_agent(
     _emit(on_progress, "Preparing an operational assessment.")
     try:
         from mao.models.task import Task
+        from services.llm import LLMManager
 
         task = Task(
             name="Operator knowledge query",
@@ -483,17 +511,52 @@ def ask_knowledge_agent(
             assigned_agent="knowledge",
         )
         agent = get_knowledge_agent()
-        
-        if agent.retriever is None:
-            return "The knowledge base is not available. Please ensure the database is configured and has documents loaded."
-
+        _emit(on_progress, "Synthesizing answer with Gemini.")
         result = agent.execute(task)
-        
-        if not result.success or not result.summary:
-            return "I couldn't find specific operational guidance for that query. Please check with your operations team."
-            
-        return result.summary
-        
+
+        if result.success and result.summary:
+            return result.summary
+
+        # Retrieval may be empty or unavailable; still answer from live context via Gemini.
+        _emit(on_progress, "Grounding answer on live operations context.")
+        return LLMManager().generate(
+            _gemini_live_prompt(question.strip(), context_lines)
+        )
+
     except Exception as error:
         LOGGER.exception("Command Nexus operational response failed")
-        return "I'm having trouble accessing the knowledge base right now. Please try again later."
+        if context_lines:
+            try:
+                from services.llm import LLMManager
+                return LLMManager().generate(
+                    _gemini_live_prompt(question.strip(), context_lines)
+                )
+            except Exception:
+                LOGGER.exception("Gemini live-context fallback failed")
+        return (
+            "I'm having trouble completing that assessment right now. "
+            "Please try again shortly, or check live fleet health on Mission Control."
+        )
+
+
+def _gemini_live_prompt(question: str, context_lines: list[str]) -> str:
+    context_block = "\n".join(context_lines) if context_lines else "No live context available."
+    return f"""
+You are Command Nexus, RigOS operations copilot powered by Gemini.
+
+Answer the operator using the live operations snapshot below. Be concise,
+professional, and specific. If fleet or asset health is present, state the
+numbers clearly. Do not invent SOP limits or citations. Never mention
+retrieval, RAG, prompts, or model internals.
+
+Live operations snapshot:
+{context_block}
+
+Operator question:
+{question}
+
+Respond in Markdown with brief sections when useful:
+## Situation Assessment
+## Immediate Actions
+## Operational Impact
+"""

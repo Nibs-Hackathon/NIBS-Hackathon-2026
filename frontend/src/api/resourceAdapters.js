@@ -202,7 +202,9 @@ export function fleetHealthForScope({ refineries = [], assets = [], dashboard = 
   // operations snapshot. Average only published numeric readings; treating a
   // missing reading as zero would make a disconnected asset look failed.
   const healthReadings = assets
-    .map((asset) => Number(asset?.health))
+    .map((asset) => asset?.health)
+    .filter((health) => health != null && health !== '')
+    .map(Number)
     .filter(Number.isFinite);
   if (healthReadings.length) {
     const total = healthReadings.reduce((sum, health) => sum + health, 0);

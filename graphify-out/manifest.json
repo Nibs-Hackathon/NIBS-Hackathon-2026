@@ -15,8 +15,8 @@
     "semantic_hash": ""
   },
   "backend/agents/knowledge.py": {
-    "mtime": 1785306118.8403537,
-    "ast_hash": "7b6277f32d0a945032a887b2b6dcedc3",
+    "mtime": 1785649965.5927455,
+    "ast_hash": "eed40a84135458af7e79956195575ac8",
     "semantic_hash": ""
   },
   "backend/agents/maintenance.py": {
@@ -80,8 +80,8 @@
     "semantic_hash": "3ba69dcd12f30b4f83580ec0f4cf3f9e"
   },
   "backend/api/adapters/backend_api_new.py": {
-    "mtime": 1785307971.568704,
-    "ast_hash": "8d38309980c8cdaed99e7a1568dd9c12",
+    "mtime": 1785649758.1614065,
+    "ast_hash": "dc4110eef021174d8f42ea23dcfbc55f",
     "semantic_hash": ""
   },
   "backend/api/adapters/control_adapter.py": {
@@ -200,8 +200,8 @@
     "semantic_hash": ""
   },
   "backend/api/adapters/knowledge_agent_adapter.py": {
-    "mtime": 1785311877.3030136,
-    "ast_hash": "99cfe9dae59343ecf7509100d4ab7e92",
+    "mtime": 1785649998.286168,
+    "ast_hash": "c9203fa917a362b633e4a84e245e59cc",
     "semantic_hash": ""
   },
   "backend/api/adapters/maintenance_adapter.py": {
@@ -210,8 +210,8 @@
     "semantic_hash": ""
   },
   "backend/api/adapters/operations_adapter.py": {
-    "mtime": 1785647794.6181703,
-    "ast_hash": "396097e33633527970d39c67413568a7",
+    "mtime": 1785649998.2554557,
+    "ast_hash": "ac0732d58da00fb9add4bee1c1dd8fb2",
     "semantic_hash": ""
   },
   "backend/api/adapters/report_adapter.py": {
@@ -815,8 +815,8 @@
     "semantic_hash": "ef78b6410628f8d0946864e438d95b13"
   },
   "backend/tests/test_operations_adapter.py": {
-    "mtime": 1785647794.6181703,
-    "ast_hash": "c4979f3870627f245fb352e0d5ba6797",
+    "mtime": 1785650007.5495014,
+    "ast_hash": "718522cc704405b06608b9b0d1315b64",
     "semantic_hash": ""
   },
   "frontend/e2e/workspaces.spec.js": {
@@ -855,8 +855,8 @@
     "semantic_hash": "96d9ae5e3d830b8551f51c1f360ba9e5"
   },
   "frontend/src/api/resourceAdapters.js": {
-    "mtime": 1785647794.6181703,
-    "ast_hash": "91ee2cb273bc5abf19bcbe3fdbc68e1e",
+    "mtime": 1785650058.6014798,
+    "ast_hash": "fc8deccbc4c0baa1ca1551a850c9a770",
     "semantic_hash": ""
   },
   "frontend/src/components/Operations/Assistant.jsx": {
@@ -1065,8 +1065,8 @@
     "semantic_hash": ""
   },
   "frontend/src/redesign/AssistantPanel.jsx": {
-    "mtime": 1785309766.3175697,
-    "ast_hash": "3ebccc196fb1cff5f7b182a32c362eb4",
+    "mtime": 1785649959.624413,
+    "ast_hash": "c1b839f9dc4ba37c28339eab1303c2b9",
     "semantic_hash": ""
   },
   "frontend/src/redesign/ProductPage.jsx": {
@@ -1140,8 +1140,8 @@
     "semantic_hash": ""
   },
   "frontend/src/redesign/views/IncidentManagement.jsx": {
-    "mtime": 1785648900.865827,
-    "ast_hash": "cac7e90017aedae093e61d73dee1775f",
+    "mtime": 1785649131.7290902,
+    "ast_hash": "307cc4746e9f92f789bb08f14d8c90d7",
     "semantic_hash": ""
   },
   "frontend/src/redesign/views/MaintenancePlanning.jsx": {
@@ -1150,13 +1150,13 @@
     "semantic_hash": ""
   },
   "frontend/src/redesign/views/MissionControlOS.jsx": {
-    "mtime": 1785511250.9120333,
-    "ast_hash": "67509999f00081985d558e967a111aad",
+    "mtime": 1785650058.4417632,
+    "ast_hash": "736df3f8b618343381e559869c5e8563",
     "semantic_hash": ""
   },
   "frontend/src/redesign/views/shared.jsx": {
-    "mtime": 1785647794.6181703,
-    "ast_hash": "96b4a47b550e760d18c83c403e7e9fda",
+    "mtime": 1785650058.4387648,
+    "ast_hash": "9a6db10ccc3e8b22029fba25102ab1d9",
     "semantic_hash": ""
   },
   "frontend/src/styles/theme.js": {
@@ -2165,8 +2165,8 @@
     "semantic_hash": ""
   },
   "backend/tests/test_knowledge_agent_context.py": {
-    "mtime": 1785311304.784124,
-    "ast_hash": "6ba66707cb6c55fd6b4d48e9203892dd",
+    "mtime": 1785650010.9708202,
+    "ast_hash": "1728934a68d9b140399bd4d73e898810",
     "semantic_hash": ""
   },
   "backend/tests/test_local_knowledge_store.py": {
@@ -2185,8 +2185,8 @@
     "semantic_hash": ""
   },
   "frontend/src/api/resourceAdapters.test.js": {
-    "mtime": 1785647794.617171,
-    "ast_hash": "05744dff814200c1e2468ac567002e65",
+    "mtime": 1785650010.4779065,
+    "ast_hash": "9fbe94df00107ee25e907fcaee88f09d",
     "semantic_hash": ""
   },
   "backend/knowledge_docs/01_refinery_operations_handbook.md": {

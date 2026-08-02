@@ -42,7 +42,14 @@ export function formatTime(value) { if (!value) return 'Live record'; const date
 
 export function formatDuration(seconds) { if (!Number.isFinite(Number(seconds))) return null; const total = Math.round(Number(seconds)); return total < 60 ? `${total}s` : `${Math.floor(total / 60)}m ${total % 60}s`; }
 
-export function averageHealth(assets) { return assets.length ? round(assets.reduce((total, asset) => total + Number(asset.health || 0), 0) / assets.length) : 0; }
+export function averageHealth(assets) {
+  const readings = (assets || [])
+    .map((asset) => asset?.health)
+    .filter((health) => health != null && health !== '')
+    .map(Number)
+    .filter(Number.isFinite);
+  return readings.length ? round(readings.reduce((total, health) => total + health, 0) / readings.length) : 0;
+}
 
 export function round(value) { return Math.round(Number(value) || 0); }
 

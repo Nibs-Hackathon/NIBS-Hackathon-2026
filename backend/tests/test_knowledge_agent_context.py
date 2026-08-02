@@ -85,6 +85,23 @@ def test_contextual_pronoun_can_use_selected_asset(monkeypatch):
     assert any(line.startswith("Resolved asset: Valve V-003") for line in lines)
 
 
+def test_live_context_includes_calculated_fleet_health(monkeypatch):
+    _install_runtime(monkeypatch)
+
+    lines = _live_context(
+        "What is fleet health right now?",
+        None,
+        None,
+        "Enterprise view",
+    )
+
+    assert any(
+        line.startswith("Fleet health (average of published asset health): 100.0/100")
+        for line in lines
+    )
+    assert "Assets in scope: 2" in lines
+
+
 def test_portfolio_financial_question_aggregates_persisted_reports(monkeypatch):
     _install_runtime(monkeypatch)
     from api.adapters import operations_adapter

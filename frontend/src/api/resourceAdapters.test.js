@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { notificationPresentation } from './resourceAdapters.js';
+import { fleetHealthForScope, notificationPresentation } from './resourceAdapters.js';
 
 test('notification presentation prioritizes asset and refinery identity', () => {
   assert.deepEqual(
@@ -30,5 +30,25 @@ test('notification presentation supports legacy incident payloads', () => {
       title: 'Pipeline P-002',
       detail: 'Pressure spike',
     },
+  );
+});
+
+test('fleet health averages only published numeric readings', () => {
+  assert.equal(
+    fleetHealthForScope({
+      assets: [{ health: 90 }, { health: null }, { health: 70 }],
+      dashboard: { fleet_health: 10 },
+    }, 'Enterprise view'),
+    80,
+  );
+});
+
+test('fleet health falls back to dashboard when assets lack readings', () => {
+  assert.equal(
+    fleetHealthForScope({
+      assets: [{ health: null }],
+      dashboard: { fleet_health: 92.5 },
+    }, 'Enterprise view'),
+    92.5,
   );
 });

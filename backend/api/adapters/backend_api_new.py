@@ -125,18 +125,17 @@ class BackendAPI:
         all_assets = self.get_refinery_assets(refinery_id)
         return [a for a in all_assets if a.get("type", "").lower() == asset_type.lower()]
 
-    @lru_cache(maxsize=32)
-    def _get_assets_cached(self) -> List[Dict]:
-        """Cached version of get_assets."""
+    def _serialize_assets_live(self) -> List[Dict]:
+        """Read current asset rows from the shared runtime (health changes every tick)."""
         assets = self.kernel.asset_service.all_assets()
         return [
             {
                 "id": asset.id,
                 "name": asset.name,
-                "type": asset.asset_type.value if hasattr(asset.asset_type, 'value') else str(asset.asset_type),
+                "type": asset.asset_type.value if hasattr(asset.asset_type, "value") else str(asset.asset_type),
                 "location": asset.location,
                 "zone": getattr(asset, "zone", "Unassigned"),
-                "health": asset.health,
+                "health": float(asset.health) if asset.health is not None else None,
                 "status": asset.status,
                 "refinery_id": getattr(asset, "refinery_id", None),
                 "metadata": getattr(asset, "metadata", {}) or {},
@@ -145,10 +144,18 @@ class BackendAPI:
         ]
 
     def get_assets(self, force_refresh: bool = False) -> List[Dict]:
-        """Get all assets from all refineries with caching."""
+        """Get all assets with live health.
+
+        Health is updated by the simulator every tick. A no-arg lru_cache previously
+        froze the first snapshot forever for callers that skipped force_refresh.
+        """
         if force_refresh:
             self._invalidate_cache("get_assets")
-        return self._get_assets_cached()
+        return self._serialize_assets_live()
+
+    def _get_assets_cached(self) -> List[Dict]:
+        """Compatibility shim for cache invalidation callers."""
+        return self._serialize_assets_live()
 
     @lru_cache(maxsize=128)
     def _get_asset_telemetry_cached(self, asset_id: str, limit: int = 100) -> tuple:

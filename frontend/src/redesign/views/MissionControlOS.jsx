@@ -39,13 +39,18 @@ export function MissionControlOS({
     ? refineriesAll
     : safeRefineries;
   const scopedHealthReadings = useMemo(
-    () => safeAssets.map((asset) => Number(asset?.health)).filter(Number.isFinite),
+    () => safeAssets
+      .map((asset) => asset?.health)
+      .filter((health) => health != null && health !== '')
+      .map(Number)
+      .filter(Number.isFinite),
     [safeAssets],
   );
-  const health = dashboard.fleet_health != null && Number.isFinite(Number(dashboard.fleet_health))
-    ? Number(dashboard.fleet_health)
-    : scopedHealthReadings.length
-      ? round(scopedHealthReadings.reduce((sum, value) => sum + value, 0) / scopedHealthReadings.length)
+  // Prefer the live scoped asset average; dashboard.fleet_health is the backend fallback.
+  const health = scopedHealthReadings.length
+    ? round(scopedHealthReadings.reduce((sum, value) => sum + value, 0) / scopedHealthReadings.length)
+    : dashboard.fleet_health != null && Number.isFinite(Number(dashboard.fleet_health))
+      ? Number(dashboard.fleet_health)
       : null;
   const healthDisplay = health == null ? '—' : `${round(health)}%`;
   const primary = safeIncidents[0];

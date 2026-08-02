@@ -53,6 +53,49 @@ def _average_asset_health(assets: list[dict[str, Any]]) -> float | None:
     return round(sum(readings) / len(readings), 1) if readings else None
 
 
+def _published_asset_health(asset: Any, kernel: Any | None = None) -> float | None:
+    """Prefer simulator-published health, then recompute from recent telemetry."""
+    health = getattr(asset, "health", None)
+    try:
+        health = float(health) if health is not None else None
+    except (TypeError, ValueError):
+        health = None
+    active_kernel = kernel or runtime.kernel
+    try:
+        history = active_kernel.state.get_history(asset.id) or []
+    except Exception:
+        history = []
+    if history:
+        try:
+            health = float(active_kernel.health.calculate_health(history[-40:]))
+        except Exception:
+            pass
+    return health
+
+
+def _live_assets_with_health() -> list[dict[str, Any]]:
+    """Serialize assets from the shared runtime and refresh health from telemetry.
+
+    Prefer the simulator's published health, then recompute from recent readings so
+    fleet health tracks the field condition instead of a frozen default of 100.
+    """
+    rows: list[dict[str, Any]] = []
+    for asset in runtime.kernel.asset_service.all_assets():
+        health = _published_asset_health(asset)
+        rows.append({
+            "id": asset.id,
+            "name": asset.name,
+            "type": asset.asset_type.value if hasattr(asset.asset_type, "value") else str(asset.asset_type),
+            "location": asset.location,
+            "zone": getattr(asset, "zone", "Unassigned"),
+            "health": round(health, 1) if health is not None else None,
+            "status": asset.status,
+            "refinery_id": getattr(asset, "refinery_id", None),
+            "metadata": getattr(asset, "metadata", {}) or {},
+        })
+    return rows
+
+
 def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else None
 
@@ -850,10 +893,9 @@ def get_execution_report_export(report_id: str, fmt: str = "markdown") -> dict[s
 
 def _build_operations_live() -> dict[str, Any]:
     """One snapshot for all Operations Center views and WebSocket updates."""
-    # Asset health changes continuously in the simulator.  The generic adapter
-    # has a cache for list endpoints, but a live control-room snapshot must
-    # invalidate it or the WebSocket will keep broadcasting stale health.
-    assets = api.get_assets(force_refresh=True)
+    # Read live asset health from the shared runtime / recent telemetry so fleet
+    # health is recalculated every snapshot instead of serving a frozen cache.
+    assets = _live_assets_with_health()
     audits = get_incident_audit(limit=20)
     activity = api.get_agent_activity(limit=20)
     reports = get_execution_reports(limit=100)
@@ -1002,7 +1044,11 @@ def _build_operations_live() -> dict[str, Any]:
         "generated_at": datetime.now().isoformat(),
         "dashboard": {
             "total_assets": len(assets),
-            "healthy_assets": sum(asset.get("status") == "Running" for asset in assets),
+            "healthy_assets": sum(
+                str(asset.get("status", "")).lower() in {"running", "healthy"}
+                and (asset.get("health") is None or float(asset.get("health", 0)) >= 80)
+                for asset in assets
+            ),
             "fleet_health": fleet_health,
             "active_incidents": sum(audit["status"] not in ("completed", "resolved") for audit in audits),
             "knowledge_documents": getattr(runtime.kernel, "_knowledge_document_count", 0),

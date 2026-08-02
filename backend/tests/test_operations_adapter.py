@@ -104,3 +104,28 @@ def test_notifications_include_asset_refinery_and_incident_detail(monkeypatch):
     assert payload["asset_name"] == "Pipeline P-002"
     assert payload["refinery_name"] == "Mumbai Coastal Refinery"
     assert payload["message"] == "Pressure spike"
+
+
+def test_average_asset_health_skips_missing_readings():
+    assert operations_adapter._average_asset_health([
+        {"health": 90},
+        {"health": None},
+        {"health": "bad"},
+        {"health": 70},
+    ]) == 80.0
+    assert operations_adapter._average_asset_health([{"health": None}]) is None
+
+
+def test_published_asset_health_falls_back_when_history_missing():
+    asset = SimpleNamespace(id="a1", health=88.4)
+    kernel = SimpleNamespace(state=SimpleNamespace(get_history=lambda _id: []))
+    assert operations_adapter._published_asset_health(asset, kernel) == 88.4
+
+
+def test_published_asset_health_recomputes_from_telemetry():
+    asset = SimpleNamespace(id="a1", health=100.0)
+    kernel = SimpleNamespace(
+        state=SimpleNamespace(get_history=lambda _id: [{"value": 1}] * 5),
+        health=SimpleNamespace(calculate_health=lambda _readings: 61.2),
+    )
+    assert operations_adapter._published_asset_health(asset, kernel) == 61.2

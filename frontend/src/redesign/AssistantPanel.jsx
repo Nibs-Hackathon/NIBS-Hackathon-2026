@@ -6,7 +6,11 @@ import { useOperations } from '../context/OperationsContext';
 import { askAssistant, getKnowledgeDocuments } from '../api/client';
 import './assistant-knowledge.css';
 
-const prompts = ['What needs my attention?', 'Explain the active investigation', 'Summarize current asset risk'];
+const prompts = [
+  'What is fleet health right now?',
+  'What needs my attention?',
+  'Explain the active investigation',
+];
 
 function AssistantResponse({ text }) {
   const lines = String(text || '').split('\n');
@@ -97,7 +101,7 @@ export function AssistantPanel({ onClose }) {
           <Typography className="product-dialog-label">RIGOS AI</Typography>
           <Typography variant="h6">Operations copilot</Typography>
           <Typography variant="body2" color="text.secondary">
-            Ask about assets, incidents, evidence, and recommended next actions.
+            Gemini-grounded answers on live fleet health, incidents, and next actions.
           </Typography>
           <Chip
             className="assistant-context-chip"
@@ -136,7 +140,7 @@ export function AssistantPanel({ onClose }) {
                 <CircularProgress size={16} />
                 <Box>
                   <Typography>Resolving operating context</Typography>
-                  <Typography>Incident check · financial model · knowledge guidance</Typography>
+                  <Typography>Live fleet · Gemini synthesis · knowledge guidance</Typography>
                 </Box>
               </Box>
             )}
