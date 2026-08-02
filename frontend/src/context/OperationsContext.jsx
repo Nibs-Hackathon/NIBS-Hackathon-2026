@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { getOperationsLive } from '../api/client';
+import { notificationPresentation } from '../api/resourceAdapters';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 const OperationsContext = createContext(null);
@@ -121,9 +122,26 @@ export function OperationsProvider({ children }) {
     (socketSnapshot.notifications || []).filter((notification) => !notification.read).slice(0, 5).forEach((notification) => {
       if (notifiedIds.current.has(notification.id)) return;
       notifiedIds.current.add(notification.id);
-      toast(notification.title, {
+      const { title, detail } = notificationPresentation(notification);
+      const severity = ['critical', 'warning', 'success'].includes(notification.severity)
+        ? notification.severity
+        : 'info';
+      toast.custom((toastState) => (
+        <div
+          className={`rig-ops-toast severity-${severity} ${toastState.visible ? 'is-visible' : 'is-hidden'}`}
+        >
+          <span className="rig-ops-toast-signal" aria-hidden="true" />
+          <span className="rig-ops-toast-copy">
+            <strong>{title}</strong>
+            <span>{detail}</span>
+          </span>
+        </div>
+      ), {
         duration: 4000,
-        icon: notification.severity === 'critical' ? '🔴' : notification.severity === 'warning' ? '🟠' : '🔵',
+        ariaProps: {
+          role: 'status',
+          'aria-live': severity === 'critical' ? 'assertive' : 'polite',
+        },
       });
     });
   }, [socketSnapshot]);

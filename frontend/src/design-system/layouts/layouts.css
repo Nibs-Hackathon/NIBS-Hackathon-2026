@@ -20,16 +20,16 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(164, 196, 228, 0.12);
-  border-radius: 10px;
-  background: #111722;
+  border: 1px solid var(--rig-line);
+  border-radius: var(--rig-radius);
+  background: var(--rig-surface);
 }
 
 .rig-layout-pane-body {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: 12px;
+  padding: var(--rig-space-3);
 }
 
 .rig-layout-placeholder {
@@ -49,25 +49,25 @@
 
 .rig-layout-tabs {
   display: none;
-  gap: 4px;
+  gap: calc(var(--rig-space-2) / 2);
   flex-shrink: 0;
 }
 
 .rig-layout-tabs button {
   flex: 1;
   border: 0;
-  padding: 10px 8px;
-  border-radius: 8px;
+  padding: var(--rig-space-2);
+  border-radius: calc(var(--rig-radius) - 2px);
   background: transparent;
-  color: #93A2B8;
-  font-size: 0.75rem;
+  color: var(--rig-muted);
+  font-size: var(--rig-type-caption);
   font-weight: 650;
   cursor: pointer;
 }
 
 .rig-layout-tabs button.is-active {
-  background: #0d1219;
-  color: #EEF4FC;
+  background: var(--rig-inset);
+  color: var(--rig-text);
 }
 
 /* —— Mission Control —— */
@@ -103,7 +103,7 @@
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 320px;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: var(--rig-space-4);
   height: 100%;
   min-height: 0;
 }
@@ -176,7 +176,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--rig-space-4);
   height: 100%;
   min-height: 0;
 }
@@ -196,10 +196,10 @@
 
 .rig-kanban-columns {
   display: flex;
-  gap: 12px;
+  gap: var(--rig-space-3);
   min-width: max-content;
   height: 100%;
-  padding-bottom: 4px;
+  padding-bottom: calc(var(--rig-space-2) / 2);
 }
 
 .rig-kanban-column {
@@ -207,26 +207,26 @@
   min-width: 220px;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(164, 196, 228, 0.12);
-  border-radius: 10px;
-  background: #0d1219;
+  border: 1px solid var(--rig-line);
+  border-radius: var(--rig-radius);
+  background: var(--rig-surface);
   overflow: hidden;
 }
 
 .rig-kanban-column-head {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(164, 196, 228, 0.12);
+  padding: var(--rig-space-2) var(--rig-space-3);
+  border-bottom: 1px solid var(--rig-line);
   font-size: 0.6875rem;
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #93A2B8;
+  color: var(--rig-muted);
 }
 
 .rig-kanban-column-body {
   flex: 1;
   overflow: auto;
-  padding: 8px;
+  padding: var(--rig-space-2);
 }
 
 .rig-kanban-inspector { grid-column: 2; }
@@ -235,7 +235,7 @@
 .rig-executive-layout {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 300px;
-  gap: 16px;
+  gap: var(--rig-space-4);
   height: 100%;
   min-height: 0;
 }

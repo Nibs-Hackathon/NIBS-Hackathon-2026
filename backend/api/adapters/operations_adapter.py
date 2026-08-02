@@ -213,12 +213,21 @@ def _runtime_incidents(limit: int) -> list[dict[str, Any]]:
                 if report and report.recommendations
                 else None
             ),
+            "agent_actions": (
+                ((report.metadata or {}).get("agent_actuation") or {}).get("executed")
+                if report
+                else []
+            ) or [],
             "execution_report": {
                 "id": report.id,
                 "summary": report.final_summary,
                 "success": report.success,
                 "recommendations": report.recommendations or [],
                 "confidence": confidence,
+                "agent_actions": (
+                    ((report.metadata or {}).get("agent_actuation") or {}).get("executed")
+                    or []
+                ),
             } if report else None,
             "resolution_seconds": resolution.get("resolution_seconds") if resolution else None,
             "resolved_at": _iso(resolution.get("resolved_at")) if resolution else None,
@@ -357,12 +366,20 @@ def get_incident_audit(limit: int = 100) -> list[dict[str, Any]]:
                 "health_capture_status": "captured at incident detection and workflow completion" if incident.health_before is not None else "historic record predates outcome snapshots",
                 "operator_actions": [_action_step(action) for action in actions],
                 "ai_recommendation": (report.recommendations[0] if report and report.recommendations else None),
+                "agent_actions": (
+                    ((getattr(report, "metadata", None) or {}).get("agent_actuation") or {}).get("executed")
+                    if report else []
+                ) or [],
                 "execution_report": {
                     "id": report.id,
                     "summary": report.summary,
                     "success": report.success,
                     "recommendations": report.recommendations or [],
                     "confidence": confidence,
+                    "agent_actions": (
+                        ((getattr(report, "metadata", None) or {}).get("agent_actuation") or {}).get("executed")
+                        or []
+                    ),
                 } if report else None,
                 "resolution_seconds": incident.resolution_seconds,
                 "resolved_at": _iso(incident.resolved_at),
@@ -492,12 +509,14 @@ def _notifications() -> list[dict[str, Any]]:
     from services.notification_service import notification_service
     return [{
         "id": notification.id,
+        "type": notification.type.value if hasattr(notification.type, "value") else str(notification.type),
         "title": notification.title,
         "message": notification.message,
         "severity": notification.severity.value if hasattr(notification.severity, "value") else str(notification.severity),
         "timestamp": _iso(notification.timestamp),
         "asset_id": notification.asset_id,
         "asset_name": notification.asset_name,
+        "refinery_name": getattr(notification, "refinery_name", None),
         "incident_type": notification.incident_type,
         "revenue_impact": notification.revenue_impact,
         "metadata": notification.metadata,

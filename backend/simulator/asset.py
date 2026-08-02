@@ -111,6 +111,14 @@ class SimulatedAsset:
 
         return telemetry
 
+    def clear_fault(self):
+        """Clear an injected fault so shutoff can hold the asset quiet."""
+        self._fault_active = False
+        self._fault_sensor = None
+        self._fault_original_value = None
+        self._fault_target_value = None
+        self._fault_ticks = 0
+
     def _get_unit(self, sensor_type):
         units = {
             SensorType.PRESSURE: "PSI",

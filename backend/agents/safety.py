@@ -90,14 +90,38 @@ class SafetyAgent(Agent):
         else:
             status = "SAFE"
 
+        # Hard trip: pressure / temperature / gas over envelope → isolate that asset.
+        hard_trip = bool(
+            pressure >= thresholds.get("pressure_max", 150)
+            or temperature >= thresholds.get("temperature_max", 85)
+            or gas >= thresholds.get("gas_max", 40)
+        )
+
+        asset_id = self._get_asset_id(context)
+        refinery = self._get_refinery(context)
+
         # Recommendations based on status
         recommendations = []
-        if status == "CRITICAL":
+        control_actions = []
+        if status == "CRITICAL" or hard_trip:
+            if hard_trip and status == "SAFE":
+                status = "CRITICAL"
+            target = asset_id or "affected asset"
+            where = f" at {refinery}" if refinery else ""
             recommendations.extend([
-                "Reduce operating load immediately",
+                f"Shut off {target}{where} immediately",
                 "Notify control room",
-                "Inspect affected equipment",
+                "Inspect affected equipment after isolation",
             ])
+            if asset_id:
+                control_actions.append({
+                    "type": "shut_off",
+                    "asset_id": asset_id,
+                    "refinery": refinery,
+                    "reason": alerts[0] if alerts else "Critical threshold breach",
+                })
+            if hasattr(context, "requires_shutdown"):
+                context.requires_shutdown = True
         elif status == "WARNING":
             recommendations.extend([
                 "Increase monitoring frequency",
@@ -114,6 +138,9 @@ class SafetyAgent(Agent):
             "telemetry": telemetry,
             "thresholds": thresholds,  # ✅ Track which thresholds were used
             "confidence": 0.96,
+            "asset_id": asset_id,
+            "refinery": refinery,
+            "control_actions": control_actions,
         }
 
         self._store_metadata(context, metadata)
@@ -128,8 +155,9 @@ class SafetyAgent(Agent):
             confidence=0.96,
             evidence=alerts,
             recommendations=recommendations,
-            required_action="Immediate intervention" if status == "CRITICAL" else "Continue monitoring",
-            requires_human_approval=(status == "CRITICAL"),
+            required_action="Shut off asset" if (status == "CRITICAL" or hard_trip) else "Continue monitoring",
+            # Hard-trip shutoff is agent-executed in the simulator; WO still needs review.
+            requires_human_approval=False if (status == "CRITICAL" or hard_trip) else (status == "WARNING"),
             metadata=metadata,
             summary=summary,
         )
@@ -145,6 +173,29 @@ class SafetyAgent(Agent):
         if event is None:
             return {}
         return getattr(event, "payload", {}) or {}
+
+    def _get_asset_id(self, context):
+        if isinstance(context, dict):
+            event = context.get("event") or {}
+            return context.get("asset_id") or (
+                event.get("source") if isinstance(event, dict) else getattr(event, "source", None)
+            )
+        event = getattr(context, "event", None)
+        return getattr(event, "source", None) if event is not None else None
+
+    def _get_refinery(self, context):
+        telemetry = self._extract_telemetry(context)
+        if telemetry.get("refinery") or telemetry.get("location"):
+            return telemetry.get("refinery") or telemetry.get("location")
+        asset_id = self._get_asset_id(context)
+        if not asset_id:
+            return None
+        try:
+            from services.runtime import runtime
+            asset = runtime.kernel.asset_service.get(asset_id)
+            return getattr(asset, "location", None) if asset else None
+        except Exception:
+            return None
 
     def _store_metadata(self, context, metadata):
         if isinstance(context, dict):

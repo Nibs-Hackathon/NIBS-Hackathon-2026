@@ -96,6 +96,24 @@ class Orchestrator:
         # Aggregate results
         decision = self.supervisor.summarize(context)
 
+        # Execute supervised simulator commands (shutoff + maintenance plans).
+        try:
+            from services.agent_actuation import apply_agent_actuation
+
+            actuation = apply_agent_actuation(context)
+        except Exception as error:
+            actuation = {"executed": [], "errors": [f"{type(error).__name__}:{error}"]}
+            context.metadata["agent_actuation"] = actuation
+
+        recommendations = list(decision["recommendations"] or [])
+        for item in actuation.get("executed") or []:
+            if item.get("type") == "shut_off" and item.get("ok"):
+                recommendations.insert(0, item.get("message") or "Asset shut off by safety agent.")
+            elif item.get("type") == "plan_work_order":
+                recommendations.append(
+                    f"Maintenance planned: {item.get('title')} ({item.get('status')})"
+                )
+
         report = ExecutionReport(
             execution_id=context.execution_id,
             workflow_name=workflow_name,
@@ -104,7 +122,7 @@ class Orchestrator:
             completed_at=datetime.now(),
             agent_results=context.results,
             final_summary=decision["summary"],
-            recommendations=decision["recommendations"],
+            recommendations=recommendations,
             total_agents=context.execution_metrics["agents_executed"],
             successful_agents=context.execution_metrics["successful_agents"],
             failed_agents=context.execution_metrics["failed_agents"],
@@ -116,6 +134,7 @@ class Orchestrator:
                 "incident_id": event.id,
                 "incident_type": event.name,
                 "asset_id": event.source,
+                "agent_actuation": actuation,
             },
         )
 

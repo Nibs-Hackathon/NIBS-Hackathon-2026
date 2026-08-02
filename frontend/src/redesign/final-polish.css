@@ -10,6 +10,14 @@
   --rig-text: #e7eef8;
   --rig-muted: #8d9eb3;
   --rig-blue: #6aa6ff;
+  --rig-critical: #f09389;
+  --rig-warning: #f0b868;
+  --rig-success: #72dcb5;
+  --rig-space-2: 8px;
+  --rig-space-3: 12px;
+  --rig-space-4: 16px;
+  --rig-type-body-sm: 0.875rem;
+  --rig-type-caption: 0.75rem;
   --rig-radius: 12px;
   --rig-radius-sm: 8px;
   --rig-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
@@ -29,6 +37,9 @@ html[data-rigos-theme='light'] {
   --rig-text: #0f172a;
   --rig-muted: #64748b;
   --rig-blue: #2563eb;
+  --rig-critical: #c2413b;
+  --rig-warning: #a16207;
+  --rig-success: #087f5b;
   --rig-shadow: 0 10px 28px rgba(54, 83, 118, 0.1);
   --rig-sticky-fade: linear-gradient(180deg, #f6f7f9 70%, transparent);
 }
@@ -164,18 +175,13 @@ html[data-rigos-theme='light'] .twin-workspace-head {
 
 .mission-command-grid,
 .mission-lower-grid,
-.twin-workspace-grid,
 .incident-os-grid,
-.maintenance-layout,
 .ai-flagship-grid,
-.forecast-terminal-grid,
-.briefing-layout { align-items: stretch; }
+.forecast-terminal-grid { align-items: stretch; }
 
 .mission-lower-grid > *,
-.maintenance-layout > *,
 .ai-flagship-grid > *,
-.forecast-terminal-grid > *,
-.briefing-layout > * { min-width: 0; }
+.forecast-terminal-grid > * { min-width: 0; }
 
 .asset-tree,
 .incident-queue-list,

@@ -16,7 +16,7 @@ import { useOperations } from '../context/OperationsContext';
 import { useObjectContext } from '../context/ObjectContext';
 import { navigateTo, pathToWorkspace, WORKSPACE_LABELS } from '../context/objectNavigation';
 import { markNotificationsRead } from '../api/client';
-import { normalizeRefineryOptions } from '../api/resourceAdapters';
+import { normalizeRefineryOptions, notificationPresentation } from '../api/resourceAdapters';
 import { ScopeSwitcher } from '../design-system/catalog/shell';
 import { AssistantPanel } from './AssistantPanel';
 import './sync-control.css';
@@ -428,7 +428,7 @@ export function ProductShell({ children }) {
       <Box className="os-stage">
         <a className="e6-skip-link" href="#main-content">Skip to main content</a>
         <header className="os-topbar" role="banner">
-          <Stack className="os-topbar-primary" direction="row" alignItems="center" spacing={1.25}>
+          <Stack className="os-topbar-primary" direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
             <Button className="os-command-trigger" onClick={() => setCommandOpen(true)} startIcon={<SearchOutlined />} endIcon={<kbd>⌘ K</kbd>} aria-label="Open command palette">
               <span className="os-command-label">Search assets, incidents, work orders…</span>
             </Button>
@@ -443,7 +443,7 @@ export function ProductShell({ children }) {
               <Typography>{facilityOptions.find((row) => row.value === facility)?.detail || facility}</Typography>
             </Box>
           </Stack>
-          <Stack className="os-topbar-actions" direction="row" alignItems="center" spacing={0.5}>
+          <Stack className="os-topbar-actions" direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
             <Box className="os-ambient">
               <Typography>{clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Typography>
               <Typography>
@@ -553,13 +553,13 @@ export function ProductShell({ children }) {
 
       <Dialog open={inboxOpen} onClose={() => setInboxOpen(false)} fullWidth maxWidth="md" PaperProps={{ className: 'product-dialog product-notification-dialog' }}>
         <Box className="product-inbox">
-          <Stack className="notification-inbox-head" direction="row" justifyContent="space-between">
+          <Stack className="notification-inbox-head" direction="row" sx={{ justifyContent: 'space-between' }}>
             <Box>
               <Typography className="product-dialog-label">OPERATOR INBOX</Typography>
               <Typography variant="h6">Operations signal center</Typography>
               <Typography variant="body2" color="text.secondary">{unread.length} unread · {notifications.length} recent events</Typography>
             </Box>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               {unread.length ? <Button size="small" onClick={() => markInboxRead([], true)}>Mark all read</Button> : null}
               <IconButton onClick={() => setInboxOpen(false)}><CloseOutlined /></IconButton>
             </Stack>
@@ -580,44 +580,47 @@ export function ProductShell({ children }) {
             inboxFilter === 'unread' ? !item.read
               : inboxFilter === 'critical' ? /critical|warning/i.test(item.severity || '')
                 : true
-          )).map((item, index) => (
-            <Box className={`product-notification severity-${item.severity || 'info'} ${item.read ? 'is-read' : 'is-unread'}`} key={item.id || index}>
-              <Box className="notification-signal-icon">
-                {/critical|warning/i.test(item.severity || '') ? <WarningAmberOutlined /> : item.severity === 'success' ? <SyncOutlined /> : <NotificationsOutlined />}
-              </Box>
-              <Box className="notification-signal-copy">
-                <Stack direction="row" justifyContent="space-between" gap={1}>
-                  <Typography fontWeight={800}>{item.title}</Typography>
-                  <Typography className={`notification-severity ${item.severity || 'info'}`}>{label(item.severity || 'info')}</Typography>
+          )).map((item, index) => {
+            const presentation = notificationPresentation(item);
+            return (
+              <Box className={`product-notification severity-${item.severity || 'info'} ${item.read ? 'is-read' : 'is-unread'}`} key={item.id || index}>
+                <Box className="notification-signal-icon">
+                  {/critical|warning/i.test(item.severity || '') ? <WarningAmberOutlined /> : item.severity === 'success' ? <SyncOutlined /> : <NotificationsOutlined />}
+                </Box>
+                <Box className="notification-signal-copy">
+                  <Stack direction="row" gap={1} sx={{ justifyContent: 'space-between' }}>
+                    <Typography fontWeight={800}>{presentation.title}</Typography>
+                    <Typography className={`notification-severity ${item.severity || 'info'}`}>{label(item.severity || 'info')}</Typography>
+                  </Stack>
+                  <Typography variant="body2">{presentation.detail}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {[label(item.severity || 'info'), formatTime(item.timestamp)].join(' · ')}
+                  </Typography>
+                </Box>
+                <Stack className="notification-signal-actions" direction="row" spacing={0.5}>
+                  {item.metadata?.work_order_id && (
+                    <Button size="small" onClick={() => {
+                      navigateTo(objectApi, navigate, 'maintenance', { workOrderId: item.metadata.work_order_id, assetId: item.asset_id || null });
+                      setInboxOpen(false);
+                    }}>Open work</Button>
+                  )}
+                  {item.metadata?.incident_id && (
+                    <Button size="small" onClick={() => {
+                      navigateTo(objectApi, navigate, 'incidents', { incidentId: item.metadata.incident_id, assetId: item.asset_id || null });
+                      setInboxOpen(false);
+                    }}>Open case</Button>
+                  )}
+                  {item.asset_id && (
+                    <Button size="small" onClick={() => {
+                      navigateTo(objectApi, navigate, 'assets', { assetId: item.asset_id });
+                      setInboxOpen(false);
+                    }}>Open asset</Button>
+                  )}
+                  {!item.read && <Button size="small" onClick={() => markInboxRead([item.id])}>Mark read</Button>}
                 </Stack>
-                <Typography variant="body2">{item.message}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {[item.asset_name, item.incident_type, formatTime(item.timestamp)].filter(Boolean).join(' · ')}
-                </Typography>
               </Box>
-              <Stack className="notification-signal-actions" direction="row" spacing={0.5}>
-                {item.metadata?.work_order_id && (
-                  <Button size="small" onClick={() => {
-                    navigateTo(objectApi, navigate, 'maintenance', { workOrderId: item.metadata.work_order_id, assetId: item.asset_id || null });
-                    setInboxOpen(false);
-                  }}>Open work</Button>
-                )}
-                {item.metadata?.incident_id && (
-                  <Button size="small" onClick={() => {
-                    navigateTo(objectApi, navigate, 'incidents', { incidentId: item.metadata.incident_id, assetId: item.asset_id || null });
-                    setInboxOpen(false);
-                  }}>Open case</Button>
-                )}
-                {item.asset_id && (
-                  <Button size="small" onClick={() => {
-                    navigateTo(objectApi, navigate, 'assets', { assetId: item.asset_id });
-                    setInboxOpen(false);
-                  }}>Open asset</Button>
-                )}
-                {!item.read && <Button size="small" onClick={() => markInboxRead([item.id])}>Mark read</Button>}
-              </Stack>
-            </Box>
-          )) : (
+            );
+          }) : (
             <Box className="product-inbox-empty">
               <NotificationsOutlined />
               <Typography fontWeight={700}>You’re all caught up</Typography>
@@ -661,7 +664,7 @@ export function ProductShell({ children }) {
             exit={{ opacity: 0 }}
             transition={{ duration: reduced ? 0 : 0.12, ease: 'easeOut' }}
           >
-            <Stack direction="row" justifyContent="space-between">
+            <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
               <Box>
                 <Typography className="product-dialog-label">WORKSPACE PANEL</Typography>
                 <Typography fontWeight={800}>{current[0]} · audit & notifications</Typography>

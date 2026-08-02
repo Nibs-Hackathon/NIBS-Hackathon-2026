@@ -6,8 +6,7 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  height: calc(100vh - 112px);
-  max-height: calc(100vh - 112px);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -42,25 +41,47 @@
   color: #94a3b8;
 }
 
-.assets-mobile-tabs {
-  display: none;
-  gap: 4px;
-}
-
-.assets-body.twin-workspace-grid {
+.assets-layout-shell {
   flex: 1 1 auto;
   min-height: 0;
-  align-items: stretch;
-  display: grid !important;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) 320px;
   gap: 10px;
 }
 
-.assets-body > .assets-pane,
-.assets-body > .assets-twin {
-  border-color: rgba(148, 163, 184, 0.16) !important;
-  background: linear-gradient(180deg, rgba(17, 23, 32, 0.98), rgba(12, 17, 24, 0.98)) !important;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16) !important;
+.assets-layout-shell > .rig-layout-pane {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.assets-layout-shell > .rig-layout-pane > .rig-layout-pane-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.assets-layout-shell .rig-explorer-signals {
+  grid-column: 1 / -1;
+  max-height: none;
+  min-height: 0;
+}
+
+.assets-filter-empty {
+  display: grid;
+  min-height: 100%;
+  place-content: center;
+  justify-items: center;
+  gap: var(--rig-space-3);
+  padding: var(--rig-space-4);
+  text-align: center;
+}
+
+.assets-filter-empty > .product-empty-state {
+  min-height: 0;
+}
+
+.assets-filter-empty > p {
+  max-width: 32ch;
+  color: var(--rig-muted);
 }
 
 .asset-explorer-top {
@@ -87,13 +108,17 @@
   border-color: rgba(115, 166, 255, 0.42);
 }
 
-.assets-os.inspector-collapsed .assets-body.twin-workspace-grid {
+.assets-layout-shell.inspector-collapsed {
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
 }
 
+.assets-layout-shell.inspector-collapsed > .rig-explorer-inspector {
+  display: none;
+}
+
 /* Twin is the only pane that grows — ≥55% of body */
-.assets-body > .assets-twin,
-.assets-body > .twin-canvas.assets-twin {
+.assets-layout-shell .assets-twin,
+.assets-layout-shell .twin-canvas.assets-twin {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -738,7 +763,7 @@
 
 .product-page.is-assets-os {
   max-width: none;
-  height: calc(100vh - 96px);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -752,30 +777,13 @@
 }
 
 @media (max-width: 1024px) {
-  .assets-mobile-tabs {
+  .assets-layout-shell,
+  .assets-layout-shell.inspector-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .assets-layout-shell.inspector-collapsed > .rig-explorer-inspector {
     display: flex;
-    flex-shrink: 0;
-  }
-
-  .assets-mobile-tabs .MuiButton-root {
-    text-transform: none;
-    min-width: 0;
-    flex: 1;
-  }
-
-  .assets-mobile-tabs .MuiButton-root.active {
-    background: rgba(79, 140, 255, 0.16);
-  }
-
-  .assets-body.twin-workspace-grid,
-  .assets-os.inspector-collapsed .assets-body.twin-workspace-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .assets-body.mobile-explorer > :not(.asset-explorer),
-  .assets-body.mobile-twin > :not(.assets-twin),
-  .assets-body.mobile-inspector > :not(.twin-inspector) {
-    display: none !important;
   }
 
   .assets-layer-toggles {

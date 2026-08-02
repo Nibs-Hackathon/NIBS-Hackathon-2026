@@ -212,6 +212,9 @@ export function IncidentManagement({
       ['Evidence', null, activeIncident.evidence || 'Awaiting evidence from the audit record.', 'signal'],
     ];
   const pendingRec = Boolean(activeIncident.ai_recommendation || activeIncident.status !== 'closed');
+  const agentActions = Array.isArray(activeIncident.agent_actions)
+    ? activeIncident.agent_actions
+    : (activeIncident.execution_report?.agent_actions || []);
   const operatorActions = Array.isArray(activeIncident.operator_actions) ? activeIncident.operator_actions : [];
   const sessionDecisions = objectApi.audit?.recentDecisions?.filter(
     (entry) => !incident?.id || entry.incidentId === incident.id,
@@ -428,6 +431,20 @@ export function IncidentManagement({
       </Paper>
 
       <EvidenceLineage facts={buildEvidenceFacts({ incident: activeIncident, stages: auditTimeline })} />
+      {agentActions.length ? (
+        <Paper className="incident-agent-actions" variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography className="product-kicker">AGENT ACTIONS EXECUTED</Typography>
+          {agentActions.map((action, index) => (
+            <Typography key={action.id || action.action_id || index} variant="body2" sx={{ mt: 0.75 }}>
+              {action.type === 'shut_off'
+                ? (action.message || `Shut off ${action.asset_name || action.asset_id}${action.refinery ? ` · ${action.refinery}` : ''}`)
+                : action.type === 'plan_work_order'
+                  ? `Maintenance planned: ${action.title || 'Work order'} (${action.status || 'pending'})`
+                  : (action.message || action.type || 'Agent action')}
+            </Typography>
+          ))}
+        </Paper>
+      ) : null}
       {pendingRec ? (
         <OperatorDecisionBar incident={activeIncident} objectApi={objectApi} recommendation={activeIncident.ai_recommendation} />
       ) : null}

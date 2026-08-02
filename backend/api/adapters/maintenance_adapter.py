@@ -36,13 +36,22 @@ def _notify_work_order(action_id: str, title: str, status: str, asset_id: str | 
             if status in {"approved", "completed"}
             else NotificationSeverity.INFO
         )
+        asset = runtime.kernel.asset_service.get(asset_id) if asset_id else None
+        asset_name = getattr(asset, "name", None)
+        refinery_name = getattr(asset, "location", None)
+        notification_title = " · ".join(
+            value for value in (asset_name, refinery_name) if value
+        ) or "Maintenance work order"
+        status_label = status.replace("_", " ")
         notification_service.add_notification(Notification(
             id=str(uuid4()),
             type=NotificationType.MAINTENANCE_SCHEDULED,
             severity=severity,
-            title=f"Work order {status.replace('_', ' ')}",
-            message=title,
+            title=notification_title,
+            message=f"{title} · {status_label}",
             asset_id=asset_id,
+            asset_name=asset_name,
+            refinery_name=refinery_name,
             metadata={"work_order_id": action_id, "status": status},
             human_approval_required=status == "pending_approval",
         ))

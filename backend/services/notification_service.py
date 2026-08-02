@@ -32,6 +32,7 @@ class Notification:
     message: str
     asset_id: Optional[str] = None
     asset_name: Optional[str] = None
+    refinery_name: Optional[str] = None
     incident_type: Optional[str] = None
     revenue_impact: Optional[float] = None
     maintenance_scheduled: Optional[str] = None

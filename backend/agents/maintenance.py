@@ -62,11 +62,20 @@ class MaintenanceAgent(Agent):
         if not work_orders:
             work_orders.append("No maintenance required")
 
+        # When safety already forced shutoff, keep a concrete follow-up WO.
+        if safety.get("status") == "CRITICAL" and work_orders == ["No maintenance required"]:
+            work_orders = ["Post-shutoff inspection and restart clearance"]
+            priority = "CRITICAL"
+            downtime = "Immediate shutdown"
+
+        planned = [wo for wo in work_orders if wo != "No maintenance required"]
         metadata = {
             "priority": priority,
             "priority_level": priority_level,
             "downtime": downtime,
             "work_orders": work_orders,
+            "planned_work_orders": planned,
+            "auto_plan": bool(planned) and priority in ("MEDIUM", "HIGH", "CRITICAL"),
             "risk_status": safety.get("status", "SAFE"),
         }
 
@@ -80,9 +89,10 @@ class MaintenanceAgent(Agent):
             evidence=work_orders,
             recommendations=work_orders,
             required_action=priority,
+            # Plans are auto-created; field completion still needs human transition.
             requires_human_approval=(priority in ("HIGH", "CRITICAL")),
             metadata=metadata,
-            summary=f"{len(work_orders)} maintenance task(s) generated. Priority: {priority}.",
+            summary=f"{len(planned)} maintenance task(s) planned. Priority: {priority}.",
         )
 
     def _get_metadata(self, context, key):

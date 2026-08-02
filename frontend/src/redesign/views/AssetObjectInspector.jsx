@@ -131,7 +131,7 @@ export function AssetObjectInspector({
   return (
     <Paper className="twin-inspector p8-inspector-swap assets-pane assets-inspector" key={asset.id}>
       <Box className="twin-inspector-head assets-inspector-sticky">
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Typography className="product-kicker">OBJECT</Typography>
           <ProvenanceBadge value={provenance} />
         </Stack>

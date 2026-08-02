@@ -2,6 +2,12 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from api.adapters import operations_adapter
+from services.notification_service import (
+    Notification,
+    NotificationSeverity,
+    NotificationType,
+    notification_service,
+)
 
 
 def test_runtime_incident_includes_workflow_confidence(monkeypatch):
@@ -75,3 +81,26 @@ def test_runtime_incident_tracks_live_simulator_state(monkeypatch):
 
     assert incident["status"] == "active"
     assert operations_adapter._sensor_from_incident(incident["incident_type"]) == "Flow"
+
+
+def test_notifications_include_asset_refinery_and_incident_detail(monkeypatch):
+    monkeypatch.setattr(notification_service, "_notifications", [
+        Notification(
+            id="notification-1",
+            type=NotificationType.INCIDENT_DETECTED,
+            severity=NotificationSeverity.CRITICAL,
+            title="Pipeline P-002 · Mumbai Coastal Refinery",
+            message="Pressure spike",
+            asset_id="asset-1",
+            asset_name="Pipeline P-002",
+            refinery_name="Mumbai Coastal Refinery",
+            incident_type="Pressure spike",
+        )
+    ])
+
+    payload = operations_adapter._notifications()[0]
+
+    assert payload["type"] == "incident_detected"
+    assert payload["asset_name"] == "Pipeline P-002"
+    assert payload["refinery_name"] == "Mumbai Coastal Refinery"
+    assert payload["message"] == "Pressure spike"

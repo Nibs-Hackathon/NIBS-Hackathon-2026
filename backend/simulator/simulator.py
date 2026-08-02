@@ -29,6 +29,7 @@ class Simulator:
         self.active_incidents = {}        # asset_id -> incident_data
         self.resolved_incidents = {}      # asset_id -> resolution_tick
         self.incident_resolutions = {}    # incident_id -> auditable outcome
+        self._held_offline = set()        # agent shutoff holds until field work
         self._incident_cooldown_ticks = 20  # ✅ 20 ticks cooldown
         self._last_incident_time = 0
         self.incident_resolution_count = 0
@@ -87,6 +88,10 @@ class Simulator:
                 if active:
                     health = min(health, active.get("incident_health", health))
                     status = active.get("asset_status", "Attention")
+                # Agent shutoff / maintenance holds beat auto telemetry status.
+                held = str(getattr(asset.asset, "status", "") or "")
+                if asset.asset.id in self._held_offline or held.lower() in {"offline", "maintenance"}:
+                    status = "Offline" if asset.asset.id in self._held_offline else held
                 self.kernel.asset_service.update_health(asset.asset.id, health)
                 self.kernel.asset_service.update_status(asset.asset.id, status)
         
@@ -206,6 +211,11 @@ class Simulator:
         Notification = self._Notification
         NotificationType = self._NotificationType
         NotificationSeverity = self._NotificationSeverity
+        asset = self.kernel.asset_service.get(asset_id)
+        refinery_name = getattr(asset, "location", None)
+        notification_title = " · ".join(
+            value for value in (asset_name, refinery_name) if value
+        )
         
         # ✅ Incident detected
         notification_service.add_notification(
@@ -213,10 +223,11 @@ class Simulator:
                 id=str(uuid4()),
                 type=NotificationType.INCIDENT_DETECTED,
                 severity=NotificationSeverity.CRITICAL,
-                title=f"🚨 {event.name}",
-                message=f"{asset_name}",
+                title=notification_title,
+                message=event.name,
                 asset_id=asset_id,
                 asset_name=asset_name,
+                refinery_name=refinery_name,
                 incident_type=event.name,
                 metadata={"incident_id": getattr(event, "id", None)},
             )
@@ -229,10 +240,12 @@ class Simulator:
                 id=str(uuid4()),
                 type=NotificationType.REVENUE_IMPACT,
                 severity=NotificationSeverity.WARNING if impact['revenue_loss'] > 1000 else NotificationSeverity.INFO,
-                title="💰 Revenue Impact",
-                message=f"${impact['revenue_loss']:,.0f}",
+                title=notification_title,
+                message=f"Revenue impact: ${impact['revenue_loss']:,.0f}",
                 asset_id=asset_id,
                 asset_name=asset_name,
+                refinery_name=refinery_name,
+                incident_type=event.name,
                 revenue_impact=impact['revenue_loss'],
                 metadata={"incident_id": getattr(event, "id", None)},
             )
@@ -252,6 +265,12 @@ class Simulator:
             Notification = self._Notification
             NotificationType = self._NotificationType
             NotificationSeverity = self._NotificationSeverity
+            asset = self.kernel.asset_service.get(asset_id)
+            refinery_name = getattr(asset, "location", None)
+            incident_type = getattr(event, "name", None)
+            notification_title = " · ".join(
+                value for value in (asset_name, refinery_name) if value
+            )
             
             # ✅ Send resolution notification
             notification_service.add_notification(
@@ -259,12 +278,13 @@ class Simulator:
                     id=str(uuid4()),
                     type=NotificationType.INCIDENT_RESOLVED,
                     severity=NotificationSeverity.SUCCESS,
-                    title="✅ Resolved",
-                    message=asset_name,
+                    title=notification_title,
+                    message=f"Resolved: {incident_type or 'incident'}",
                     asset_id=asset_id,
                     asset_name=asset_name,
-                    incident_type=getattr(active_incident.get("event"), "name", None),
-                    metadata={"incident_id": getattr(active_incident.get("event"), "id", None)},
+                    refinery_name=refinery_name,
+                    incident_type=incident_type,
+                    metadata={"incident_id": incident_id},
                 )
             )
 
@@ -272,7 +292,6 @@ class Simulator:
             # happens here—not when the AI report completes—so audit history
             # can accurately show open incidents and resolution time.
             try:
-                asset = self.kernel.asset_service.get(asset_id)
                 self._get_persistence().resolve_incident(
                     getattr(active_incident.get("event"), "id", None),
                     getattr(asset, "health", None),
@@ -281,12 +300,21 @@ class Simulator:
                 print(f"Incident resolution persistence failed: {error}")
             
             # ✅ Remove from active incidents
+            held_offline = bool(active_incident.get("agent_shut_off"))
             del self.active_incidents[asset_id]
             asset = self.kernel.asset_service.get(asset_id)
             if asset:
                 history = self.state.get_history(asset_id)
                 metrics = self.computation_engine.compute_asset(asset, history) if history else None
-                if metrics:
+                if held_offline:
+                    # Agent isolation remains until audited field work completes.
+                    self.kernel.asset_service.update_status(asset_id, "Offline")
+                    if metrics:
+                        self.kernel.asset_service.update_health(
+                            asset_id, min(float(metrics["health"]), 35.0)
+                        )
+                    self._held_offline.add(asset_id)
+                elif metrics:
                     self.kernel.asset_service.update_health(asset_id, metrics["health"])
                     self.kernel.asset_service.update_status(asset_id, metrics["status"])
             if incident_id:
@@ -315,6 +343,19 @@ class Simulator:
         """
         active = self.active_incidents.get(asset_id)
         if active is None:
+            # Restart after agent shutoff even if the spike already normalized.
+            if asset_id in self._held_offline:
+                self._held_offline.discard(asset_id)
+                self.kernel.asset_service.update_status(asset_id, "Running")
+                prior = self.incident_resolutions.get(str(incident_id)) if incident_id else None
+                return {
+                    "resolved": True,
+                    "already_resolved": True,
+                    "asset_id": asset_id,
+                    "incident_id": incident_id,
+                    "reason": "Agent shutoff cleared after field work",
+                    **(prior or {}),
+                }
             prior = self.incident_resolutions.get(str(incident_id)) if incident_id else None
             if prior:
                 return {
@@ -338,9 +379,14 @@ class Simulator:
             }
         asset = self.kernel.asset_service.get(asset_id)
         asset_name = getattr(asset, "name", active.get("asset_name", asset_id))
+        # Clear agent isolation so resolve can restore modelled running status.
+        active["agent_shut_off"] = False
+        self._held_offline.discard(asset_id)
         resolution_tick = int(time.time())
         self._resolve_incident(asset_id, resolution_tick, asset_name)
         self.resolved_incidents[asset_id] = resolution_tick
+        if asset and str(getattr(asset, "status", "")).lower() == "offline":
+            self.kernel.asset_service.update_status(asset_id, "Running")
         return {
             "resolved": True,
             "incident_id": active_incident_id,

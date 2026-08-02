@@ -8,8 +8,9 @@ import { navigateTo } from '../../context/objectNavigation';
 import { exportReport, recordOperatorAction } from '../../api/client';
 import { downloadReportExport } from '../../api/downloadHelpers';
 import { DecisionRail } from '../../design-system/catalog/panels';
+import { ExecutiveLayout } from '../../design-system/layouts';
 import { ApprovalStamp, RATIONALE_MIN } from '../accountability';
-import { formatTime, round, Metric } from './shared';
+import { Empty, formatTime, round, Metric } from './shared';
 
 function timelineFromReport(report, approval, decisionAt) {
   if (Array.isArray(report.timeline) && report.timeline.length) {
@@ -43,7 +44,7 @@ function executiveSummary(report) {
   return concise.length > 850 ? `${concise.slice(0, 847).trim()}…` : concise;
 }
 
-/** Part 8 — Executive approval with persisted board decisions + export package. */
+/** Part 8 - Executive approval with persisted board decisions + export package. */
 const BOARD_OPERATOR = 'Operator';
 const BOARD_LABELS = {
   approved: 'Approved for publication',
@@ -66,14 +67,14 @@ function formatCurrency(value) {
   const amount = Number(value);
   return Number.isFinite(amount)
     ? amount.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-    : '—';
+    : 'Not available';
 }
 
 function formatPercent(value) {
   const amount = Number(value);
   return Number.isFinite(amount)
     ? `${amount.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
-    : '—';
+    : 'Not available';
 }
 
 export function ExecutiveBriefing({ reports, operatorActions = [] }) {
@@ -161,7 +162,7 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
       objectApi.pushAuditDecision({
         id: response?.data?.id || `brief-${report.id}-${decision}`,
         decision,
-        what: `${decision.replace(/_/g, ' ')} — ${title.slice(0, 40)}`,
+        what: `${decision.replace(/_/g, ' ')} - ${title.slice(0, 40)}`,
         who: BOARD_OPERATOR,
         operator: BOARD_OPERATOR,
         at: recordedAt,
@@ -200,13 +201,7 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
   if (!safeReports.length) {
     return (
       <Box className="executive-briefing">
-        <Box className="briefing-head">
-          <Box>
-            <Typography className="product-kicker">EXECUTIVE BRIEFING CENTER</Typography>
-            <Typography className="briefing-title">No board briefs published</Typography>
-            <Typography>Executive packs appear after investigations produce execution reports.</Typography>
-          </Box>
-        </Box>
+        <Empty text="report" />
       </Box>
     );
   }
@@ -237,8 +232,10 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
         </Stack>
       </Box>
 
-      <Box className="briefing-layout">
-        <Paper className="briefing-index">
+      <ExecutiveLayout
+        className="briefing-layout-shell"
+        reportIndex={(
+          <Paper className="briefing-index">
           <Typography className="product-kicker">BRIEFING PACK</Typography>
           <Typography className="briefing-index-title">Board view</Typography>
           <Typography variant="caption" color="text.secondary">
@@ -254,7 +251,7 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
               <span>{String(index + 1).padStart(2, '0')}</span>
               <Box>
                 <b>{item.title || item.name || item.incident_type || `Executive brief ${index + 1}`}</b>
-                <small>{item.status || 'Ready for review'} · {item.created_at || item.completed_at ? formatTime(item.created_at || item.completed_at) : '—'}</small>
+                <small>{item.status || 'Ready for review'} · {item.created_at || item.completed_at ? formatTime(item.created_at || item.completed_at) : 'Not dated'}</small>
               </Box>
             </button>
           ))}
@@ -264,9 +261,11 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
             {reliabilityDone ? <Typography><i />Recommendation published</Typography> : <Typography><i />Recommendation pending</Typography>}
             <Typography><i />{approval}</Typography>
           </Box>
-        </Paper>
+          </Paper>
+        )}
 
-        <Paper className="briefing-document">
+        briefDocument={(
+          <Paper className="briefing-document">
           <Box className="briefing-document-top">
             <Typography className="product-kicker">OPERATING COMMITTEE · CONFIDENTIAL</Typography>
             <Typography>Publication status <b>{approval}</b></Typography>
@@ -283,7 +282,7 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
             />
             <Metric label="Maintenance cost" value={formatCurrency(report.maintenance_cost)} provenance={report.maintenance_cost != null ? 'estimated' : 'stale'} />
             <Metric label="Production impact" value={formatPercent(report.production_impact)} provenance={report.production_impact != null ? 'estimated' : 'stale'} />
-            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : '—'} provenance={confidence != null ? 'live' : 'stale'} />
+            <Metric label="AI confidence" value={confidence != null ? `${confidence}%` : 'Not available'} provenance={confidence != null ? 'live' : 'stale'} />
           </Box>
           <Box className="briefing-section">
             <Typography className="product-kicker">INCIDENT REVIEW & ROOT CAUSE</Typography>
@@ -309,24 +308,25 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
               {report.recommendation || report.ai_recommendation || (Array.isArray(report.recommendations) ? report.recommendations[0] : null) || 'No board recommendation published yet.'}
             </Typography>
           </Box>
-        </Paper>
+          </Paper>
+        )}
 
-        <Paper className="briefing-rail">
+        decisionRail={(
+          <Paper className="briefing-rail">
           <Typography className="product-kicker">DECISION CONTROL</Typography>
           <ApprovalStamp
-            signatory={boardDone ? (decisionBy || BOARD_OPERATOR) : '—'}
+            signatory={boardDone ? (decisionBy || BOARD_OPERATOR) : 'Pending'}
             timestamp={decisionAt ? new Date(decisionAt).toLocaleString() : null}
             status={approval}
           />
           <Box className="briefing-confidence">
             <Typography>AI confidence</Typography>
-            <b>{confidence != null ? `${confidence}%` : '—'}</b>
-            {confidence != null ? <i><span style={{ width: `${confidence}%` }} /></i> : null}
+            <b>{confidence != null ? `${confidence}%` : 'Not available'}</b>
           </Box>
           <Box className="briefing-evidence">
             <Typography className="product-kicker">EVIDENCE & ATTACHMENTS</Typography>
             <Typography><ArticleOutlined />Incident linkage<b>{report.incident_id ? 'linked' : 'none'}</b></Typography>
-            <Typography><ArticleOutlined />Agent results<b>{report.agent_results ?? report.agents?.length ?? '—'}</b></Typography>
+            <Typography><ArticleOutlined />Agent results<b>{report.agent_results ?? report.agents?.length ?? 'Not available'}</b></Typography>
             <Typography><ArticleOutlined />Operator actions<b>{Math.max(Number(report.operator_actions) || 0, linkedOperatorActions.length)}</b></Typography>
             <Typography><ArticleOutlined />Source<b>{report.source || 'operations'}</b></Typography>
           </Box>
@@ -348,8 +348,9 @@ export function ExecutiveBriefing({ reports, operatorActions = [] }) {
             onModify={() => recordDecision('deferred', 'Deferred pending revision', 'board_defer')}
             onReject={() => recordDecision('escalated', 'Escalated to operating committee', 'board_escalate')}
           />
-        </Paper>
-      </Box>
+          </Paper>
+        )}
+      />
     </Box>
   );
 }

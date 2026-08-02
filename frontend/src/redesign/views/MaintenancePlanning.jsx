@@ -14,6 +14,7 @@ import { useOperations } from '../../context/OperationsContext';
 import { useObjectContext } from '../../context/ObjectContext';
 import { navigateTo } from '../../context/objectNavigation';
 import { approveWorkOrder, createWorkOrder, transitionWorkOrder } from '../../api/client';
+import { KanbanLayout } from '../../design-system/layouts';
 import { Status, Empty } from './shared';
 
 function MaintenanceKpi({ icon: Icon, label, value, detail, tone = 'blue' }) {
@@ -52,6 +53,7 @@ function matchesColumn(status, column) {
     case 'backlog':
       return value === 'backlog' || value === 'new' || value.includes('planning failed');
     case 'ready':
+    case 'needs approval':
       return value.includes('ready') || value.includes('pending_approval') || value === 'pending';
     case 'scheduled':
       return value.includes('scheduled') || value.includes('approved');
@@ -77,6 +79,8 @@ const QUEUE_FILTERS = [
   { key: 'active', label: 'In progress' },
   { key: 'complete', label: 'Complete' },
 ];
+
+const KANBAN_COLUMNS = ['Backlog', 'Needs approval', 'Scheduled', 'In progress', 'Complete'];
 
 export function MaintenancePlanning({ maintenance }) {
   const navigate = useNavigate();
@@ -222,9 +226,46 @@ export function MaintenancePlanning({ maintenance }) {
     if (queueFilter === 'complete') return matchesColumn(item.status, 'Complete');
     return true;
   });
+  const visibleColumns = queueFilter === 'approval'
+    ? ['Needs approval']
+    : queueFilter === 'scheduled'
+      ? ['Scheduled']
+      : queueFilter === 'active'
+        ? ['In progress']
+        : queueFilter === 'complete'
+          ? ['Complete']
+          : KANBAN_COLUMNS;
 
-  return (
-    <Box className="maintenance-planner">
+  const columnContent = Object.fromEntries(visibleColumns.map((column) => {
+    const items = filteredWork.filter((item) => matchesColumn(item.status, column));
+    return [column, items.length ? items.map((item) => (
+      <button
+        type="button"
+        key={item.id}
+        onClick={() => chooseWork(item.id)}
+        className={`maintenance-kanban-card ${selectedWork?.id === item.id ? 'selected' : ''}`}
+      >
+        <span className={`maintenance-priority-badge ${String(item.priority).toLowerCase()}`}>
+          {item.priority}
+        </span>
+        <span className="maintenance-kanban-identity">
+          <b>{item.title}</b>
+          <small>{item.assetName || item.assetId || 'Asset assignment pending'}</small>
+        </span>
+        <Status state={item.status} />
+        <span className="maintenance-kanban-meta">
+          <span>{item.owner || 'Unassigned crew'}</span>
+          <span>{item.downtime || 'Window TBD'}</span>
+          <span>{item.cost != null ? `$${Number(item.cost).toLocaleString()}` : 'Cost TBD'}</span>
+        </span>
+      </button>
+    )) : (
+      <Typography className="maintenance-column-empty">No work in this stage</Typography>
+    )];
+  }));
+
+  const toolbar = (
+    <Box className="maintenance-toolbar">
       <Box className="maintenance-planner-head">
         <Box>
           <Typography className="product-kicker">MAINTENANCE PLANNING</Typography>
@@ -257,135 +298,96 @@ export function MaintenancePlanning({ maintenance }) {
         <MaintenanceKpi icon={AttachMoneyOutlined} label="Planned cost" value={plannedCost ? `$${plannedCost.toLocaleString()}` : 'Not costed'} detail={plannedCost ? 'Current scoped estimate' : 'Awaiting cost assessment'} tone="green" />
       </Box>
 
-      <Box className="maintenance-layout">
-        <Paper className="maintenance-work-queue">
-          <Box className="maintenance-queue-head">
-            <Box>
-              <Typography className="product-kicker">WORK ORDER QUEUE</Typography>
-              <Typography className="maintenance-queue-title">Prioritized reliability work</Typography>
-            </Box>
-            <Box className="maintenance-queue-summary">
-              <i />
-              <Typography>{filteredWork.length} visible</Typography>
-            </Box>
-          </Box>
-          <Box className="maintenance-queue-filters">
-            {QUEUE_FILTERS.map((filter) => (
-              <Button
-                key={filter.key}
-                className={queueFilter === filter.key ? 'active' : ''}
-                onClick={() => setQueueFilter(filter.key)}
-              >
-                {filter.label}
-              </Button>
-            ))}
-          </Box>
-          <Box className="maintenance-queue-columns" aria-hidden>
-            <span>Priority</span>
-            <span>Work order</span>
-            <span>Status</span>
-            <span>Crew</span>
-            <span>Window</span>
-            <span>Cost</span>
-          </Box>
-          <Box className="maintenance-queue-list">
-            {filteredWork.length ? filteredWork.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                onClick={() => chooseWork(item.id)}
-                className={`maintenance-order-row ${selectedWork?.id === item.id ? 'selected' : ''}`}
-              >
-                <span className={`maintenance-priority-badge ${String(item.priority).toLowerCase()}`}>
-                  {item.priority}
-                </span>
-                <span className="maintenance-order-identity">
-                  <b>{item.title}</b>
-                  <small>{item.assetName || item.assetId || 'Asset assignment pending'}</small>
-                </span>
-                <Status state={item.status} />
-                <span className="maintenance-order-crew">{item.owner || 'Unassigned crew'}</span>
-                <span className="maintenance-order-window">{item.downtime || 'TBD'}</span>
-                <span className="maintenance-order-cost">
-                  {item.cost != null ? `$${Number(item.cost).toLocaleString()}` : 'TBD'}
-                </span>
-              </button>
-            )) : (
-              <Box className="maintenance-queue-empty">
-                <AssignmentOutlined />
-                <Typography>No work orders match this view.</Typography>
-              </Box>
-            )}
-          </Box>
-        </Paper>
-
-        <Paper className="maintenance-inspector">
-          {selectedWork ? (
-            <>
-              <Box className="maintenance-inspector-head">
-                <Box>
-                  <Typography className="product-kicker">WORK ORDER INSPECTOR</Typography>
-                  <Typography className="maintenance-work-title">{selectedWork.title}</Typography>
-                </Box>
-                <Status state={selectedWork.status} />
-              </Box>
-              <Typography className="maintenance-inspector-asset">
-                {selectedWork.assetName || selectedWork.assetId || 'Asset assignment pending'}
-              </Typography>
-              <Box className="maintenance-facts">
-                <Box><span>Priority</span><b>{selectedWork.priority}</b></Box>
-                <Box><span>Crew</span><b>{selectedWork.owner}</b></Box>
-                <Box><span>Cost</span><b>{selectedWork.cost != null ? `$${Number(selectedWork.cost).toLocaleString()}` : 'Not costed'}</b></Box>
-                <Box><span>Downtime</span><b>{selectedWork.downtime || 'Not assessed'}</b></Box>
-              </Box>
-              <Box className="maintenance-ai">
-                <AutoAwesomeOutlined />
-                <Box>
-                  <Typography className="product-kicker">AI SUGGESTED PLAN</Typography>
-                  <Typography>{plan?.rationale?.[0] || 'No AI schedule rationale published for this work order yet.'}</Typography>
-                </Box>
-              </Box>
-              <Box className="maintenance-checklist">
-                <Typography className="product-kicker">DEPENDENCIES & APPROVALS</Typography>
-                <Typography><i />Status <b>{selectedWork.status}</b></Typography>
-                <Typography><i />Asset <b>{selectedWork.assetName || selectedWork.assetId || 'Unassigned'}</b></Typography>
-                <Typography><i />Source <b>{selectedWork.source || 'maintenance plan'}</b></Typography>
-              </Box>
-              <Stack spacing={1}>
-                {!selectedIsApproved && !selectedIsInProgress && !selectedIsComplete && (
-                  <Button variant="contained" fullWidth disabled={busy} onClick={handleApprove}>
-                    Approve work order
-                  </Button>
-                )}
-                {selectedIsApproved && (
-                  <Button variant="contained" fullWidth disabled={busy} onClick={() => handleTransition('in_progress')}>
-                    Start field work
-                  </Button>
-                )}
-                {selectedIsInProgress && (
-                  <Button variant="contained" color="success" fullWidth disabled={busy} onClick={() => handleTransition('completed')}>
-                    Complete work order
-                  </Button>
-                )}
-                {selectedIsComplete && <Status state="Completed" />}
-                <Typography variant="caption" color="text.secondary">
-                  Approval authorizes scheduling. Start and completion actions update the audit record; RigOS does not directly command equipment.
-                </Typography>
-                {(selectedWork.assetId || selectedWork.asset_id) && (
-                  <Button
-                    fullWidth
-                    onClick={() => navigateTo(objectApi, navigate, 'assets', {
-                      assetId: selectedWork.assetId || selectedWork.asset_id,
-                    })}
-                  >
-                    Open asset twin
-                  </Button>
-                )}
-              </Stack>
-            </>
-          ) : <Empty text="maintenance" />}
-        </Paper>
+      <Box className="maintenance-queue-filters" role="group" aria-label="Work order status">
+        {QUEUE_FILTERS.map((filter) => (
+          <Button
+            key={filter.key}
+            className={queueFilter === filter.key ? 'active' : ''}
+            onClick={() => setQueueFilter(filter.key)}
+          >
+            {filter.label}
+          </Button>
+        ))}
+        <Typography className="maintenance-visible-count">{filteredWork.length} visible</Typography>
       </Box>
+    </Box>
+  );
+
+  const inspector = selectedWork ? (
+    <Paper className="maintenance-inspector">
+      <Box className="maintenance-inspector-head">
+        <Box>
+          <Typography className="product-kicker">WORK ORDER INSPECTOR</Typography>
+          <Typography className="maintenance-work-title">{selectedWork.title}</Typography>
+        </Box>
+        <Status state={selectedWork.status} />
+      </Box>
+      <Typography className="maintenance-inspector-asset">
+        {selectedWork.assetName || selectedWork.assetId || 'Asset assignment pending'}
+      </Typography>
+      <Box className="maintenance-facts">
+        <Box><span>Priority</span><b>{selectedWork.priority}</b></Box>
+        <Box><span>Crew</span><b>{selectedWork.owner}</b></Box>
+        <Box><span>Cost</span><b>{selectedWork.cost != null ? `$${Number(selectedWork.cost).toLocaleString()}` : 'Not costed'}</b></Box>
+        <Box><span>Downtime</span><b>{selectedWork.downtime || 'Not assessed'}</b></Box>
+      </Box>
+      <Box className="maintenance-ai">
+        <AutoAwesomeOutlined />
+        <Box>
+          <Typography className="product-kicker">AI SUGGESTED PLAN</Typography>
+          <Typography>{plan?.rationale?.[0] || 'No AI schedule rationale published for this work order yet.'}</Typography>
+        </Box>
+      </Box>
+      <Box className="maintenance-checklist">
+        <Typography className="product-kicker">DEPENDENCIES & APPROVALS</Typography>
+        <Typography><i />Status <b>{selectedWork.status}</b></Typography>
+        <Typography><i />Asset <b>{selectedWork.assetName || selectedWork.assetId || 'Unassigned'}</b></Typography>
+        <Typography><i />Source <b>{selectedWork.source || 'maintenance plan'}</b></Typography>
+      </Box>
+      <Stack spacing={1}>
+        {!selectedIsApproved && !selectedIsInProgress && !selectedIsComplete && (
+          <Button variant="contained" fullWidth disabled={busy} onClick={handleApprove}>
+            Approve work order
+          </Button>
+        )}
+        {selectedIsApproved && (
+          <Button variant="contained" fullWidth disabled={busy} onClick={() => handleTransition('in_progress')}>
+            Start field work
+          </Button>
+        )}
+        {selectedIsInProgress && (
+          <Button variant="contained" color="success" fullWidth disabled={busy} onClick={() => handleTransition('completed')}>
+            Complete work order
+          </Button>
+        )}
+        {selectedIsComplete && <Status state="Completed" />}
+        <Typography variant="caption" color="text.secondary">
+          Approval authorizes scheduling. Start and completion actions update the audit record; RigOS does not directly command equipment.
+        </Typography>
+        {(selectedWork.assetId || selectedWork.asset_id) && (
+          <Button
+            fullWidth
+            onClick={() => navigateTo(objectApi, navigate, 'assets', {
+              assetId: selectedWork.assetId || selectedWork.asset_id,
+            })}
+          >
+            Open asset twin
+          </Button>
+        )}
+      </Stack>
+    </Paper>
+  ) : <Empty text="maintenance" />;
+
+  return (
+    <Box className="maintenance-planner">
+      <KanbanLayout
+        className="maintenance-kanban-layout"
+        toolbar={toolbar}
+        columns={visibleColumns}
+        columnContent={columnContent}
+        board={filteredWork.length ? undefined : <Empty text="maintenance" />}
+        inspector={inspector}
+      />
 
       <Paper className="maintenance-bottom">
         <Box>

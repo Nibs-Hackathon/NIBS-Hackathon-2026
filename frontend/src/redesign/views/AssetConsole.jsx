@@ -11,7 +11,8 @@ import { navigateTo } from '../../context/objectNavigation';
 import { getTwinAssets, createWorkOrder, recordOperatorAction, getAssetHealth, getAssetNotes, saveAssetNote } from '../../api/client';
 import { mergeAssetsWithTwin } from '../../api/resourceAdapters';
 import { FilterChipBar } from '../../design-system/catalog/actions';
-import { assetRisk } from './shared';
+import { ExplorerLayout } from '../../design-system/layouts';
+import { assetRisk, Empty } from './shared';
 import { DigitalTwinCanvas } from './DigitalTwinCanvas';
 import { AssetExplorer, BUILTIN_VIEWS, parseAssetPath } from './AssetExplorer';
 import { AssetBottomWorkspace } from './AssetBottomWorkspace';
@@ -19,7 +20,7 @@ import { AssetObjectInspector } from './AssetObjectInspector';
 import './assets-workspace.css';
 
 /**
- * Assets workspace — Parts A–I: layout, twin, explorer, bottom, selection coupling.
+ * Assets workspace: layout, twin, explorer, bottom, selection coupling.
  */
 export function AssetConsole({
   assets = [],
@@ -40,7 +41,6 @@ export function AssetConsole({
   const [alarmsOnly, setAlarmsOnly] = useState(false);
   const [showFullTree, setShowFullTree] = useState(false);
   const [activeViewId, setActiveViewId] = useState('shift-critical');
-  const [mobilePane, setMobilePane] = useState('twin');
   const [bottomTab, setBottomTab] = useState('telemetry');
   const [focusTag, setFocusTag] = useState(null);
   const [twinAssets, setTwinAssets] = useState([]);
@@ -68,7 +68,7 @@ export function AssetConsole({
   const recentIds = objectApi.recent?.assetIds || [];
   const workOrders = Array.isArray(maintenance?.tasks) ? maintenance.tasks : [];
 
-  const clean = (value, fallback = '—') => {
+  const clean = (value, fallback = 'Not available') => {
     const result = String(value ?? '').trim();
     return result && !/[\u00c3\u00c2]/.test(result) ? result : fallback;
   };
@@ -132,7 +132,7 @@ export function AssetConsole({
     const row = allRows.find((item) => item.asset.id === id);
     if (row) {
       const location = row.asset.location || row.asset.zone;
-      const parts = String(location || '').split(/[›>\/|]/).map((part) => part.trim()).filter(Boolean);
+      const parts = String(location || '').split(/[›>/|]/).map((part) => part.trim()).filter(Boolean);
       const unit = parts[1] || parts[0];
       if (unit) objectApi.setUnit?.(unit);
     }
@@ -229,7 +229,7 @@ export function AssetConsole({
       objectApi.pushAuditDecision?.({
         id: created.id || `wo-${Date.now()}`,
         decision: 'create_work_order',
-        what: `Create work order — ${target.name}`,
+        what: `Create work order - ${target.name}`,
         who: 'Control operator',
         operator: 'Control operator',
         at: new Date().toISOString(),
@@ -272,7 +272,7 @@ export function AssetConsole({
       objectApi.pushAuditDecision?.({
         id: `ack-${Date.now()}`,
         decision: 'acknowledge_watch',
-        what: `Acknowledge watch — ${asset.name}`,
+        what: `Acknowledge watch - ${asset.name}`,
         who: 'Control operator',
         operator: 'Control operator',
         at: new Date().toISOString(),
@@ -364,11 +364,112 @@ export function AssetConsole({
   if (!safeAssets.length) {
     return (
       <Box className="assets-os twin-empty" role="status">
-        <Typography fontWeight={800}>No facility assets in scope</Typography>
-        <Typography variant="body2">Switch facility scope or wait for the asset register to populate.</Typography>
+        <Empty text="asset register" />
       </Box>
     );
   }
+
+  const filterEmpty = !rows.length;
+  const explorer = filterEmpty ? (
+    <Box className="assets-filter-empty" role="status">
+      <Empty text="asset" />
+      <Typography variant="body2">
+        {riskBand === 'critical'
+          ? 'No assets are above the critical threshold in the current facility.'
+          : 'No assets match the active filters.'}
+      </Typography>
+      <Button size="small" variant="outlined" onClick={() => {
+        setQuery('');
+        activateView('all-facility');
+      }}>
+        Show all assets
+      </Button>
+    </Box>
+  ) : (
+    <AssetExplorer
+      rows={treeRows}
+      allRows={allRows}
+      selectedId={asset?.id}
+      onSelect={setSelectedId}
+      query={query}
+      onQueryChange={setQuery}
+      activeViewId={activeViewId}
+      onActivateView={activateView}
+      favorites={favorites}
+      recentIds={recentIds}
+      showFullTree={showFullTree}
+      onToggleFullTree={() => setShowFullTree((value) => !value)}
+      clean={clean}
+    />
+  );
+
+  const canvas = (
+    <DigitalTwinCanvas
+      rows={twinRows}
+      selectedId={asset?.id}
+      onSelect={setSelectedId}
+      layers={layers}
+      camera={camera}
+      onCameraChange={(patch) => objectApi.setTwinCamera?.(patch)}
+      onFitUnit={() => objectApi.setTwinCamera?.({ zoom: 1, panX: 0, panY: 0, fitMode: 'unit' })}
+      onFitSelection={() => objectApi.setTwinCamera?.({ fitMode: 'selection', zoom: Math.max(camera.zoom || 1, 1.15) })}
+      onOpenIncident={(row) => navigateTo(objectApi, navigate, 'incidents', { incidentId: row.incident.id, assetId: row.asset.id })}
+      onViewForecast={(row) => navigateTo(objectApi, navigate, 'forecasting', { assetId: row.asset.id })}
+      onCreateWorkOrder={createWorkOrderFor}
+      onToggleFavorite={(id) => objectApi.toggleFavoriteAsset?.(id)}
+      onCopyTag={(row) => {
+        const tag = row.asset.tag || row.asset.id;
+        navigator.clipboard?.writeText?.(String(tag));
+        toast.success(`Copied ${tag}`);
+      }}
+      onTagClick={(row) => {
+        setSelectedId(row.asset.id, 'twin');
+        setFocusTag(row.asset.tag || row.asset.id);
+        setBottomTab('telemetry');
+        if (bottomHeight === 0) objectApi.patchUi?.({ bottomWorkspaceHeight: 28 });
+      }}
+      onAlarmClick={(row, event) => {
+        setSelectedId(row.asset.id, 'twin');
+        setBottomTab('incidents');
+        if (bottomHeight === 0) objectApi.patchUi?.({ bottomWorkspaceHeight: 28 });
+        if ((event?.metaKey || event?.ctrlKey) && row.incident) {
+          navigateTo(objectApi, navigate, 'incidents', { incidentId: row.incident.id, assetId: row.asset.id });
+        }
+      }}
+      isFavorite={(id) => favorites.includes(id)}
+      clean={clean}
+    />
+  );
+
+  const inspector = asset ? (
+    <AssetObjectInspector
+      asset={asset}
+      selected={selected}
+      risk={risk}
+      statusLabel={statusLabel}
+      signalValues={signalValues}
+      provenance={provenance}
+      primaryLabel={primaryLabel}
+      primaryAction={primaryAction}
+      actionRef={inspectorActionRef}
+      clean={clean}
+      workOrders={workOrders}
+      note={assetNote}
+      onNoteChange={persistNote}
+      knowledgeQuery={knowledgeQuery}
+      onOpenIncident={() => selected?.incident && navigateTo(objectApi, navigate, 'incidents', {
+        incidentId: selected.incident.id,
+        assetId: asset.id,
+      })}
+      onOpenForecast={() => navigateTo(objectApi, navigate, 'forecasting', { assetId: asset.id })}
+      onCreateWorkOrder={() => createWorkOrderFor(selected)}
+      onOpenInvestigation={() => selected?.incident && navigateTo(objectApi, navigate, 'investigation', {
+        incidentId: selected.incident.id,
+        assetId: asset.id,
+        focusDecisionBar: true,
+      })}
+    />
+  ) : <Empty text="asset" />;
 
   return (
     <Box
@@ -396,114 +497,31 @@ export function AssetConsole({
         <Button size="small" variant="outlined" disabled={!asset} onClick={() => createWorkOrderFor(selected)}>Create work order</Button>
       </Box>
 
-      <Box className="assets-mobile-tabs" role="tablist">
-        {['explorer', 'twin', 'inspector'].map((pane) => (
-          <Button key={pane} className={mobilePane === pane ? 'active' : ''} onClick={() => setMobilePane(pane)}>{pane}</Button>
-        ))}
-      </Box>
-
-      <Box className={`assets-body twin-workspace-grid mobile-${mobilePane}`}>
-        <AssetExplorer
-          rows={treeRows}
-          allRows={allRows}
-          selectedId={asset?.id}
-          onSelect={setSelectedId}
-          query={query}
-          onQueryChange={setQuery}
-          activeViewId={activeViewId}
-          onActivateView={activateView}
-          favorites={favorites}
-          recentIds={recentIds}
-          showFullTree={showFullTree}
-          onToggleFullTree={() => setShowFullTree((value) => !value)}
-          clean={clean}
-        />
-
-        <DigitalTwinCanvas
-          rows={twinRows}
-          selectedId={asset?.id}
-          onSelect={setSelectedId}
-          layers={layers}
-          camera={camera}
-          onCameraChange={(patch) => objectApi.setTwinCamera?.(patch)}
-          onFitUnit={() => objectApi.setTwinCamera?.({ zoom: 1, panX: 0, panY: 0, fitMode: 'unit' })}
-          onFitSelection={() => objectApi.setTwinCamera?.({ fitMode: 'selection', zoom: Math.max(camera.zoom || 1, 1.15) })}
-          onOpenIncident={(row) => navigateTo(objectApi, navigate, 'incidents', { incidentId: row.incident.id, assetId: row.asset.id })}
-          onViewForecast={(row) => navigateTo(objectApi, navigate, 'forecasting', { assetId: row.asset.id })}
-          onCreateWorkOrder={createWorkOrderFor}
-          onToggleFavorite={(id) => objectApi.toggleFavoriteAsset?.(id)}
-          onCopyTag={(row) => {
-            const tag = row.asset.tag || row.asset.id;
-            navigator.clipboard?.writeText?.(String(tag));
-            toast.success(`Copied ${tag}`);
-          }}
-          onTagClick={(row) => {
-            setSelectedId(row.asset.id, 'twin');
-            setFocusTag(row.asset.tag || row.asset.id);
-            setBottomTab('telemetry');
-            if (bottomHeight === 0) objectApi.patchUi?.({ bottomWorkspaceHeight: 28 });
-          }}
-          onAlarmClick={(row, event) => {
-            setSelectedId(row.asset.id, 'twin');
-            setBottomTab('incidents');
-            if (bottomHeight === 0) objectApi.patchUi?.({ bottomWorkspaceHeight: 28 });
-            if ((event?.metaKey || event?.ctrlKey) && row.incident) {
-              navigateTo(objectApi, navigate, 'incidents', { incidentId: row.incident.id, assetId: row.asset.id });
-            }
-          }}
-          isFavorite={(id) => favorites.includes(id)}
-          clean={clean}
-        />
-
-        {!inspectorCollapsed && (
-          <AssetObjectInspector
+      <ExplorerLayout
+        className={`assets-layout-shell ${inspectorCollapsed ? 'inspector-collapsed' : ''}`}
+        explorer={explorer}
+        canvas={canvas}
+        inspector={inspector}
+        canvasVariant="twin"
+        signalStrip={bottomHeight > 0 ? (
+          <AssetBottomWorkspace
             asset={asset}
             selected={selected}
-            risk={risk}
+            stream={stream}
+            readings={readings}
             statusLabel={statusLabel}
-            signalValues={signalValues}
-            provenance={provenance}
             primaryLabel={primaryLabel}
-            primaryAction={primaryAction}
-            actionRef={inspectorActionRef}
+            bottomHeight={bottomHeight}
+            onCycleHeight={() => objectApi.cycleBottomHeight?.()}
+            onOpenIncident={() => selected?.incident && navigateTo(objectApi, navigate, 'incidents', { incidentId: selected.incident.id, assetId: asset?.id })}
             clean={clean}
             workOrders={workOrders}
-            note={assetNote}
-            onNoteChange={persistNote}
-            knowledgeQuery={knowledgeQuery}
-            onOpenIncident={() => selected?.incident && navigateTo(objectApi, navigate, 'incidents', {
-              incidentId: selected.incident.id,
-              assetId: asset.id,
-            })}
-            onOpenForecast={() => navigateTo(objectApi, navigate, 'forecasting', { assetId: asset.id })}
-            onCreateWorkOrder={() => createWorkOrderFor(selected)}
-            onOpenInvestigation={() => selected?.incident && navigateTo(objectApi, navigate, 'investigation', {
-              incidentId: selected.incident.id,
-              assetId: asset.id,
-              focusDecisionBar: true,
-            })}
+            activeTab={bottomTab}
+            onTabChange={setBottomTab}
+            focusTag={focusTag}
           />
-        )}
-      </Box>
-
-      {bottomHeight > 0 && (
-        <AssetBottomWorkspace
-          asset={asset}
-          selected={selected}
-          stream={stream}
-          readings={readings}
-          statusLabel={statusLabel}
-          primaryLabel={primaryLabel}
-          bottomHeight={bottomHeight}
-          onCycleHeight={() => objectApi.cycleBottomHeight?.()}
-          onOpenIncident={() => selected?.incident && navigateTo(objectApi, navigate, 'incidents', { incidentId: selected.incident.id, assetId: asset?.id })}
-          clean={clean}
-          workOrders={workOrders}
-          activeTab={bottomTab}
-          onTabChange={setBottomTab}
-          focusTag={focusTag}
-        />
-      )}
+        ) : null}
+      />
     </Box>
   );
 }

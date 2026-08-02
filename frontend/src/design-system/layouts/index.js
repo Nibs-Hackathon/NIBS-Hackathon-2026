@@ -1,3 +1,5 @@
+import './layouts.css';
+
 export { LayoutPlaceholder, LayoutTabs, Pane, useCompactLayout } from './shared';
 export { MissionControlLayout } from './MissionControlLayout';
 export { ExplorerLayout } from './ExplorerLayout';

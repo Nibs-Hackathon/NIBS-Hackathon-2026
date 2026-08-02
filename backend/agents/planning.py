@@ -34,8 +34,11 @@ class PlanningAgent(Agent):
 
         # Add critical steps based on status
         if status == "CRITICAL":
-            execution_plan.append("Immediately reduce operating load.")
+            asset_id = getattr(getattr(context, "event", None), "source", None)
+            target = f" asset {asset_id}" if asset_id else ""
+            execution_plan.append(f"Shut off{target} (agent-executed simulated command).")
             execution_plan.append("Notify control room.")
+            execution_plan.append("Open maintenance work orders for restart clearance.")
 
         # Add specific responses
         if "Possible gas leak" in findings:

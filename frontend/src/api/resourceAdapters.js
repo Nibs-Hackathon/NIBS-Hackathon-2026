@@ -2,6 +2,35 @@
 
 import { REFINERY_GEO, formatDisplayLocation } from '../data/refineryGeo.js';
 
+const cleanText = (value) => (value == null ? '' : String(value).trim());
+
+export function notificationPresentation(notification = {}) {
+  const assetName = cleanText(notification.asset_name);
+  const refineryName = cleanText(
+    notification.refinery_name
+      || notification.refinery
+      || notification.facility
+      || notification.metadata?.refinery,
+  );
+  const sourceTitle = cleanText(notification.title);
+  const title = [assetName, refineryName].filter(Boolean).join(' · ')
+    || sourceTitle
+    || 'Operational notification';
+  const message = cleanText(notification.message);
+  const incidentType = cleanText(notification.incident_type);
+  let detail = message && message !== assetName && message !== title
+    ? message
+    : incidentType;
+
+  if (!detail && sourceTitle !== title) detail = sourceTitle;
+  if (!detail) detail = 'Operational update';
+  if (notification.type === 'revenue_impact' && detail.startsWith('$')) {
+    detail = `Revenue impact: ${detail}`;
+  }
+
+  return { title, detail };
+}
+
 function parsePercent(value) {
   if (value == null) return null;
   const parsed = parseFloat(String(value).replace('%', '').trim());

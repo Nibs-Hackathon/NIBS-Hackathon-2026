@@ -1,4 +1,4 @@
-import { Box, Button, Stack, Typography } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
 import { Terminal } from '@mui/icons-material';
 import { ProvenanceBadge, StatusBadge } from './status';
 import { resolveTone } from '../tokens';
@@ -44,7 +44,7 @@ export function SignalCard({
   const t = resolveTone(status);
   return (
     <DataCardShell className={`rig-signal-card ${className}`} loading={loading} sx={sx}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography className="rig-label">{name}</Typography>
         <ProvenanceBadge value={provenance} />
       </Stack>
@@ -53,7 +53,16 @@ export function SignalCard({
         {unit && <Typography component="span" className="rig-data" sx={{ ml: 0.5, opacity: 0.7 }}>{unit}</Typography>}
       </Typography>
       <Box sx={{ mt: 1, height: 4, borderRadius: 99, bgcolor: 'action.hover', overflow: 'hidden' }}>
-        <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: t.main, transition: 'width 200ms ease' }} />
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            bgcolor: t.main,
+            transformOrigin: 'left center',
+            transform: `scaleX(${Math.max(0, Math.min(1, pct / 100))})`,
+            transition: 'transform 200ms ease',
+          }}
+        />
       </Box>
     </DataCardShell>
   );

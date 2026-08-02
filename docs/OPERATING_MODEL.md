@@ -19,9 +19,15 @@ The end-to-end control loop is:
 5. The Operations Center shows the current field condition separately from
    the AI workflow status.
 6. An operator can approve, reject, escalate, or request more evidence. This
-   records an audit action only; it never issues a field-equipment command.
-7. When telemetry normalizes, the simulator resolves the physical incident
-   and stores final health plus the true resolution duration.
+   records an audit action only for board decisions.
+7. On CRITICAL temperature/pressure (and related) breaches, the Safety agent
+   may shut off the specific simulated pump/tank/asset at its refinery, and the
+   Maintenance agent may auto-create work orders for restart clearance. These
+   are simulated facility commands with ActionDB audit rows — not physical
+   industrial I/O.
+8. When telemetry normalizes (or audited field work completes after a shutoff),
+   the simulator resolves the physical incident and stores final health plus
+   the true resolution duration.
 
 ## Data provenance
 

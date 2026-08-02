@@ -8,6 +8,57 @@
   --p8-stage: 120ms;
 }
 
+/* Operational notifications: identity first, incident detail second. */
+.rig-ops-toast {
+  display: grid;
+  grid-template-columns: var(--rig-space-2) minmax(0, 1fr);
+  width: min(360px, calc(100vw - (var(--rig-space-4) * 2)));
+  align-items: start;
+  gap: var(--rig-space-3);
+  padding: var(--rig-space-3) var(--rig-space-4);
+  border: 1px solid var(--rig-line-strong);
+  border-radius: var(--rig-radius);
+  background: var(--rig-surface-raised);
+  box-shadow: var(--rig-shadow);
+  color: var(--rig-text);
+  transition:
+    opacity var(--rig-fast) var(--rig-ease),
+    transform var(--rig-fast) var(--rig-ease);
+}
+
+.rig-ops-toast.is-visible { opacity: 1; transform: translateY(0); }
+.rig-ops-toast.is-hidden { opacity: 0; transform: translateY(calc(var(--rig-space-2) * -1)); }
+
+.rig-ops-toast-signal {
+  width: var(--rig-space-2);
+  height: var(--rig-space-2);
+  margin-top: calc(var(--rig-space-2) / 2);
+  border-radius: 50%;
+  background: var(--rig-blue);
+}
+
+.rig-ops-toast.severity-critical .rig-ops-toast-signal { background: var(--rig-critical); }
+.rig-ops-toast.severity-warning .rig-ops-toast-signal { background: var(--rig-warning); }
+.rig-ops-toast.severity-success .rig-ops-toast-signal { background: var(--rig-success); }
+
+.rig-ops-toast-copy {
+  display: grid;
+  min-width: 0;
+  gap: calc(var(--rig-space-2) / 2);
+  overflow-wrap: anywhere;
+}
+
+.rig-ops-toast-copy strong {
+  font-size: var(--rig-type-body-sm);
+  line-height: 1.3;
+}
+
+.rig-ops-toast-copy > span {
+  color: var(--rig-muted);
+  font-size: var(--rig-type-caption);
+  line-height: 1.45;
+}
+
 /* Sticky: Mission Control OperationsStrip */
 .mission-os .rig-operations-strip,
 .p8-operations-strip {

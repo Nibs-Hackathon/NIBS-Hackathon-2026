@@ -7,7 +7,7 @@ from api.adapters.dashboard_adapter import get_dashboard
 from api.adapters.asset_adapter import get_assets
 from api.adapters.agent_adapter import get_agents, get_agent_metrics
 from api.adapters.report_adapter import get_reports
-from api.adapters.control_adapter import get_control_state
+from api.adapters.control_adapter import get_control_state, shut_off_asset
 from api.adapters.telemetry_adapter import get_asset_telemetry
 from api.adapters.health_adapter import get_asset_health
 from api.adapters.health_prediction_adapter import get_health_prediction
@@ -27,6 +27,7 @@ __all__ = [
     "get_agent_metrics",
     "get_reports",
     "get_control_state",
+    "shut_off_asset",
     "get_asset_telemetry",
     "get_asset_health",
     "get_health_prediction",
