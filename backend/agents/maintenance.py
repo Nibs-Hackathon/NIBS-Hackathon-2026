@@ -69,11 +69,13 @@ class MaintenanceAgent(Agent):
             downtime = "Immediate shutdown"
 
         planned = [wo for wo in work_orders if wo != "No maintenance required"]
+        # Audit fields share one list: planned WOs, or the explicit none marker.
+        audit_orders = planned if planned else ["No maintenance required"]
         metadata = {
             "priority": priority,
             "priority_level": priority_level,
             "downtime": downtime,
-            "work_orders": work_orders,
+            "work_orders": audit_orders,
             "planned_work_orders": planned,
             "auto_plan": bool(planned) and priority in ("MEDIUM", "HIGH", "CRITICAL"),
             "risk_status": safety.get("status", "SAFE"),
@@ -81,18 +83,24 @@ class MaintenanceAgent(Agent):
 
         self._store_metadata(context, metadata)
 
+        summary = (
+            f"{len(planned)} maintenance task(s) planned. Priority: {priority}."
+            if planned
+            else f"No maintenance required. Priority: {priority}."
+        )
+
         return AgentResult(
             agent_name=self.name,
             success=True,
             finding=f"Maintenance Priority: {priority}",
             confidence=0.95,
-            evidence=work_orders,
-            recommendations=work_orders,
+            evidence=audit_orders,
+            recommendations=audit_orders,
             required_action=priority,
             # Plans are auto-created; field completion still needs human transition.
             requires_human_approval=(priority in ("HIGH", "CRITICAL")),
             metadata=metadata,
-            summary=f"{len(planned)} maintenance task(s) planned. Priority: {priority}.",
+            summary=summary,
         )
 
     def _get_metadata(self, context, key):

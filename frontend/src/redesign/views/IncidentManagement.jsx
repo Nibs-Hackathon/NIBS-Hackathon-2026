@@ -160,7 +160,7 @@ export function IncidentManagement({
     setSimulating(true);
     try {
       await triggerIncident(faultType, targetAsset.id);
-      toast.success('Simulator fault injected — refreshing incident queue');
+      toast.success('Simulator fault injected - refreshing incident queue');
       await refresh();
     } catch (error) {
       const detail = error.response?.data?.detail || error.response?.data?.error;
@@ -301,7 +301,7 @@ export function IncidentManagement({
               <Typography className="product-kicker">INCIDENT TIMELINE</Typography>
               <Typography className="investigation-title">{label(activeIncident.incident_type || 'Operational event')}</Typography>
               <Typography variant="caption">
-                Case {activeIncident.id || 'under review'} — affected asset:{' '}
+                Case {activeIncident.id || 'under review'} - affected asset:{' '}
                 <Button size="small" onClick={() => activeIncident.asset_id && navigateTo(objectApi, navigate, 'assets', { assetId: activeIncident.asset_id })}>
                   {activeIncident.asset_name || activeIncident.asset_id || 'unresolved'}
                 </Button>
@@ -317,8 +317,8 @@ export function IncidentManagement({
           <Box className="incident-summary-strip">
             <Box><Typography>Severity</Typography><b>{label(activeIncident.severity || 'Medium')}</b><ProvenanceBadge value={provenance} /></Box>
             <Box><Typography>Severity risk</Typography><b className="risk-text">{risk}/100</b><Typography variant="caption" color="text.secondary">Derived from severity</Typography></Box>
-            <Box><Typography>Impact</Typography><b>{activeIncident.impact || '—'}</b></Box>
-            <Box><Typography>Confidence</Typography><b>{confidence != null ? `${confidence}%` : '—'}</b></Box>
+            <Box><Typography>Impact</Typography><b>{activeIncident.impact || '-'}</b></Box>
+            <Box><Typography>Confidence</Typography><b>{confidence != null ? `${confidence}%` : '-'}</b></Box>
           </Box>
           <Box className="incident-timeline">
             {events.map(([title, time, detail, kind], index) => (
@@ -406,8 +406,8 @@ export function IncidentManagement({
             {persistedNotes.length ? persistedNotes.map((action, index) => (
               <Typography key={action.id || index} className="operator-note" variant="body2">
                 <b>{action.approved_by || action.operator || 'Operator'}</b>
-                {action.timestamp ? ` · ${formatTime(action.timestamp)}` : ''}
-                {' — '}
+                {action.timestamp ? ` - ${formatTime(action.timestamp)}` : ''}
+                {' - '}
                 {action.note}
               </Typography>
             )) : (
@@ -437,7 +437,7 @@ export function IncidentManagement({
           {agentActions.map((action, index) => (
             <Typography key={action.id || action.action_id || index} variant="body2" sx={{ mt: 0.75 }}>
               {action.type === 'shut_off'
-                ? (action.message || `Shut off ${action.asset_name || action.asset_id}${action.refinery ? ` · ${action.refinery}` : ''}`)
+                ? (action.message || `Shut off ${action.asset_name || action.asset_id}${action.refinery ? ` - ${action.refinery}` : ''}`)
                 : action.type === 'plan_work_order'
                   ? `Maintenance planned: ${action.title || 'Work order'} (${action.status || 'pending'})`
                   : (action.message || action.type || 'Agent action')}
